@@ -234,12 +234,13 @@ Las operaciones cuadráticas-en-pantalla viven aquí, en Go (ADR-004/007).
 
 ---
 
-## 12. `nu.json` / `nu.toml` — codecs [W]
+## 12. `nu.json` / `nu.toml` / `nu.yaml` — codecs [W]
 
 | Firma | Semántica |
 |---|---|
 | `nu.json.encode(v, opts?) -> string` / `nu.json.decode(s) -> v` | `opts.pretty`. `null` ↔ `nu.json.NULL` (sentinel) para no perder claves. |
 | `nu.toml.encode(v) -> string` / `nu.toml.decode(s) -> v` | |
+| `nu.yaml.encode(v) -> string` / `nu.yaml.decode(s) -> v` | Necesario para metadatos del ecosistema existente (frontmatter de skills); YAML es demasiado traicionero para parsearlo en Lua puro. |
 
 ---
 
@@ -247,7 +248,7 @@ Las operaciones cuadráticas-en-pantalla viven aquí, en Go (ADR-004/007).
 
 | Firma | Semántica |
 |---|---|
-| `nu.worker.spawn(module: string) -> Worker` | Levanta un estado Lua nuevo en su goroutine, cargando `module` (resoluble por el loader). Sin `nu.ui`, `nu.events` (bus principal), `nu.plugin` ni workers anidados. |
+| `nu.worker.spawn(module: string, opts?) -> Worker` | Levanta un estado Lua nuevo en su goroutine, cargando `module` (resoluble por el loader). Sin `nu.ui`, `nu.events` (bus principal), `nu.plugin` ni workers anidados. `opts.caps?: string[]` restringe la API del worker a los módulos enumerados (p. ej. `{"fs", "text"}`): los módulos no concedidos **no existen** dentro del estado — sandboxing por capacidades para subagentes y código no confiable. Sin `caps`, el worker recibe toda la API [W]. |
 | `Worker:send(msg)` / `Worker:recv() -> msg` ⏸ | Mensajes = valores JSON-ables, **copiados** (las tablas no cruzan estados). Tampoco cruzan closures, userdata ni Blocks: un worker manda datos digeridos y el estado principal renderiza. |
 | `Worker:on_message(fn) -> Sub` | Alternativa por callback en el estado principal. |
 | `Worker:terminate()` | Inmediato y seguro (estados aislados). |
@@ -284,7 +285,7 @@ primero y son sustituibles por nombre desde el directorio de usuario.
 
 | Disponible [W] | Solo estado principal |
 |---|---|
-| `task`, `fs` (salvo `watch`), `proc`, `sys`, `http`, `ws`, `text`, `re`, `search`, `json`, `toml`, `log`, `config.dir` | `ui`, `events`, `fs.watch`, `worker.spawn`, `plugin` |
+| `task`, `fs` (salvo `watch`), `proc`, `sys`, `http`, `ws`, `text`, `re`, `search`, `json`, `toml`, `yaml`, `log`, `config.dir` | `ui`, `events`, `fs.watch`, `worker.spawn`, `plugin` |
 
 ---
 
