@@ -1,0 +1,193 @@
+# La extensión oficial del agente: contrato
+
+Estado: **borrador para discusión**. Como providers y sesiones, esto NO es
+API sagrada del core: es el contrato público de la extensión oficial
+`agent`, versionado aparte. Construida íntegramente sobre [api.md](api.md),
+[providers.md](providers.md) y [sesiones.md](sesiones.md) — si algo de aquí
+no se puede implementar con esas tres superficies, son ellas las que están
+incompletas (ADR-003).
+
+## 1. Decisión estructural: motor sin UI
+
+La extensión `agent` es un **motor headless**. No pinta nada: ejecuta el
+loop, ejecuta tools, emite eventos. La interfaz de chat es **otra** extensión
+oficial (`chat`) que consume este contrato igual que podría hacerlo cualquier
+tercero. Consecuencias buscadas:
+
+- Modo scripting/CI gratis: `nu -e "script.lua"` puede usar el agente sin
+  terminal interactivo.
+- Los subagentes pueden correr en workers (sin `ui`) sin caso especial.
+- La UI oficial no tiene acceso privilegiado: la API pública es suficiente o
+  está incompleta.
+
+## 2. Sesiones y turno
+
+```
+agent.session(opts) -> Session
+  opts: { model: "proveedor/modelo", system?, cwd?, tools?: string[],
+          skills?: string[], permissions?: Permissions, parent? }
+
+Session:send(content: string|Block[]) ⏸ -> Message  -- ejecuta el turno completo
+Session:cancel()                                     -- cancela el turno en curso
+Session:fork(at?: integer) -> Session                -- sesiones.md §5
+Session:compact() ⏸                                  -- compactación manual
+Session.id / Session.usage -> { context_tokens, cost_usd, turns }
+```
+
+**El turno** (`send`) es el corazón del contrato:
+
+1. Anexa el mensaje del usuario (entrada `message` en el transcript).
+2. Ensambla el request canónico (§7) y pasa por hooks `request.pre`.
+3. Llama al adaptador (`stream`); re-emite los deltas en el bus
+   (`agent:delta`) para quien pinte.
+4. Al `done`: persiste el mensaje (con `usage` y modelo), emite
+   `agent:message`.
+5. Si `stop_reason == "tool_calls"`: por cada tool call, **en orden** (la
+   ejecución paralela está pospuesta, [P12](pospuesto.md)): pipeline de
+   permisos (§5) → hooks `tool.pre` → handler → hooks `tool.post` →
+   `tool_result`. Después, vuelve al paso 2.
+6. Termina cuando el modelo para sin pedir tools, o al agotar
+   `max_turns` (configurable; protección contra loops).
+
+Errores del adaptador con `retryable = true`: reintento con backoff
+exponencial y límite configurable — la política vive aquí, nunca en el
+adaptador (providers.md §3.3).
+
+## 3. Tools
+
+```
+agent.tool{
+  name, description,
+  schema: tabla,                  -- JSON Schema de los args
+  handler: function(args, ctx) ⏸ -> string|Block[]|tabla,
+  permissions?: { default = "ask"|"allow"|"deny" },
+}
+```
+
+- El handler corre como task: puede suspender (fs, proc, http...) sin
+  bloquear nada. Errores lanzados → `tool_result` con `is_error = true`
+  (el modelo ve el error; el loop no se rompe).
+- `ctx = { session, cwd, progress(text), ask(question) ⏸ }`. `progress`
+  emite `agent:tool.progress` (la UI lo pinta en vivo); `ask` dispara el
+  flujo de §5.
+- Las tools básicas (read/write/edit de ficheros, bash, grep, glob...) las
+  trae la propia extensión, registradas con esta misma función — dogfooding.
+- MCP encaja aquí sin caso especial: la extensión `mcp` registra cada tool
+  remota con `agent.tool{...}` y su handler habla JSON-RPC por `nu.proc`.
+
+## 4. Hooks
+
+Dos mecanismos, deliberadamente separados:
+
+**Notificaciones** (fire-and-forget, bus del core `nu.events`, namespace
+`agent:`): `session.start`, `session.end`, `turn.start`, `turn.end`,
+`delta`, `message`, `tool.start`, `tool.progress`, `tool.end`, `compact`,
+`error`, `permission.asked`. Para pintar, loggear, observar.
+
+**Middleware** (pueden modificar o vetar; registro propio de la extensión,
+no el bus):
+
+```
+agent.hook(point, fn, opts?: {priority}) -> Hook ; Hook:remove()
+
+fn(payload, ctx) ->
+    nil                  -- no opina; sigue la cadena
+  | payload_modificado   -- sustituye y sigue
+  | { deny = "razón" }   -- corta la cadena; la operación se rechaza
+```
+
+Puntos v1: `request.pre` (mutar el request canónico: inyectar contexto,
+recortar), `tool.pre` (vetar/reescribir args), `tool.post` (reescribir
+resultado), `permission` (§5), `compact` (§8). Orden: `priority`
+ascendente, luego orden de registro. **El primer deny gana** y se reporta
+al modelo como rechazo (en `tool.pre`) o al llamante como error.
+
+## 5. Permisos
+
+```
+Permissions = {
+  mode  = "ask" | "auto",        -- por defecto "ask"
+  allow = { "edit", "bash:git *", ... },   -- patrones tool[:argumento]
+  deny  = { "bash:rm *", ... },
+}
+```
+
+Pipeline para cada tool call: `deny` (corta) → `allow` (concede) → hooks
+`permission` (pueden conceder/denegar programáticamente) → si nadie decide
+y `mode = "ask"`: se emite `agent:permission.asked` y el turno espera la
+respuesta (`agent.permission.respond(id, ...)` — la extensión `chat` pinta
+el diálogo). **En headless, sin respuesta no hay concesión: default deny.**
+
+Esto es la capa *blanda* (frente al modelo). La capa *dura* para código no
+confiable son los workers con `caps` ([api.md](api.md) §13): un subagente en
+worker sin `proc` no ejecuta procesos, opine quien opine.
+
+## 6. Skills
+
+Compatibles con el formato del ecosistema existente: directorio con
+`SKILL.md` (frontmatter YAML: `name`, `description` — vía `nu.yaml`).
+
+- Descubrimiento: `config.dir()/skills/` (usuario) + `<repo>/.nu/skills/`
+  (proyecto). `agent.skills.list() -> SkillInfo[]`.
+- Inyección en dos fases (economía de contexto): el system prompt lleva solo
+  el **índice** (nombre + descripción); el contenido completo se carga bajo
+  demanda mediante la tool interna `skill` que el modelo invoca. 
+- Por sesión/subagente: `opts.skills = { "review", "deploy" }` limita el
+  índice visible.
+
+## 7. System prompt
+
+Ensamblado por piezas ordenadas: base de la extensión → índice de skills →
+fichero de contexto del proyecto (`nu.md` en la raíz del repo, si existe) →
+`opts.system`. Los hooks `request.pre` pueden retocar el resultado. Cada
+pieza es sustituible por configuración — no hay prompt mágico inaccesible.
+
+## 8. Compactación
+
+- Disparo automático: cuando `usage.input_tokens` supera el umbral
+  configurable (defecto: 80% del `context` del modelo, dato del
+  providers.toml). Fuente de verdad: el `usage` del proveedor, nunca conteo
+  local (decisión cerrada en providers.md §5).
+- Estrategia por defecto: resumen del prefijo antiguo vía LLM (modelo
+  configurable, por defecto el de la sesión) → entrada `compact` en el
+  transcript (sesiones.md §3) → el replay para el modelo arranca del
+  resumen.
+- Personalizable por completo con el hook `compact`: recibe la conversación
+  y devuelve el mensaje-resumen (o deny para impedir la compactación).
+- `nu.text.approx_tokens()` disponible para estimaciones previas ("¿me cabe
+  este fichero?") antes de tener `usage`.
+
+## 9. Subagentes
+
+```
+Session:spawn(opts) -> Sub
+  opts: los de agent.session + { worker? = false, caps?: string[] }
+
+Sub:run(prompt) ⏸ -> Message   -- turno(s) completos del subagente
+Sub:cancel()
+```
+
+- Transcript propio como sesión hija (`meta.parent`, sesiones.md §6).
+- Por defecto corre como task en el estado principal (comparte las tools
+  registradas; barato).
+- `worker = true`: el **loop** corre en un worker (paralelismo real, `caps`
+  recortables), pero los **handlers de tools se ejecutan en el estado
+  principal vía proxy de mensajes** — los args y resultados son JSON-ables
+  por contrato, así que cruzan la frontera sin fricción. Un solo registro de
+  tools, sin duplicar handlers en el worker; las tools de un subagente
+  paralelo se intercalan como tasks en el principal.
+- Permisos: el subagente hereda los del padre **recortados** por sus
+  `opts.permissions` (nunca ampliados); `caps` aplica la versión dura.
+
+## 10. Configuración
+
+`config.dir()/agent.toml`: modelo por defecto, `max_turns`, umbral y modelo
+de compactación, política de retención de sesiones ([P10](pospuesto.md)),
+permisos globales. La precedencia es la estándar: defaults < global <
+proyecto (`<repo>/.nu/agent.toml`) < sesión (`opts`).
+
+## 11. Relación con lo pospuesto
+
+Tool calls paralelas ([P12](pospuesto.md)), workers anidados para subagentes
+([P11](pospuesto.md)) y retención de sesiones ([P10](pospuesto.md)) tienen
+entrada en el registro de pospuestos con su disparador.
