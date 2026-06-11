@@ -60,7 +60,10 @@ Tres patas (ADR-004):
 2. **Workers explícitos.** Una primitiva tipo `worker.spawn()` levanta otro
    estado Lua en otra goroutine, sin memoria compartida, comunicado por paso
    de mensajes. Paralelismo real, opt-in, para la extensión que necesite
-   masticar datos.
+   masticar datos. Los workers **no tienen acceso al módulo `ui`**: la
+   pantalla solo se pinta desde el estado principal (como los Web Workers
+   respecto al DOM). Los mensajes son copias — un worker devuelve resultados
+   digeridos, no datos crudos masivos.
 3. **Primitivas Go paralelas por dentro.** `core.search()` y compañía saturan
    todos los cores sin que Lua se entere. El rendimiento bruto nunca depende
    de la velocidad del intérprete.
@@ -69,8 +72,15 @@ Restricción técnica que motiva el diseño: gopher-lua **no es thread-safe**; u
 estado Lua solo puede tocarse desde una goroutine. El patrón es el de
 Node/libuv/`vim.uv`, ya validado.
 
-Pendiente (ADR-008): si el aislamiento por defecto es por tarea (workers
-efímeros) o por plugin (cada extensión como actor permanente).
+El aislamiento es **por tarea, no por plugin** (ADR-008): todos los plugins
+conviven en el estado principal — lo que permite que se `require` entre sí y
+compongan, como en Neovim — y la robustez se obtiene con dos guardas del core:
+
+- **Watchdog**: cada handler tiene un presupuesto de tiempo en el estado
+  principal; si lo excede, se aborta vía cancelación por contexto y el plugin
+  se marca como sospechoso.
+- **`pcall` en cada frontera de hook**: un error en un plugin nunca tumba el
+  event loop ni a los demás plugins.
 
 ## Capas de extensión
 
@@ -106,9 +116,9 @@ recompilación.
 ## Cuestiones abiertas
 
 1. **API de UI** (ADR-007): buffers vs widgets vs celdas. Condiciona qué
-   extensiones serán fáciles o imposibles de escribir.
-2. **Granularidad de aislamiento** (ADR-008): workers por tarea vs actores por
-   plugin; afecta a composabilidad entre plugins y a la contención de fallos.
-3. **Watchdog del estado principal**: política de interrupción de handlers Lua
-   que excedan un presupuesto de tiempo (gopher-lua permite cancelación por
-   contexto).
+   extensiones serán fáciles o imposibles de escribir. Dato a favor de
+   diseños simples tras ADR-008: solo el estado principal pinta, así que el
+   modelo de UI no necesita ser thread-safe ni multiplexar autores
+   concurrentes.
+2. **Política fina del watchdog**: valor del presupuesto por handler, si es
+   configurable por plugin, y el flujo de deshabilitación/aviso al usuario.
