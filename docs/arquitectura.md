@@ -32,7 +32,7 @@ puro no puede hacer TLS ni pintar un terminal, así que el kernel se lo da.
 | **scheduler** | Event loop, timers, puente coroutines-Lua ↔ goroutines, workers |
 | **io** | Filesystem, spawn de procesos con streams, entorno |
 | **net** | Cliente HTTP/HTTPS con respuesta en streaming (SSE), TCP/websocket |
-| **ui** | Primitivas de terminal, eventos de input, keymaps |
+| **ui** | Celdas + regiones + compositor (z-order, blit de bloques, damage tracking, coalescing ~30 ms), eventos de input, keymaps |
 | **text** | UTF-8/graphemes, regex, render de markdown, syntax highlighting |
 | **data** | Codecs JSON y TOML |
 | **loader** | `require`, rutas de plugins, extensiones embebidas |
@@ -43,9 +43,13 @@ Notas:
   del kernel mínimo: en Lua interpretado serían dolorosamente lentos. Es la
   misma concesión que hace Neovim embebiendo tree-sitter (ADR-004, regla
   "Lua decide, Go ejecuta").
-- La API de **ui** (¿buffers/ventanas estilo Neovim, árbol de widgets, o
-  superficie de celdas?) es la primitiva más difícil de diseñar y está
-  deliberadamente sin decidir (ADR-007).
+- La API de **ui** es deliberadamente de bajo nivel (ADR-007): el core expone
+  celdas/regiones y un compositor; el **toolkit de widgets es una extensión
+  Lua oficial** (retenida por dentro: árbol + nodos sucios) que aporta slots,
+  focus y composición entre plugins, y se versiona aparte de la API sagrada.
+  Lua coloca bloques pre-rendidos por `text`, no celdas sueltas, en los
+  caminos calientes. Es el patrón de ADR-003 aplicado a la UI: el core no
+  sabe lo que es un widget.
 
 ## Modelo de concurrencia: el modelo del navegador
 
@@ -115,10 +119,13 @@ recompilación.
 
 ## Cuestiones abiertas
 
-1. **API de UI** (ADR-007): buffers vs widgets vs celdas. Condiciona qué
-   extensiones serán fáciles o imposibles de escribir. Dato a favor de
-   diseños simples tras ADR-008: solo el estado principal pinta, así que el
-   modelo de UI no necesita ser thread-safe ni multiplexar autores
-   concurrentes.
+1. **Spike de validación de ADR-007**: celdas/regiones + compositor + toolkit
+   Lua mínimo, torturado con (a) streaming de tokens con markdown a pantalla
+   completa y (b) fuzzy picker sobre ~100k ficheros. Criterio de veto
+   pre-comprometido: si no es fluido, el toolkit se implementa en Go
+   conservando la misma API pública.
 2. **Política fina del watchdog**: valor del presupuesto por handler, si es
    configurable por plugin, y el flujo de deshabilitación/aviso al usuario.
+3. **Diseño de la API pública del toolkit oficial** (vocabulario de widgets,
+   layout, slots, focus): no es API sagrada del core, pero el ecosistema
+   heredará su calidad.
