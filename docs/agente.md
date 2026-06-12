@@ -25,12 +25,14 @@ tercero. Consecuencias buscadas:
 ```
 agent.session(opts) -> Session
   opts: { model: "proveedor/modelo", system?, cwd?, tools?: string[],
-          skills?: string[], permissions?: Permissions, parent? }
+          skills?: string[], permissions?: Permissions, parent?,
+          resume?: string }                          -- id: reabre en vez de crear
 
 Session:send(content: string|Block[]) ⏸ -> Message  -- ejecuta el turno completo
 Session:cancel()                                     -- cancela el turno en curso
 Session:fork(at?: integer) -> Session                -- sesiones.md §5
 Session:compact() ⏸                                  -- compactación manual
+Session:set_model(model: string)                     -- cambio en caliente (G19)
 Session.id / Session.usage -> { context_tokens, cost_usd, turns }
 ```
 
@@ -56,6 +58,19 @@ mientras trabaja ("usa pnpm, no npm"). Todos los `send` consumidos por un
 mismo turno resuelven con el mensaje final de ese turno. `Session:cancel()`
 cancela el turno, **no** vacía la cola (vaciarla es acción aparte:
 `Session:clear_queue()`).
+
+**Reanudación (G18)**: `opts.resume = <id>` reabre una sesión existente en
+vez de crearla: replay del transcript ([sesiones.md](sesiones.md) §3) y
+adquisición del lock de escritor (§6, con su flujo de conflicto — fork,
+solo lectura o forzar). El resto de `opts` aplica igual que en una sesión
+nueva: son estado efímero del proceso, no se persisten ni reescriben
+historia. El id sale del listado de sesiones (sesiones.md §7).
+
+**Cambio de modelo (G19)**: `Session:set_model("proveedor/modelo")` valida
+contra el registro de providers, escribe una entrada `event` en el
+transcript ([sesiones.md](sesiones.md) §3) y aplica desde el siguiente
+request; con un turno en vuelo, al ensamblar la siguiente iteración (como
+la cola de G4), nunca a mitad de un stream.
 
 Errores del adaptador con `retryable = true`: reintento con backoff
 exponencial y límite configurable — la política vive aquí, nunca en el

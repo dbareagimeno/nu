@@ -158,6 +158,8 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
    (ADR-003, [agente.md](agente.md) §3, capa 2) pero sin documento propio —
    formato de configuración (qué servidores, cómo se declaran), ciclo de
    vida de los procesos, mapeo de tools y de su confianza.
-5. **Superficie CLI**: `nu --continue`, `nu -e`, `--auto-permissions`
-   aparecen dispersos por los contratos sin especificación propia (flags,
-   subcomandos, comportamiento headless, códigos de salida).
+5. **Superficie CLI**: `nu -e` y `--auto-permissions` aparecen en los
+   contratos sin especificación propia (flags, subcomandos, comportamiento
+   headless, códigos de salida). El azúcar de reanudación (un `--continue`
+   sobre `agent.session{ resume }`) se decidirá aquí: G18 lo dejó
+   deliberadamente fuera de los contratos.

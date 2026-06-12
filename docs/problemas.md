@@ -9,11 +9,11 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 17 resueltas · 5 abiertas (G17-G19, G21-G22)**. Las dieciséis
-de las rondas 3-4 se cerraron el 2026-06-12; ese mismo día, una revisión
-de coherencia de la documentación completa encontró seis grietas nuevas
+**Estado: 19 resueltas · 3 abiertas (G17, G21, G22)**. Las dieciséis de
+las rondas 3-4 se cerraron el 2026-06-12; ese mismo día, una revisión de
+coherencia de la documentación completa encontró seis grietas nuevas
 (G17-G22) — sobre todo contratos que presuponen API que no existe —
-añadidas aquí con el mismo método. G20 se resolvió el mismo día.
+añadidas aquí con el mismo método. G18-G20 se resolvieron el mismo día.
 
 ---
 
@@ -399,7 +399,17 @@ de sesiones.md §6 (menos superficie general, más opinionada); (c) rebajar
 G5 a best-effort (asumir la carrera como improbable) — probablemente
 descartable: "casi bien es peor que no".
 
-## G18 · Reanudar una sesión no tiene API — `agente.md` §2 — **ABIERTO**
+## G18 · Reanudar una sesión no tiene API — `agente.md` §2 — **RESUELTO**
+
+**Resolución** (aplicada en [agente.md](agente.md) §2 y
+[chat.md](chat.md) §4/§8): `agent.session{ resume = id }` — una sola
+función, dos modos. Reabre con replay del transcript (sesiones.md §3) y
+adquisición del lock de escritor (§6); el resto de `opts` es estado
+efímero, no se persiste. `agent.resume()` aparte se descartó (firma
+duplicada sin ganancia); reanudar-como-fork se descartó (bifurca el
+historial en cada reanudación). El azúcar CLI (`nu --continue`) queda
+deliberadamente fuera de los contratos: pertenece a la superficie CLI
+(cuestión abierta 5 de [arquitectura.md](arquitectura.md)).
 
 **Problema.** `agent.session(opts)` solo crea sesiones nuevas (sus `opts`
 no admiten id). Pero [chat.md](chat.md) §8 (`nu --continue`, picker de
@@ -415,7 +425,16 @@ dos modos); (c) reanudar = fork del último punto (unifica mecánica con §5
 pero bifurca el historial en cada reanudación — probablemente
 descartable).
 
-## G19 · Cambio de modelo a mitad de sesión sin API — `agente.md` §2 / `chat.md` §4 — **ABIERTO**
+## G19 · Cambio de modelo a mitad de sesión sin API — `agente.md` §2 / `chat.md` §4 — **RESUELTO**
+
+**Resolución** (aplicada en [agente.md](agente.md) §2 y
+[chat.md](chat.md) §4): `Session:set_model("proveedor/modelo")` — valida
+contra el registro de providers, escribe la entrada `event` en el
+transcript (sesiones.md §3) y aplica desde el siguiente request; con un
+turno en vuelo, al ensamblar la siguiente iteración (como la cola de G4),
+nunca a mitad de un stream. `Session.model` mutable descartado (sin punto
+claro de validación ni de registro en el transcript); fork-por-modelo
+descartado (fragmenta sesiones para una operación cotidiana).
 
 **Problema.** `/model` existe en `chat` (picker desde `providers.list()`)
 y [sesiones.md](sesiones.md) §3 pone "cambio de modelo a mitad de sesión"

@@ -74,8 +74,9 @@ chat.command{
 ```
 
 Builtins (registrados con esta misma función — dogfooding):
-`/model` (picker desde `providers.list()`), `/sessions` (picker desde el
-listado de [sesiones.md](sesiones.md) §7, reanuda), `/fork`, `/compact`,
+`/model` (picker desde `providers.list()`, aplica `Session:set_model`),
+`/sessions` (picker desde el listado de [sesiones.md](sesiones.md) §7,
+reanuda vía `agent.session{ resume = id }`), `/fork`, `/compact`,
 `/permissions` (ver y editar la política de la sesión), `/help`, `/quit`.
 
 ## 5. Diálogo de permisos
@@ -122,7 +123,9 @@ chat.statusline.add{ id, side: "left"|"right", priority, render: fn(ctx) -> Span
   ([api.md](api.md) §9, G20); en headless ni se carga (la
   separación motor/UI de [agente.md](agente.md) §1 es la que lo permite).
 - Crea la sesión inicial (`agent.session`) con la config resuelta
-  (defaults < global < proyecto), o reanuda con `nu --continue` / picker.
+  (defaults < global < proyecto), o reanuda una existente
+  (`agent.session{ resume = id }`, alimentado por el picker de
+  `/sessions`).
 - No toca `nu.fs` ni `nu.proc` para lógica de agente: si `chat` necesita
   algo del dominio del agente que la API pública no da, la API pública del
   agente está incompleta — misma regla de siempre.
