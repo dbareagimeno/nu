@@ -75,7 +75,7 @@ chat.command{
 
 Builtins (registrados con esta misma función — dogfooding):
 `/model` (picker desde `providers.list()`), `/sessions` (picker desde el
-listado de [sesiones.md](sesiones.md) §6, reanuda), `/fork`, `/compact`,
+listado de [sesiones.md](sesiones.md) §7, reanuda), `/fork`, `/compact`,
 `/permissions` (ver y editar la política de la sesión), `/help`, `/quit`.
 
 ## 5. Diálogo de permisos

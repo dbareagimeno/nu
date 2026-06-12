@@ -202,7 +202,7 @@ Sub:run(prompt) ⏸ -> Message   -- turno(s) completos del subagente
 Sub:cancel()
 ```
 
-- Transcript propio como sesión hija (`meta.parent`, sesiones.md §6).
+- Transcript propio como sesión hija (`meta.parent`, sesiones.md §7).
 - Por defecto corre como task en el estado principal (comparte las tools
   registradas; barato).
 - `worker = true`: el **loop** corre en un worker (paralelismo real, `caps`

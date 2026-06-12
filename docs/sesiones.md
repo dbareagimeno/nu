@@ -87,7 +87,28 @@ y entrada de origen. El replay del fork lee del padre hasta ese punto y
 sigue en el hijo. El historial original queda intacto; el árbol de
 variantes es navegable leyendo los `meta`.
 
-## 6. Listado y reanudación
+## 6. Concurrencia: un escritor por sesión (G5)
+
+Dos procesos haciendo append al mismo JSONL = corrupción intercalada. Regla:
+**una sesión tiene como máximo un escritor**, garantizado por lockfile.
+
+- `<sesión>.jsonl.lock` junto al transcript, contenido
+  `{ pid, hostname, started }`. Se adquiere al abrir para escribir
+  (crear/reanudar), se libera al salir. **Leer nunca requiere lock** (un
+  append-only es seguro de leer a medias).
+- **Lock huérfano** (crash): si el `pid` no está vivo en esta máquina, es
+  basura — se limpia en silencio. Si el lock es de otro `hostname`
+  (directorio sincronizado), no se puede verificar: se pregunta, nunca se
+  asume.
+- **Conflicto real** (pid vivo): el segundo proceso recibe aviso claro con
+  tres salidas — **fork** (por defecto: continúa en rama nueva vía
+  `meta.parent`, §5, sin pisar a nadie), **solo lectura**, o **forzar**
+  (robar el lock, explícito y con confirmación).
+- Se eligió lockfile sobre `flock` del SO por semántica predecible en
+  Windows y filesystems de red; el auto-fork silencioso se descartó por
+  bifurcar el historial sin conocimiento del usuario.
+
+## 7. Listado y reanudación
 
 - Listar sesiones de un proyecto = listar `sessions/<proyecto>/` y leer la
   primera línea (`meta`) y la última relevante (título/timestamp) de cada
@@ -97,7 +118,7 @@ variantes es navegable leyendo los `meta`.
   `meta.parent` apuntando a la entrada del padre que los lanzó — misma
   mecánica que los forks, auditable con las mismas herramientas.
 
-## 7. Lo que queda fuera (v1)
+## 8. Lo que queda fuera (v1)
 
 - Cifrado en reposo y redacción de secretos en tool results: el transcript
   es fiel; protegerlo es trabajo del sistema de ficheros (`0600`).

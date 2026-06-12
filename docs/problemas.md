@@ -88,7 +88,15 @@ distinta.
 motor encola mensajes y los anexa al siguiente turno (lo que hacen los
 harnesses maduros); (c) configurable por sesión.
 
-## G5 · Doble reanudación de la misma sesión — `sesiones.md` — **Pendiente**
+## G5 · Doble reanudación de la misma sesión — `sesiones.md` — **RESUELTO**
+
+**Resolución** (aplicada en [sesiones.md](sesiones.md) §6): un escritor por
+sesión vía lockfile `<sesión>.jsonl.lock` con `{pid, hostname, started}`;
+lectores sin lock; locks huérfanos (pid muerto local) se limpian en
+silencio; conflicto real → aviso con fork por defecto / solo lectura /
+forzar con confirmación. `flock` descartado (semántica impredecible en
+Windows/red); auto-fork silencioso descartado (bifurca sin conocimiento
+del usuario).
 
 **Problema.** Dos procesos nu pueden abrir el mismo JSONL y hacer appends
 intercalados: corrupción silenciosa. No hay lock.
