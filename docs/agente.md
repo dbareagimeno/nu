@@ -49,6 +49,14 @@ Session.id / Session.usage -> { context_tokens, cost_usd, turns }
 6. Termina cuando el modelo para sin pedir tools, o al agotar
    `max_turns` (configurable; protección contra loops).
 
+**Reentrada (G4)**: `send` con un turno en vuelo **encola** el mensaje; el
+loop lo inyecta al ensamblar el siguiente request (entre iteraciones,
+nunca a mitad de un stream). El usuario puede así corregir al agente
+mientras trabaja ("usa pnpm, no npm"). Todos los `send` consumidos por un
+mismo turno resuelven con el mensaje final de ese turno. `Session:cancel()`
+cancela el turno, **no** vacía la cola (vaciarla es acción aparte:
+`Session:clear_queue()`).
+
 Errores del adaptador con `retryable = true`: reintento con backoff
 exponencial y límite configurable — la política vive aquí, nunca en el
 adaptador (providers.md §3.3).

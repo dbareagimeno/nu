@@ -70,7 +70,13 @@ futuro. Contrato congelable afectado.
 vez); (b) además, namespacing de eventos por sesión
 (`agent:<id>:delta`) para suscripciones selectivas baratas.
 
-## G4 · Reentrada de `Session:send` — `agente.md` §2 — **Pendiente**
+## G4 · Reentrada de `Session:send` — `agente.md` §2 — **RESUELTO**
+
+**Resolución** (aplicada en [agente.md](agente.md) §2): `send` con turno en
+vuelo encola; el loop inyecta lo encolado al ensamblar el siguiente request
+(nunca a mitad de stream). `cancel()` no vacía la cola
+(`clear_queue()` aparte). Descartado `EBUSY` (cada UI reimplementaría la
+cola de forma sutilmente distinta — justo lo que se quería evitar).
 
 **Problema.** Llamar `send` con un turno en vuelo no está definido:
 ¿error, cola, o cancelar-y-reemplazar? Cada UI improvisaría una semántica
