@@ -47,6 +47,13 @@ masivos; el principal renderiza.
   un hueco del core — repórtalo antes de reimplementarla lenta.
 - Para esperar un valor que otro código producirá (diálogo, picker,
   respuesta), usa `nu.task.future()` — jamás polling con `task.sleep`.
+- **Todo recurso que crees, regístralo en `nu.task.cleanup`** (matar el
+  proceso, destruir la región, desapilar el input handler). Los cleanups
+  corren siempre — éxito, error o cancelación; es la única forma de no
+  dejar basura cuando el usuario pulsa `esc` a mitad de tu código.
+- Procesos longevos (un servidor MCP, un watcher): arráncalos perezosamente
+  (primer uso o `core:ready`), nunca al cargar el módulo (§1), y mátalos en
+  `cleanup` y en `core:shutdown`.
 
 ## 4. Errores: lanza estructurado, asume pcall en las fronteras
 
@@ -83,6 +90,10 @@ error({ code = "EINVAL", message = "filtro vacío", detail = { arg = "filter" } 
   que hardcodea `#ff0000` rompe todos los themes menos el del autor.
 - Input modal: tu handler devuelve `true` (consume) mientras esté activo, y
   se desapila en cuanto terminas. No dejes handlers huérfanos en la pila.
+- Contenido en streaming: re-renderiza el mensaje en curso **una vez por
+  tick de pintado** (el repintado ya va coalescido a ~30 ms), no por cada
+  delta — el render en Go es barato; lo que mata es hacerlo mil veces por
+  segundo.
 
 ## 7. Convivencia en el ecosistema
 

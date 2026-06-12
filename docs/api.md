@@ -38,8 +38,15 @@ congelaría el event loop.
 - Los **handlers síncronos** (input, eventos) corren en el loop y no pueden
   llamar funciones ⏸; para hacer IO, lanzan una task con `nu.task.spawn`.
 - **Watchdog**: cada *slice* de ejecución Lua continua (entre dos puntos de
-  suspensión) tiene un presupuesto, por defecto 100 ms. Excederlo aborta el
-  slice con error `EBUDGET` y emite `core:plugin.misbehaved`.
+  suspensión) tiene un presupuesto, por defecto 100 ms (configurable en
+  `nu.toml`). Excederlo aborta la task y emite `core:plugin.misbehaved`.
+- **Cancelación y abortos NO son capturables.** `Task:cancel()` y el
+  watchdog abortan la task en su siguiente punto de suspensión (o slice)
+  **desenrollando la pila sin pasar por `pcall`** — si fueran errores
+  normales, cualquier `pcall` del ecosistema los capturaría y el programa
+  seguiría como si nada. Para liberar recursos pase lo que pase, registra
+  `nu.task.cleanup(fn)`. `ECANCELED` queda reservado para *observar* la
+  cancelación (p. ej. en el resultado de `Task:await`), no para capturarla.
 
 ### 1.4 Errores
 
@@ -83,7 +90,8 @@ Region, Proc...) son userdata opacos con métodos.
 | `nu.task.every(ms, fn) -> Timer` | Timer periódico (handler síncrono). `Timer:stop()`. |
 | `nu.task.defer(fn)` | Ejecuta `fn` en el siguiente tick del loop. |
 | `nu.task.future() -> Future` | Rendez-vous de un solo uso: `Future:set(v)` (síncrono, una sola vez; llamadas posteriores lanzan `EINVAL`) y `Future:await() -> v` ⏸ (varios pueden esperar; si ya está resuelto, retorna inmediato). Es la pieza para "una task espera un valor que otro código producirá" (diálogos, pickers, proxies) sin polling. |
-| `Task:cancel()` | Cancelación cooperativa: la siguiente suspensión de la task lanza `ECANCELED`. |
+| `Task:cancel()` | Cancelación cooperativa: aborta la task en su siguiente punto de suspensión (no capturable, §1.3); corren sus `cleanup`s. |
+| `nu.task.cleanup(fn)` [W] | Registra un liberador (síncrono) en la pila LIFO de la task actual; corren todos al terminar — éxito, error o aborto. El `defer` de esta casa: procesos, regiones, handlers de input. |
 | `Task:await() -> any` ⏸ | Espera el resultado de otra task. |
 
 ---
@@ -132,6 +140,10 @@ Eventos que emite el core: `core:ready`, `core:shutdown`,
 | `Proc:read_line(which: "stdout"\|"stderr") -> string?` ⏸ | `nil` en EOF. |
 | `Proc:read(which, n?) -> string?` ⏸ | Lectura cruda. |
 | `Proc:wait() -> {code}` ⏸ / `Proc:kill(signal?)` | `signal` por defecto TERM. |
+
+Vida del proceso: la regla es matarlo explícitamente vía `nu.task.cleanup`
+en quien lo crea; como red de seguridad, un `Proc` sin referencias acaba
+matado por el GC (no determinista — no confíes en ello).
 
 ---
 
@@ -205,7 +217,7 @@ core.
 | Firma | Semántica |
 |---|---|
 | `nu.ui.on_input(fn) -> InputHandle` | Apila un handler síncrono `fn(ev) -> boolean` (true = consumido). `ev`: `{type: "key"\|"mouse"\|"paste", key?, mods?, x?, y?, text?}`. `InputHandle:pop()`. |
-| `nu.ui.keymap(seq: string, fn, opts?) -> Keymap` | Azúcar sobre la pila: `seq` en notación `"ctrl+k"`, `"alt+enter"`, secuencias `"g g"`. `Keymap:unmap()`. Resolución de secuencias con timeout en el core. |
+| `nu.ui.keymap(seq: string, fn, opts?) -> Keymap` | Azúcar sobre la pila: `seq` en notación `"ctrl+k"`, `"alt+enter"`, secuencias `"g g"`. `Keymap:unmap()`. Resolución de secuencias con timeout en el core. Conflictos: la pila manda — el registro más reciente activo gana (y el `init.lua` del usuario se carga el último, §14). |
 
 ---
 
@@ -251,10 +263,10 @@ Las operaciones cuadráticas-en-pantalla viven aquí, en Go (ADR-004/007).
 | Firma | Semántica |
 |---|---|
 | `nu.worker.spawn(module: string, opts?) -> Worker` | Levanta un estado Lua nuevo en su goroutine, cargando `module` (resoluble por el loader). Las rutas de `require` del loader (módulos Lua de plugins) están disponibles dentro del worker; lo que no existe es la API `nu.plugin` (ciclo de vida). Sin `nu.ui`, `nu.events` (bus principal) ni workers anidados. `opts.caps?: string[]` restringe la API del worker a los módulos enumerados (p. ej. `{"fs", "text"}`): los módulos no concedidos **no existen** dentro del estado — sandboxing por capacidades para subagentes y código no confiable. Sin `caps`, el worker recibe toda la API [W]. |
-| `Worker:send(msg)` / `Worker:recv() -> msg` ⏸ | Mensajes = valores JSON-ables, **copiados** (las tablas no cruzan estados). Tampoco cruzan closures, userdata ni Blocks: un worker manda datos digeridos y el estado principal renderiza. |
+| `Worker:send(msg)` ⏸ / `Worker:recv() -> msg` ⏸ | Mensajes = valores JSON-ables, **copiados** (las tablas no cruzan estados). Tampoco cruzan closures, userdata ni Blocks: un worker manda datos digeridos y el estado principal renderiza. Las colas son **acotadas**: `send` suspende si está llena (backpressure, coherente con §8) — desde un handler síncrono, `task.spawn` como siempre. |
 | `Worker:on_message(fn) -> Sub` | Alternativa por callback en el estado principal. |
 | `Worker:terminate()` | Inmediato y seguro (estados aislados). |
-| *(dentro del worker)* `nu.worker.parent.send(msg)` / `...recv() -> msg` ⏸ | Canal con el estado principal. |
+| *(dentro del worker)* `nu.worker.parent.send(msg)` ⏸ / `...recv() -> msg` ⏸ | Canal con el estado principal; mismas colas acotadas. |
 
 ---
 
@@ -263,9 +275,19 @@ Las operaciones cuadráticas-en-pantalla viven aquí, en Go (ADR-004/007).
 Un plugin es un directorio con `plugin.toml` (`name`, `version`,
 `requires?: string[]`) e `init.lua`, que se ejecuta al cargar. El directorio
 `lua/` del plugin se añade a las rutas de `require` (así los plugins se
-requieren entre sí: composabilidad de ADR-008). Orden de carga: topológico
-por `requires`. Las extensiones oficiales embebidas (`go:embed`) se cargan
-primero y son sustituibles por nombre desde el directorio de usuario.
+requieren entre sí: composabilidad de ADR-008). Las extensiones oficiales
+embebidas (`go:embed`) se cargan primero y son sustituibles por nombre
+desde el directorio de usuario.
+
+**Configuración del runtime**: `config.dir()/nu.toml` gobierna al propio
+core — `plugins.disabled = [...]`, rutas extra de plugins, presupuesto del
+watchdog.
+
+**Orden de arranque canónico**: core → plugins (topológico por `requires`,
+respetando `disabled`) → `init.lua` del usuario → evento `core:ready`. El
+init del usuario va **último** a propósito: como en la pila de input el
+registro más reciente gana, el usuario tiene la última palabra (keymaps,
+theme, overrides) por construcción, sin sistema de prioridades.
 
 | Firma | Semántica |
 |---|---|

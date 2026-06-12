@@ -98,7 +98,8 @@ recibir el chunk ya parseado, pedir el Block, colocarlo.
    (muchos handlers lentos pero bajo presupuesto) — ADR-008.
 2. **La cancelación es cooperativa.** `Task:cancel()` solo surte efecto en el
    siguiente punto de suspensión. Un bucle de CPU puro en Lua no es
-   cancelable: solo el watchdog lo aborta.
+   cancelable: solo el watchdog lo aborta. El aborto no es capturable con
+   `pcall`; los recursos se liberan con `nu.task.cleanup` (api.md §1.3).
 3. **La frontera de workers solo cruza datos, nunca referencias.** Mensajes =
    valores JSON-ables copiados. No cruzan: closures, userdata ni **Blocks**.
    Consecuencia práctica: un worker no puede pre-renderizar UI; manda datos
