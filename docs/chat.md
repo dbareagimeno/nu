@@ -85,7 +85,9 @@ truncar lo peligroso: el comando entero, la ruta entera) y opciones:
 
 - **Permitir una vez** → `agent.permission.respond(id, "once")`.
 - **Permitir siempre** → añade el patrón a la política de la *sesión*; con
-  modificador, persiste a `agent.toml` del proyecto. El patrón propuesto se
+  modificador, persiste a la config **global del usuario** (`agent.toml`) —
+  nunca al `agent.toml` del proyecto: sus `allow` se ignoran por el modelo
+  de confianza ([agente.md](agente.md) §11). El patrón propuesto se
   muestra y es editable antes de aceptar (generalizar `bash:npm install` a
   `bash:npm *` es decisión del humano, no de la UI).
 - **Denegar** (con nota opcional, que llega al modelo como rechazo).

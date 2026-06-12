@@ -58,7 +58,12 @@ Las funciones del core **lanzan** (vía `error()`) tablas estructuradas:
 
 Códigos reservados v1: `ENOENT`, `EACCES`, `EIO`, `EHTTP`, `ENET`,
 `ETIMEOUT`, `ECANCELED`, `EBUDGET`, `EINVAL`, `ECLOSED`. Se capturan con
-`pcall`. Razón frente al estilo `res, err`: los errores estructurados
+`pcall` — con dos excepciones: `ECANCELED` y `EBUDGET` nombran los abortos
+no capturables de §1.3 (cancelación y watchdog, respectivamente) y solo
+sirven para *observarlos*, p. ej. en el resultado de `Task:await`. Las
+extensiones acuñan sus propios códigos con la misma forma, fuera de esta
+lista reservada (p. ej. `EPROVIDER`, [providers.md](providers.md) §3).
+Razón frente al estilo `res, err`: los errores estructurados
 componen mejor a través de capas de extensiones y nunca se ignoran en
 silencio.
 
@@ -100,7 +105,9 @@ Region, Proc...) son userdata opacos con métodos.
 
 El core no sabe lo que es un agente: este bus genérico es donde las
 extensiones definen sus propios hooks (p. ej. la extensión oficial de agente
-emite `agent:tool.pre`). Convención de nombres: `"namespace:evento"`. El
+emite `agent:tool.start`; sus hooks-middleware como `tool.pre` van por
+registro propio, no por el bus — [agente.md](agente.md) §4). Convención de
+nombres: `"namespace:evento"`. El
 namespace `core:` y `ui:` están reservados.
 
 | Firma | Semántica |

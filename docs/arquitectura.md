@@ -147,8 +147,17 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
    completa y (b) fuzzy picker sobre ~100k ficheros. Criterio de veto
    pre-comprometido: si no es fluido, el toolkit se implementa en Go
    conservando la misma API pública.
-2. **Política fina del watchdog**: valor del presupuesto por handler, si es
-   configurable por plugin, y el flujo de deshabilitación/aviso al usuario.
+2. **Política fina del watchdog**: el presupuesto base ya está fijado
+   (100 ms, configurable en `nu.toml` — api.md §1.3); queda lo fino: si es
+   configurable por plugin y el flujo de deshabilitación/aviso al usuario
+   tras `core:plugin.misbehaved`.
 3. **Diseño de la API pública del toolkit oficial** (vocabulario de widgets,
    layout, slots, focus): no es API sagrada del core, pero el ecosistema
    heredará su calidad.
+4. **Contrato de la extensión MCP**: citada en toda la documentación
+   (ADR-003, [agente.md](agente.md) §3, capa 2) pero sin documento propio —
+   formato de configuración (qué servidores, cómo se declaran), ciclo de
+   vida de los procesos, mapeo de tools y de su confianza.
+5. **Superficie CLI**: `nu --continue`, `nu -e`, `--auto-permissions`
+   aparecen dispersos por los contratos sin especificación propia (flags,
+   subcomandos, comportamiento headless, códigos de salida).

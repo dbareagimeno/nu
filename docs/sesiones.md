@@ -114,7 +114,8 @@ Dos procesos haciendo append al mismo JSONL = corrupción intercalada. Regla:
   primera línea (`meta`) y la última relevante (título/timestamp) de cada
   fichero. Sin índice global en v1: si algún día duele, se añade un índice
   *reconstruible* (caché, nunca fuente de verdad).
-- Subagentes (workers): su transcript es una sesión propia con
+- Subagentes (corran como task o como worker): su transcript es una sesión
+  propia con
   `meta.parent` apuntando a la entrada del padre que los lanzó — misma
   mecánica que los forks, auditable con las mismas herramientas.
 
