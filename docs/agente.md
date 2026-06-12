@@ -223,6 +223,10 @@ Sub:cancel()
     watchdog la señalará, y su sitio son las primitivas Go o un worker.
 - Permisos: el subagente hereda los del padre **recortados** por sus
   `opts.permissions` (nunca ampliados); `caps` aplica la versión dura.
+  Para no escribir listas de funciones a mano, la extensión ofrece
+  paquetes con nombre como **tablas Lua normales e inspeccionables**
+  (`agent.caps.FS_RO = { "fs.read", "fs.stat", ... }`): el vocabulario
+  vive aquí (iterable, sustituible), el mecanismo en el core (G6).
 
 ## 10. Configuración
 

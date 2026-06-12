@@ -125,8 +125,9 @@ recompilación. El contrato del adaptador y el formato del registro están en
 ## Distribución
 
 - Binario estático Go, `CGO_ENABLED=0`, cross-compile a todas las plataformas.
-- Extensiones oficiales embebidas con `go:embed`; sobreescribibles por el
-  usuario desde su directorio de config.
+- Extensiones oficiales embebidas con `go:embed` pero **inactivas por
+  defecto** (ADR-010): activación explícita (primer arranque o `nu.toml`),
+  sin red; sobreescribibles por el usuario desde su directorio de config.
 
 ## Persistencia
 

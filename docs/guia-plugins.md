@@ -51,6 +51,10 @@ masivos; el principal renderiza.
   proceso, destruir la región, desapilar el input handler). Los cleanups
   corren siempre — éxito, error o cancelación; es la única forma de no
   dejar basura cuando el usuario pulsa `esc` a mitad de tu código.
+- Si escribes listas de `caps` a mano, cuida las parejas prácticas:
+  `proc.spawn` sin `proc.kill` = procesos que no puedes matar. Los paquetes
+  oficiales (`agent.caps.*`) ya las curan juntas — imprímelos para ver
+  exactamente qué conceden.
 - Procesos longevos (un servidor MCP, un watcher): arráncalos perezosamente
   (primer uso o `core:ready`), nunca al cargar el módulo (§1), y mátalos en
   `cleanup` y en `core:shutdown`.

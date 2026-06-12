@@ -262,7 +262,7 @@ Las operaciones cuadráticas-en-pantalla viven aquí, en Go (ADR-004/007).
 
 | Firma | Semántica |
 |---|---|
-| `nu.worker.spawn(module: string, opts?) -> Worker` | Levanta un estado Lua nuevo en su goroutine, cargando `module` (resoluble por el loader). Las rutas de `require` del loader (módulos Lua de plugins) están disponibles dentro del worker; lo que no existe es la API `nu.plugin` (ciclo de vida). Sin `nu.ui`, `nu.events` (bus principal) ni workers anidados. `opts.caps?: string[]` restringe la API del worker a los módulos enumerados (p. ej. `{"fs", "text"}`): los módulos no concedidos **no existen** dentro del estado — sandboxing por capacidades para subagentes y código no confiable. Sin `caps`, el worker recibe toda la API [W]. |
+| `nu.worker.spawn(module: string, opts?) -> Worker` | Levanta un estado Lua nuevo en su goroutine, cargando `module` (resoluble por el loader). Las rutas de `require` del loader (módulos Lua de plugins) están disponibles dentro del worker; lo que no existe es la API `nu.plugin` (ciclo de vida). Sin `nu.ui`, `nu.events` (bus principal) ni workers anidados. `opts.caps?: string[]` restringe la API del worker a lo enumerado, con **dos granularidades** (G6): `"fs"` concede el módulo entero; `"fs.read"` concede una función concreta. Lo no concedido **no existe** dentro del estado — sandboxing por capacidades; las funciones añadidas a la API en el futuro nunca quedan concedidas por listas antiguas (deny-by-default para superficie nueva). Sin `caps`, el worker recibe toda la API [W]. Paquetes con nombre (p. ej. solo-lectura): tablas de la extensión del agente (`agent.caps.*`), no del core. |
 | `Worker:send(msg)` ⏸ / `Worker:recv() -> msg` ⏸ | Mensajes = valores JSON-ables, **copiados** (las tablas no cruzan estados). Tampoco cruzan closures, userdata ni Blocks: un worker manda datos digeridos y el estado principal renderiza. Las colas son **acotadas**: `send` suspende si está llena (backpressure, coherente con §8) — desde un handler síncrono, `task.spawn` como siempre. |
 | `Worker:on_message(fn) -> Sub` | Alternativa por callback en el estado principal. |
 | `Worker:terminate()` | Inmediato y seguro (estados aislados). |
@@ -280,11 +280,12 @@ embebidas (`go:embed`) se cargan primero y son sustituibles por nombre
 desde el directorio de usuario.
 
 **Configuración del runtime**: `config.dir()/nu.toml` gobierna al propio
-core — `plugins.disabled = [...]`, rutas extra de plugins, presupuesto del
-watchdog.
+core — la activación de plugins (las extensiones oficiales embebidas están
+**inactivas por defecto**, ADR-010; el primer arranque ofrece activar el
+conjunto oficial), rutas extra de plugins, presupuesto del watchdog.
 
-**Orden de arranque canónico**: core → plugins (topológico por `requires`,
-respetando `disabled`) → `init.lua` del usuario → evento `core:ready`. El
+**Orden de arranque canónico**: core → plugins activados (topológico por
+`requires`) → `init.lua` del usuario → evento `core:ready`. El
 init del usuario va **último** a propósito: como en la pila de input el
 registro más reciente gana, el usuario tiene la última palabra (keymaps,
 theme, overrides) por construcción, sin sistema de prioridades.
