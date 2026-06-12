@@ -130,8 +130,9 @@ Pipeline para cada tool call: `deny` (corta) → `allow` (concede) → hooks
 `permission` (pueden conceder/denegar programáticamente) → si nadie decide
 y `mode = "ask"`: se emite `agent:permission.asked` y el turno espera la
 respuesta (`agent.permission.respond(id, ...)` — la extensión `chat` pinta
-el diálogo). **En headless, sin respuesta no hay concesión: default deny**,
-con tres amortiguadores que eliminan casi toda la fricción:
+el diálogo). **En headless — no existe `nu.ui`; el test es `nu.has("ui")`
+([api.md](api.md) §9, G20) — sin respuesta no hay concesión: default
+deny**, con tres amortiguadores que eliminan casi toda la fricción:
 
 1. **Las tools de solo lectura se registran con `default = "allow"`**
    (read, grep, glob...): nunca piden permiso, ni en headless. El deny

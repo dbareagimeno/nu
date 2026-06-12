@@ -9,11 +9,11 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 16 resueltas · 6 abiertas (G17-G22)**. Las dieciséis de las
-rondas 3-4 se cerraron el 2026-06-12; ese mismo día, una revisión de
-coherencia de la documentación completa encontró seis grietas nuevas —
-sobre todo contratos que presuponen API que no existe — añadidas aquí con
-el mismo método.
+**Estado: 17 resueltas · 5 abiertas (G17-G19, G21-G22)**. Las dieciséis
+de las rondas 3-4 se cerraron el 2026-06-12; ese mismo día, una revisión
+de coherencia de la documentación completa encontró seis grietas nuevas
+(G17-G22) — sobre todo contratos que presuponen API que no existe —
+añadidas aquí con el mismo método. G20 se resolvió el mismo día.
 
 ---
 
@@ -430,7 +430,16 @@ request; (b) `Session.model` mutable (menos explícito, sin punto claro de
 validación); (c) sin cambio en caliente: `/model` hace fork con el modelo
 nuevo (consistente con append-only, pero fragmenta sesiones).
 
-## G20 · Detección de interactividad (TTY/headless) — `api.md` / `agente.md` §5 / `chat.md` §8 — **ABIERTO**
+## G20 · Detección de interactividad (TTY/headless) — `api.md` / `agente.md` §5 / `chat.md` §8 — **RESUELTO**
+
+**Resolución** (aplicada en [api.md](api.md) §2/§9, [agente.md](agente.md)
+§5 y [chat.md](chat.md) §8): en headless el módulo `nu.ui` directamente
+**no existe**; el test es `nu.has("ui")` — coherente con el
+deny-by-default de las `caps` de workers (la superficie no concedida no
+está) y sin primitiva nueva. `nu.ui.interactive()` se descartó (un módulo
+de UI presente pero "apagado" invita a llamadas que no pintan nada);
+exponer el modo de arranque en `nu.sys` se descartó como redundante con
+lo anterior.
 
 **Problema.** El default-deny de permisos en headless y "chat solo se
 activa en TTY interactivo" dependen de saber si hay terminal; ninguna

@@ -118,7 +118,8 @@ chat.statusline.add{ id, side: "left"|"right", priority, render: fn(ctx) -> Span
 
 ## 8. Arranque e interacción con el resto
 
-- `chat` solo se activa en TTY interactivo; en headless ni se carga (la
+- `chat` solo se activa en TTY interactivo — el test es `nu.has("ui")`
+  ([api.md](api.md) §9, G20); en headless ni se carga (la
   separación motor/UI de [agente.md](agente.md) §1 es la que lo permite).
 - Crea la sesión inicial (`agent.session`) con la config resuelta
   (defaults < global < proyecto), o reanuda con `nu --continue` / picker.

@@ -80,7 +80,7 @@ Region, Proc...) son userdata opacos con métodos.
 | Firma | Semántica |
 |---|---|
 | `nu.version -> {major, minor, patch, api: integer}` [W] | Versión del runtime y nivel de API. |
-| `nu.has(cap: string) -> boolean` [W] | Detección de capacidades (`"ui.images"`, `"net.tcp"`, ...) para extensiones portables. |
+| `nu.has(cap: string) -> boolean` [W] | Detección de capacidades (`"ui"`, `"ui.images"`, `"net.tcp"`, ...) para extensiones portables. Cubre también módulos enteros: en headless `nu.ui` no existe (§9). |
 
 ---
 
@@ -205,6 +205,11 @@ Reservado para futuro (no v1): `nu.net.tcp`.
 Solo estado principal (ADR-008). El compositor, el diffing y el pintado
 viven en Go; los cambios se coalescen y se pinta como mucho cada ~30 ms
 (ADR-007). No existe "flush" manual.
+
+**Headless (G20)**: sin TTY interactivo (`nu -e`, CI, salida redirigida),
+el módulo `nu.ui` directamente **no existe** — el mismo modelo que las
+`caps` de workers: la superficie no concedida no está. La detección es
+`nu.has("ui")`, nunca probar-y-capturar.
 
 ### 9.1 Superficie
 
