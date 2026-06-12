@@ -9,6 +9,7 @@ Contratos de las extensiones oficiales: [providers.md](providers.md),
 [sesiones.md](sesiones.md), [agente.md](agente.md), [chat.md](chat.md).
 Convenciones prácticas para autores: [guia-plugins.md](guia-plugins.md). Lo
 aplazado, con su disparador de reapertura: [pospuesto.md](pospuesto.md).
+Grietas pendientes de resolver antes de congelar: [problemas.md](problemas.md).
 
 ## Vista general
 
