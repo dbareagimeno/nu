@@ -9,11 +9,11 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 20 resueltas · 2 abiertas (G21, G22)**. Las dieciséis de
+**Estado: 21 resueltas · 1 abierta (G22)**. Las dieciséis de
 las rondas 3-4 se cerraron el 2026-06-12; ese mismo día, una revisión de
 coherencia de la documentación completa encontró seis grietas nuevas
 (G17-G22) — sobre todo contratos que presuponen API que no existe —
-añadidas aquí con el mismo método. G17-G20 se resolvieron el mismo día.
+añadidas aquí con el mismo método. G17-G21 se resolvieron el mismo día.
 
 ---
 
@@ -485,7 +485,25 @@ existe y el test es `nu.has("ui")` — coherente con caps de workers
 (deny-by-default de superficie); (c) exponer el modo de arranque en
 `nu.sys` (`nu -e` = headless por definición).
 
-## G21 · El primer arranque de ADR-010 no tiene dueño — ADR-010 / `api.md` §14 — **ABIERTO**
+## G21 · El primer arranque de ADR-010 no tiene dueño — ADR-010 / `api.md` §14 — **RESUELTO**
+
+**Resolución** (aplicada en [api.md](api.md) §14,
+[filosofia.md](filosofia.md) §2 y [arquitectura.md](arquitectura.md)):
+opción (a), reencuadrada con la formulación general del principio — **el
+kernel solo conoce sus propias capacidades** —, bajo la cual esto no es
+una excepción: las extensiones embebidas y su activación son capacidad
+del loader, así que la pregunta es del kernel. El runtime desnudo (TTY +
+ningún plugin activo) pinta una **pantalla fija de runtime**: versión y
+API, rutas, extensiones embebidas y acciones (activar el conjunto
+oficial, activar sueltas, salir) — render fijo, pre-Lua, sin lógica de
+producto; es la cara permanente de nu sin plugins, no un diálogo de
+primera vez. El apetito de "algo usable sin el harness" lo cubre una
+extensión oficial más: **`repl`** (REPL de Lua sobre la API pública),
+activable sola desde esa pantalla. Descartados: la extensión bootstrap
+siempre-activa (un plugin privilegiado sin precedente, y exigiría añadir
+activación de plugins en runtime a la API sagrada solo para esa
+pantalla) e imprimir-y-salir (contradice la "una tecla" de ADR-010 y la
+filosofía §5).
 
 **Problema.** Con las extensiones oficiales inactivas por defecto y un
 core que no pinta ni sabe de agentes (`nu.log` "nunca a la pantalla"),

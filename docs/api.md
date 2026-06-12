@@ -318,6 +318,21 @@ core — la activación de plugins (las extensiones oficiales embebidas están
 **inactivas por defecto**, ADR-010; el primer arranque ofrece activar el
 conjunto oficial), rutas extra de plugins, presupuesto del watchdog.
 
+**Pantalla de runtime desnudo (G21)**: con TTY interactivo y ningún plugin
+activo, el kernel pinta una pantalla fija hecha solo de sus capacidades —
+versión y nivel de API, rutas de config y plugins, extensiones embebidas
+disponibles — y sus acciones: activar el conjunto oficial (escribe
+`plugins.enabled` y continúa el arranque canónico, sin red), activar
+extensiones sueltas (p. ej. solo `repl`), o salir. No es la UI de un
+producto sino la del runtime: las extensiones embebidas y su activación
+son capacidad del loader, así que el kernel habla de lo suyo
+([filosofia.md](filosofia.md) §2) — render fijo, pre-Lua, sin widgets ni
+lógica. Es lo que se ve siempre que nu arranca sin nada activo, no un
+diálogo de primera vez. Sin TTY no hay pantalla: arranca desnudo, y los
+errores por extensión inactiva son accionables (nombran la línea de
+`nu.toml` que lo arregla, como los de permisos en
+[agente.md](agente.md) §5).
+
 **Orden de arranque canónico**: core → plugins activados (topológico por
 `requires`) → `init.lua` del usuario → evento `core:ready`. El
 init del usuario va **último** a propósito: como en la pila de input el

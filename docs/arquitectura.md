@@ -129,8 +129,12 @@ recompilación. El contrato del adaptador y el formato del registro están en
   contrato POSIX se cumple íntegro sin especificación condicional. Windows
   nativo: [P18](pospuesto.md).
 - Extensiones oficiales embebidas con `go:embed` pero **inactivas por
-  defecto** (ADR-010): activación explícita (primer arranque o `nu.toml`),
-  sin red; sobreescribibles por el usuario desde su directorio de config.
+  defecto** (ADR-010): activación explícita (pantalla de runtime desnudo
+  — api.md §14 — o `nu.toml`), sin red; sobreescribibles por el usuario
+  desde su directorio de config. El conjunto incluye, además del harness
+  (agente, chat, providers, MCP, toolkit), un **`repl`**: REPL de Lua
+  sobre la API pública, activable solo — el punto de partida del autor de
+  extensiones que no quiere el harness (G21).
 
 ## Persistencia
 
