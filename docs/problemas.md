@@ -46,7 +46,16 @@ proyecto. No bloquea contratos.
 (b) sin reload: comando de reinicio rápido de nu que repone la sesión
 (`--continue` ya casi lo da); (c) posponer con disparador (P-nuevo).
 
-## G3 · Multi-sesión: atribución de eventos y modales concurrentes — `agente.md` §4 / `chat.md` — **Pendiente**
+## G3 · Multi-sesión: atribución de eventos y modales concurrentes — `agente.md` §4 / `chat.md` — **RESUELTO**
+
+**Resolución** (aplicada en [agente.md](agente.md) §4-§5 y
+[chat.md](chat.md) §1/§2/§5): `session` obligatorio en todo payload
+`agent:*` (emitido vía helper único); `chat` pinta solo la sesión activa y
+señala el resto en statusline; modales en cola FIFO etiquetados por
+sesión, **sin timeout** en los asks (un timeout→deny sería no
+determinista) — la UI hace visibles los pendientes. Descartado el
+namespacing por sesión en el nombre del evento (el bus no tiene wildcards
+y un campo lo resuelve gratis).
 
 **Problema.** Los payloads `agent:*` no obligan a llevar `session_id`
 (dos sesiones concurrentes mezclarían deltas), `chat.md` no especifica

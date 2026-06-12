@@ -26,6 +26,12 @@ de terceros puede hacer todo lo que hace esta.
 Una columna, una sesión visible. Splits y vista multi-sesión: pospuesto
 ([P14](pospuesto.md)).
 
+Multi-sesión (G3): `chat` pinta solo los eventos cuyo `session` es la
+sesión activa; la actividad de otras (subagentes, sesiones en background)
+se refleja como indicador discreto en la statusline — incluido un contador
+de permisos pendientes, porque un ask sin responder bloquea a su sesión
+indefinidamente.
+
 ## 2. Render del turno (consumo de `agent:*`)
 
 | Evento | Render |
@@ -35,7 +41,7 @@ Una columna, una sesión visible. Splits y vista multi-sesión: pospuesto
 | `agent:tool.start/progress/end` | Bloque de tool **colapsable**: cabecera con nombre + args resumidos; `progress` en vivo; al terminar, resultado plegado si es largo. |
 | `agent:message` | Sella el mensaje (sustituye los deltas por el render final). |
 | `agent:error` | Bloque de error con el código estructurado y, si `retryable`, acción de reintento. |
-| `agent:permission.asked` | Diálogo modal (§5). |
+| `agent:permission.asked` | Diálogo modal (§5), encolado FIFO si ya hay uno visible. |
 | `agent:compact` | Marca visual de "historia compactada arriba". |
 
 **Renderers enchufables**: un plugin puede registrar el render del resultado
@@ -85,7 +91,9 @@ truncar lo peligroso: el comando entero, la ruta entera) y opciones:
 - **Denegar** (con nota opcional, que llega al modelo como rechazo).
 
 Mientras el modal está abierto, el turno espera (así está diseñado el
-pipeline del agente); `esc` = denegar.
+pipeline del agente); `esc` = denegar. Con varias sesiones pidiendo a la
+vez: **cola FIFO, un modal visible**, etiquetado con su sesión de origen;
+los demás esperan en cola (y se señalan en la statusline).
 
 ## 6. Statusline
 

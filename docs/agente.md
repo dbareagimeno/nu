@@ -84,6 +84,12 @@ Dos mecanismos, deliberadamente separados:
 `delta`, `message`, `tool.start`, `tool.progress`, `tool.end`, `compact`,
 `error`, `permission.asked`. Para pintar, loggear, observar.
 
+**Atribución obligatoria (G3)**: todo payload `agent:*` lleva `session`
+(id de la sesión emisora; los subagentes emiten con el suyo — su
+`meta.parent` enlaza al padre). La extensión emite a través de un helper
+único, así el campo se pone en un solo sitio. Filtrar y presentar es
+decisión de cada UI.
+
 **Middleware** (pueden modificar o vetar; registro propio de la extensión,
 no el bus):
 
@@ -132,6 +138,11 @@ con tres amortiguadores que eliminan casi toda la fricción:
 Razón del default: headless (CI, scripts) es exactamente el contexto sin
 supervisión y el más expuesto a prompt injection; un allowlist declarado
 además documenta qué puede hacer el script, auditable de un vistazo.
+
+Concurrencia de asks (G3): varias sesiones pueden tener asks pendientes a
+la vez; cada una espera su `future` **sin timeout** (un timeout→deny
+metería denegaciones sorpresa no deterministas). La UI es responsable de
+hacer visibles los pendientes.
 
 Esto es la capa *blanda* (frente al modelo). La capa *dura* para código no
 confiable son los workers con `caps` ([api.md](api.md) §13): un subagente en
