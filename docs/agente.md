@@ -116,7 +116,22 @@ Pipeline para cada tool call: `deny` (corta) → `allow` (concede) → hooks
 `permission` (pueden conceder/denegar programáticamente) → si nadie decide
 y `mode = "ask"`: se emite `agent:permission.asked` y el turno espera la
 respuesta (`agent.permission.respond(id, ...)` — la extensión `chat` pinta
-el diálogo). **En headless, sin respuesta no hay concesión: default deny.**
+el diálogo). **En headless, sin respuesta no hay concesión: default deny**,
+con tres amortiguadores que eliminan casi toda la fricción:
+
+1. **Las tools de solo lectura se registran con `default = "allow"`**
+   (read, grep, glob...): nunca piden permiso, ni en headless. El deny
+   solo muerde a las que mutan (write, bash, red).
+2. **El error de denegación es accionable**: nombra el patrón exacto a
+   añadir ("denegado `bash:npm install`; añade `allow = [\"bash:npm *\"]`").
+   La fricción se paga una vez y con la solución en la mano.
+3. **El modo auto existe pero es explícito y ruidoso** (flag tipo
+   `--auto-permissions`, para sandboxes y contenedores desechables): el
+   riesgo se elige, no se hereda.
+
+Razón del default: headless (CI, scripts) es exactamente el contexto sin
+supervisión y el más expuesto a prompt injection; un allowlist declarado
+además documenta qué puede hacer el script, auditable de un vistazo.
 
 Esto es la capa *blanda* (frente al modelo). La capa *dura* para código no
 confiable son los workers con `caps` ([api.md](api.md) §13): un subagente en
@@ -173,9 +188,19 @@ Sub:cancel()
 - `worker = true`: el **loop** corre en un worker (paralelismo real, `caps`
   recortables), pero los **handlers de tools se ejecutan en el estado
   principal vía proxy de mensajes** — los args y resultados son JSON-ables
-  por contrato, así que cruzan la frontera sin fricción. Un solo registro de
-  tools, sin duplicar handlers en el worker; las tools de un subagente
-  paralelo se intercalan como tasks en el principal.
+  por contrato, así que cruzan la frontera sin fricción. Implicaciones:
+  - Un solo registro de tools: ninguna se duplica "en versión worker".
+  - La seguridad queda centralizada: permisos, hooks `tool.pre/post` y
+    diálogos corren en el principal; el worker no puede saltarse el
+    pipeline porque la ejecución nunca ocurre en su lado. Dos vallas para
+    dos riesgos: los *permisos* heredados limitan qué tools usa el
+    subagente; las *caps* limitan qué hace su código Lua directamente.
+  - Latencia del proxy irrelevante (microsegundos vs segundos del LLM).
+  - Límite honesto: los streams de los subagentes van en paralelo de
+    verdad (ahí está la ganancia), pero sus tool calls se intercalan como
+    tasks en el principal. Para tools de IO da igual (suspenden y se
+    solapan); una tool con CPU pesada en Lua estorbaría al principal — el
+    watchdog la señalará, y su sitio son las primitivas Go o un worker.
 - Permisos: el subagente hereda los del padre **recortados** por sus
   `opts.permissions` (nunca ampliados); `caps` aplica la versión dura.
 
