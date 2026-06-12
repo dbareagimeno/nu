@@ -204,7 +204,14 @@ listener; (b) añadir un listener HTTP mínimo (`nu.http.listen_once` para
 callbacks de OAuth, efímero, solo loopback) — superficie pequeña y
 acotada; (c) posponer OAuth entero con disparador.
 
-## G14 · Modelo de confianza del contenido del repo — `agente.md` §6-§7 / transversal — **Pendiente**
+## G14 · Modelo de confianza del contenido del repo — `agente.md` §6-§7 / transversal — **RESUELTO**
+
+**Resolución** (aplicada en [agente.md](agente.md) §11): el repo no es el
+usuario. (1) La config del repo **solo recorta** permisos: sus `deny` se
+honran, sus `allow`/`mode` se ignoran. (2) **TOFU de una tecla** por repo
+para skills y `nu.md` (patrón `:trust` de Neovim); sin sí explícito
+(incluido headless), no se inyectan. Las descripciones de tools MCP quedan
+como responsabilidad del usuario (instalar un servidor es acto consciente).
 
 **Problema.** Abrir nu en un repo clonado ya ejecuta la voluntad del
 repo: sus `.nu/skills/` se inyectan al system prompt y su

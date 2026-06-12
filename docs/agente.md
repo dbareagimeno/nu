@@ -143,7 +143,8 @@ Compatibles con el formato del ecosistema existente: directorio con
 `SKILL.md` (frontmatter YAML: `name`, `description` — vía `nu.yaml`).
 
 - Descubrimiento: `config.dir()/skills/` (usuario) + `<repo>/.nu/skills/`
-  (proyecto). `agent.skills.list() -> SkillInfo[]`.
+  (proyecto). `agent.skills.list() -> SkillInfo[]`. El contenido del repo
+  está sujeto al modelo de confianza de §11.
 - Inyección en dos fases (economía de contexto): el system prompt lleva solo
   el **índice** (nombre + descripción); el contenido completo se carga bajo
   demanda mediante la tool interna `skill` que el modelo invoca. 
@@ -209,9 +210,31 @@ Sub:cancel()
 `config.dir()/agent.toml`: modelo por defecto, `max_turns`, umbral y modelo
 de compactación, política de retención de sesiones ([P10](pospuesto.md)),
 permisos globales. La precedencia es la estándar: defaults < global <
-proyecto (`<repo>/.nu/agent.toml`) < sesión (`opts`).
+proyecto (`<repo>/.nu/agent.toml`) < sesión (`opts`) — con la excepción de
+seguridad de §11: los permisos del proyecto solo recortan.
 
-## 11. Relación con lo pospuesto
+## 11. Modelo de confianza del contenido del repo (G14)
+
+El repo no es el usuario: su config la escribió un tercero. Dos reglas, sin
+sandbox ni diálogos constantes:
+
+1. **El repo solo recorta permisos, jamás amplía.** Los `deny` de
+   `<repo>/.nu/agent.toml` se honran siempre; sus `allow` y su `mode` se
+   **ignoran** — si el usuario los quiere, los copia a su config global o
+   los concede en sesión. Cero fricción, cierra el vector "clonar y abrir
+   ejecuta la voluntad del repo".
+2. **TOFU de una tecla para el contenido que llega al modelo.** La primera
+   vez que nu se abre en un repo con `.nu/skills/` o `nu.md`, una sola
+   pregunta ("este repo trae skills/contexto, ¿usarlas? — se recuerda por
+   repo", persistido en `data_dir`). Sin respuesta afirmativa (incluido
+   headless), ese contenido no se inyecta. Es el mismo patrón `:trust` /
+   `vim.secure.read()` de Neovim ante el clásico ataque del `exrc`.
+
+Las descripciones de tools de servidores MCP no entran aquí: instalar un
+servidor MCP es un acto consciente del usuario — su responsabilidad, como
+instalar un plugin.
+
+## 12. Relación con lo pospuesto
 
 Tool calls paralelas ([P12](pospuesto.md)), workers anidados para subagentes
 ([P11](pospuesto.md)) y retención de sesiones ([P10](pospuesto.md)) tienen
