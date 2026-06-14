@@ -105,7 +105,10 @@ Dos mecanismos, deliberadamente separados:
 **Notificaciones** (fire-and-forget, bus del core `nu.events`, namespace
 `agent:`): `session.start`, `session.end`, `turn.start`, `turn.end`,
 `delta`, `message`, `tool.start`, `tool.progress`, `tool.end`, `compact`,
-`error`, `permission.asked`. Para pintar, loggear, observar.
+`error`, `permission.asked`. Para pintar, loggear, observar. El namespace
+`agent:` no es una reserva del core (el core no sabe de agentes, ADR-003):
+es el namespace del plugin `agent`, protegido por la unicidad del nombre de
+plugin como cualquier otro (G26, [api.md](api.md) §4).
 
 **Atribución obligatoria (G3)**: todo payload `agent:*` lleva `session`
 (id de la sesión emisora; los subagentes emiten con el suyo — su

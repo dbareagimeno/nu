@@ -120,7 +120,12 @@ error({ code = "EINVAL", message = "filtro vacío", detail = { arg = "filter" } 
   Credenciales y tokens: en tu directorio, `0600`, y jamás en el repo del
   usuario ni en resultados de tools (acabarían en el transcript).
 - **Eventos propios**: namespace = tu nombre de plugin
-  (`"mi-plugin:cosa.paso"`). `core:`, `ui:` y `agent:` están reservados.
+  (`"mi-plugin:cosa.paso"`). Como el loader garantiza que tu nombre es
+  único, nadie puede pisarlo. Solo `core:` y `ui:` los reserva el core (son
+  superficies suyas); `agent:` **no** es reserva del core, es el namespace
+  del plugin oficial `agent` igual que el tuyo es tuyo (G26) — sin
+  privilegio: no puedes llamarte `agent`, ni el agente apropiarse de tu
+  nombre.
 - **Sé librería**: lo reutilizable, en `lua/` de tu plugin — otros podrán
   hacer `require("tu-plugin.modulo")`. Así se construyó el ecosistema de
   Neovim y así queremos el de nu.

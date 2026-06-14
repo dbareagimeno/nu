@@ -107,8 +107,13 @@ El core no sabe lo que es un agente: este bus genérico es donde las
 extensiones definen sus propios hooks (p. ej. la extensión oficial de agente
 emite `agent:tool.start`; sus hooks-middleware como `tool.pre` van por
 registro propio, no por el bus — [agente.md](agente.md) §4). Convención de
-nombres: `"namespace:evento"`. El
-namespace `core:` y `ui:` están reservados.
+nombres: `"namespace:evento"`, en **dos niveles** (G26). El core reserva
+solo lo suyo — `core:` y `ui:`, las superficies que el propio kernel emite.
+Cualquier otro namespace es de un plugin por convención (namespace = su
+nombre); como el loader garantiza que el nombre de un plugin es único (§14),
+dos extensiones no pueden colisionar. Las oficiales no tienen privilegio
+aquí: `agent:` es el namespace del plugin `agent` igual que `mi-plugin:` es
+el tuyo — el core no lo reserva (no sabe que `agent` existe, ADR-003).
 
 | Firma | Semántica |
 |---|---|
@@ -317,7 +322,13 @@ Un plugin es un directorio con `plugin.toml` (`name`, `version`,
 `lua/` del plugin se añade a las rutas de `require` (así los plugins se
 requieren entre sí: composabilidad de ADR-008). Las extensiones oficiales
 embebidas (`go:embed`) se cargan primero y son sustituibles por nombre
-desde el directorio de usuario.
+desde el directorio de usuario. El **nombre es la identidad** del plugin y
+el loader la mantiene única: el directorio de usuario *sustituye* a la
+embebida del mismo nombre (no coexisten), y dos plugins con el mismo nombre
+son un error de carga accionable. Esa unicidad es lo que deja que los
+namespaces de eventos (§4) y demás registros sean libres de colisión por
+simple convención (namespace = nombre del plugin), sin que el core reserve
+nombre alguno de extensión (G26).
 
 **Configuración del runtime**: `config.dir()/nu.toml` gobierna al propio
 core — la activación de plugins (las extensiones oficiales embebidas están

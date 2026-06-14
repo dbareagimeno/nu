@@ -9,13 +9,16 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 23/23 resueltas** (2026-06-12). Las dieciséis de las rondas
-3-4, las seis de la revisión de coherencia de la documentación completa
-(G17-G22, sobre todo contratos que presuponían API inexistente) y la
-primera de la revisión filosófico-técnica del proyecto (G23, vocabulario
-de producto en la API sagrada) están cerradas. La lista queda como
-registro del proceso; los problemas nuevos que surjan (spike incluido)
-se añaden aquí con el mismo método.
+**Estado: 24/24 registradas, resueltas** (2026-06-14). Las dieciséis de las
+rondas 3-4, las seis de la revisión de coherencia de la documentación
+completa (G17-G22, sobre todo contratos que presuponían API inexistente) y
+las de la revisión filosófico-técnica del proyecto (G23, vocabulario de
+producto en la API sagrada; G26, namespaces de extensión reservados al
+core) están cerradas. La numeración salta de G23 a G26 porque G24-G25 son
+grietas de la misma revisión en curso, registradas en sus propias ramas;
+esta entrada cierra G26. La lista queda como registro del proceso; los
+problemas nuevos que surjan (spike incluido) se añaden aquí con el mismo
+método.
 
 ---
 
@@ -592,3 +595,44 @@ y debilita el argumento del kernel mínimo ante cada caso dudoso futuro.
 (`bytes_estimate` o similar); (b) mantener como concesión documentada,
 estilo markdown/highlighting; (c) eliminar del core y mover el helper a la
 extensión de providers (una línea de Lua).
+
+## G26 · Namespaces de extensión reservados al core — `api.md` §4 / guía §7 / `agente.md` §4 — **RESUELTO**
+
+**Resolución** (aplicada en [api.md](api.md) §4 y §14, [guia-plugins.md](guia-plugins.md)
+§7 y [agente.md](agente.md) §4): esquema de **dos niveles**, sin reservar
+nombres de extensión en el core. (1) El core reserva solo lo suyo — `core:`
+y `ui:`, las superficies que el propio kernel emite. (2) Todo otro namespace
+pertenece a un plugin por convención (namespace = nombre del plugin), y la
+colisión entre extensiones la cierra el loader, que garantiza que el nombre
+de un plugin es único — es su identidad (storage `plugins/<nombre>/`,
+resolución de `requires`, sustitución por nombre de las embebidas; dos
+nombres iguales = error de carga). Así `agent:` deja de ser una reserva del
+core y pasa a ser el namespace del plugin `agent`, protegido igual que
+`mi-plugin:` — sin privilegio: nadie más puede llamarse `agent`, y el agente
+no puede apropiarse de `mi-plugin`. Descartado reservar `agent:` (y los
+namespaces de las demás oficiales) en el core: el kernel reservando un nombre
+por cuenta de una extensión es justo lo que prohíbe «el kernel solo conoce
+sus propias capacidades» ([filosofia.md](filosofia.md) §2, ADR-003) — la
+misma vara que cerró G21 y G23. Descartado también un registro central de
+namespaces en el core (otra vez vocabulario de extensiones en la superficie
+sagrada).
+
+**Problema.** La guía (§7) listaba `core:`, `ui:` **y `agent:`** como
+namespaces de eventos reservados, mientras [api.md](api.md) (§4, §17) reserva
+solo `core:`/`ui:`. La incoherencia escondía una de fondo: `agent` es una
+extensión oficial, no el core; que el core reserve su namespace lo obliga a
+conocer una extensión por su nombre, contra ADR-003. Y sin esa reserva
+quedaba sin responder qué impide que dos extensiones declaren el mismo
+namespace.
+
+**Impacto.** Coherencia del modelo de extensión sobre la superficie que se
+congela; toca el principio del kernel mínimo que sostiene G21/G23. Barato
+ahora, caro tras congelar.
+
+**Opciones.** (a) Reservar `agent:` (y las demás oficiales) en el core —
+cómodo, pero mete nombres de extensión en la API sagrada; (b) un registro de
+namespaces en el core que las extensiones reclaman al cargarse — resuelve
+colisiones pero a costa de superficie y de que el core sepa de namespaces de
+producto; (c) dos niveles por convención: el core reserva solo `core:`/`ui:`,
+y la unicidad del nombre de plugin (garantía del loader) protege a las
+extensiones entre sí — `agent:` es un namespace de plugin más.
