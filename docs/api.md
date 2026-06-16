@@ -90,7 +90,7 @@ Region, Proc...) son userdata opacos con métodos.
 |---|---|
 | `nu.task.spawn(fn, ...) -> Task` | Lanza una task; los argumentos extra se pasan a `fn`. |
 | `nu.task.sleep(ms)` ⏸ | Suspende la task actual. |
-| `nu.task.all(fns: Task[]\|fn[]) -> any[]` ⏸ | Espera a todas; si una lanza, cancela el resto y relanza. |
+| `nu.task.all(fns: Task[]\|fn[]) -> any[]` ⏸ | Espera a todas; si una lanza, cancela el resto y relanza. Los resultados se devuelven **alineados con los inputs** (`out[i]` es el de `fns[i]`), nunca en orden de terminación (G27) — es lo que deja correlacionar resultado con entrada en un fan-out sin acarrear el índice a mano. |
 | `nu.task.race(fns) -> (winner_index, result)` ⏸ | Primera en terminar gana; cancela el resto. |
 | `nu.task.every(ms, fn) -> Timer` | Timer periódico (handler síncrono). `Timer:stop()`. |
 | `nu.task.defer(fn)` | Ejecuta `fn` en el siguiente tick del loop. |

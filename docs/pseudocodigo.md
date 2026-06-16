@@ -871,8 +871,8 @@ respuesta correcta es serializar.
 orquestación paralela determinista no puede correlacionar resultado con
 entrada sin acarrear el índice a mano. Resolución propuesta: semántica
 `Promise.all` en [api.md](api.md) §3 — `out[i]` es el resultado de `fns[i]`,
-independiente del orden de terminación. A consolidar en
-[problemas.md](problemas.md).
+independiente del orden de terminación. **Resuelto**: aplicado a
+[api.md](api.md) §3 y registrado en [problemas.md](problemas.md) (G27).
 
 Confirmaciones (sin API nueva): el loop determinista se monta sobre el
 contrato público (§24); el fan-out paralelo acotado y *allSettled* se compone
