@@ -9,7 +9,7 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 25/25 registradas, resueltas** (2026-06-16). Las dieciséis de las
+**Estado: 28 registradas, 26 resueltas** (2026-06-17). Las dieciséis de las
 rondas 3-4, las seis de la revisión de coherencia de la documentación
 completa (G17-G22, sobre todo contratos que presuponían API inexistente) y
 las de la revisión filosófico-técnica del proyecto (G23, vocabulario de
@@ -17,8 +17,12 @@ producto en la API sagrada; G26, namespaces de extensión reservados al
 core) están cerradas. La numeración salta de G23 a G26 porque G24-G25 son
 grietas de la misma revisión en curso, registradas en sus propias ramas;
 G27 sale de la ronda 5 de pseudocódigo (orquestación de agentes por un
-tercero). La lista queda como registro del proceso; los problemas nuevos
-que surjan (spike incluido) se añaden aquí con el mismo método.
+tercero). G28-G30 salen de la ronda 6 (reconstruir un harness de coding
+estilo claude-code sobre `nu.ui`): **G28 y G29 quedan abiertas** (ergonomía
+de `nu.ui` §9 — scrollback y hit-testing del ratón), **G30 resuelta** (pegar
+imágenes inyecta una ruta). La lista queda como registro del proceso; los
+problemas nuevos que surjan (spike incluido) se añaden aquí con el mismo
+método.
 
 ---
 
@@ -673,3 +677,76 @@ no de terminación); (b) dejarlo en orden de terminación y que el llamante
 acarree el índice (fricción en cada uso, contra §1.4); (c) añadir variantes
 nuevas (`all_settled`, `map_limit`) — superficie ad hoc para lo que Lua ya
 compone.
+
+## G28 · `Region:blit` con coordenadas locales negativas (viewport/scrollback) — `api.md` §9.1 — **ABIERTA**
+
+**Problema.** `Region:blit(x, y, block)` "recorta a los límites", pero la
+especificación solo contempla el recorte por **exceso** (la parte del Block
+que se sale del borde de la región). Un transcript con scroll necesita lo
+contrario: estampar un Block alto con `y` **negativo** para recortar sus
+primeras filas y "asomarlo" por abajo — un viewport sobre un Block grande,
+donde scroll = re-blit con otro offset (ronda 6, escenario 28). No está
+escrito si las coordenadas locales negativas son legales ni qué hacen.
+
+**Impacto.** Cualquier UI con scrollback — el transcript de `chat` el
+primero; el toolkit lo necesita resuelto antes del spike. Si no fuera
+legal, cada plugin tendría que recortar el Block en Lua antes de cada
+`blit` (trabajo proporcional al contenido en el estado principal, contra
+"Lua decide, Go ejecuta").
+
+**Opciones.** (a) `blit` acepta `x/y` negativos y recorta el borde inicial
+(filas/columnas iniciales) además del final — un viewport sobre el Block
+sin coste en Lua; (b) primitiva de viewport dedicada en `Region`
+(`Region:scroll(block, offset)`) que encapsule el clamp y el offset; (c)
+dejarlo en el plugin: recortar el Block en Lua antes de `blit` (rechazable
+por el coste en el estado principal).
+
+## G29 · Ratón en coordenadas globales sin traducción a región (hit-testing) — `api.md` §9.1/§9.3 — **ABIERTA**
+
+**Problema.** El evento de ratón (`ev.type == "mouse"`) trae `x, y` en
+coordenadas de **pantalla**, pero las regiones viven en coordenadas
+**locales** (y su contenido, además, desplazado por el scroll de G28). No
+hay `Region:contains(x,y)` ni traducción global→local. Para clicar un
+widget — la cabecera de un bloque de tool para plegarlo, un botón de un
+modal — el plugin rastrea a mano la geometría de cada región (que él mismo
+fijó) y resuelve el hit-test sumando/restando origen y offset (ronda 6,
+escenario 31).
+
+**Impacto.** Todo widget clicable del toolkit reimplementa el mismo
+cálculo; fricción repetida en la capa que más lo va a usar.
+
+**Opciones.** (a) `Region:hit(x, y) -> (bx, by) | nil` — traduce
+pantalla→local y devuelve `nil` si el punto cae fuera (con G28, contando el
+offset de scroll); (b) entregar el evento de ratón ya en coordenadas
+locales a la región bajo el puntero (cambia el modelo de pila de input de
+§9.3, que hoy es global y por consumo); (c) documentar que el mapeo es
+responsabilidad del toolkit, ya que el plugin conoce la geometría que fijó
+(barato, pero deja el hit-test fuera del core para siempre).
+
+## G30 · Pegar una imagen: el evento `paste` solo trae texto — `api.md` §9.3 — **RESUELTO**
+
+**Resolución** (aplicada en [api.md](api.md) §9.3): pegar contenido
+**no-texto** del portapapeles (una imagen) **inyecta una ruta**, no los
+bytes. El core vuelca la imagen a un fichero temporal de la sesión
+(`nu.fs.tmpdir`) y entrega un evento `paste` con `path` (sin `text`); la UI
+inserta la ruta exactamente como una mención `@`, y el agente decide leerla
+(no se incrusta el contenido a ciegas, igual que las menciones de
+[chat.md](chat.md) §3). Los bytes binarios nunca cruzan las fronteras de
+texto/JSON (coherente con G11). Es **distinto de P6** (render de imágenes en
+el transcript, pospuesto): aquello es pintar, esto es entrada. Descartado
+entregar los bytes en el evento (reintroduce binario en la frontera de
+input que G11 cerró) y descartado plegarlo a P6 (P6 es salida; pegar una
+ruta es útil aunque nunca se pinte la imagen).
+
+**Problema.** Un harness de coding (estilo claude-code) pega imágenes del
+portapapeles, pero el evento `paste` solo trae `text` y `clipboard_get`
+devuelve `string`: pegar una imagen no se podía expresar (ronda 6,
+escenario 29).
+
+**Impacto.** Flujo cotidiano de un harness de coding; barato de cerrar
+ahora sobre la superficie que se congela.
+
+**Opciones.** (a) El evento `paste` de contenido no-texto entrega `path`
+(fichero temporal volcado), insertable como `@` — la elegida; (b)
+`nu.ui.clipboard_get_image() -> path?` aparte (superficie extra para lo
+mismo); (c) dejarlo fuera de v1, plegado a P6 (descartado: P6 es salida).

@@ -250,8 +250,16 @@ core.
 
 | Firma | Semántica |
 |---|---|
-| `nu.ui.on_input(fn) -> InputHandle` | Apila un handler síncrono `fn(ev) -> boolean` (true = consumido). `ev`: `{type: "key"\|"mouse"\|"paste", key?, mods?, x?, y?, text?}`. `InputHandle:pop()`. |
+| `nu.ui.on_input(fn) -> InputHandle` | Apila un handler síncrono `fn(ev) -> boolean` (true = consumido). `ev`: `{type: "key"\|"mouse"\|"paste", key?, mods?, x?, y?, text?, path?}`. `InputHandle:pop()`. |
 | `nu.ui.keymap(seq: string, fn, opts?) -> Keymap` | Azúcar sobre la pila: `seq` en notación `"ctrl+k"`, `"alt+enter"`, secuencias `"g g"`. `Keymap:unmap()`. Resolución de secuencias con timeout en el core. Conflictos: la pila manda — el registro más reciente activo gana (y el `init.lua` del usuario se carga el último, §14). |
+
+Pegar una imagen (G30): cuando el portapapeles trae contenido **no-texto**
+(una imagen), el core lo vuelca a un fichero temporal de la sesión
+(`nu.fs.tmpdir`) y entrega el evento `paste` con `path` (la ruta volcada) en
+vez de `text`. La UI inserta esa ruta igual que una mención `@` y el agente
+decide leerla (no se incrusta el contenido a ciegas); así los bytes binarios
+nunca cruzan las fronteras de texto/JSON (coherente con G11, §12). Pintar la
+imagen en pantalla es otra cosa ([pospuesto.md](pospuesto.md) P6).
 
 ---
 
