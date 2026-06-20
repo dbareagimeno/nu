@@ -224,7 +224,7 @@ el módulo `nu.ui` directamente **no existe** — el mismo modelo que las
 |---|---|
 | `nu.ui.size() -> {w, h}` | Tamaño del terminal en celdas. Cambios → evento `ui:resize`. |
 | `nu.ui.region(opts) -> Region` | `opts`: `x, y, w, h, z?`. Las regiones son la unidad de composición: rectángulos con z-order propiedad de quien los crea. **Resize (G1)**: una región total o parcialmente fuera de pantalla se recorta sin error (jamás pinta fuera de límites; si no cabe nada, no se pinta); sus coordenadas no se tocan — si la pantalla vuelve a crecer, reaparece tal cual. Recolocarse es responsabilidad del dueño (convención "tu región, tu `ui:resize`"); el relayout automático es trabajo del toolkit, no del core. |
-| `Region:blit(x, y, block: Block)` | Estampa un bloque pre-renderizado (ver `nu.text`) en coordenadas locales de la región. Recorta a los límites. |
+| `Region:blit(x, y, block: Block)` | Estampa un bloque pre-renderizado (ver `nu.text`) en coordenadas locales de la región. **Recorta por ambos extremos (G28)**: `x/y` pueden ser **negativos** y recortan el borde *inicial* del bloque (`blit(0, -3, doc)` muestra `doc` desde su cuarta fila), igual que el exceso recorta el final — un **viewport** sobre un Block más grande que la región, donde *scroll = re-blit con otro offset*. Es **copia, nunca re-render**: blittear el mismo Block con distinto offset no recalcula nada (el coste de scroll es el de una copia de la ventana visible). La virtualización (no construir el Block entero para historiales enormes) es del toolkit, no del core. |
 | `Region:fill(style?)` / `Region:clear()` | |
 | `Region:move(x, y)` / `Region:resize(w, h)` / `Region:raise()` / `Region:lower()` | |
 | `Region:show()` / `Region:hide()` / `Region:destroy()` | |
@@ -250,8 +250,16 @@ core.
 
 | Firma | Semántica |
 |---|---|
-| `nu.ui.on_input(fn) -> InputHandle` | Apila un handler síncrono `fn(ev) -> boolean` (true = consumido). `ev`: `{type: "key"\|"mouse"\|"paste", key?, mods?, x?, y?, text?}`. `InputHandle:pop()`. |
+| `nu.ui.on_input(fn) -> InputHandle` | Apila un handler síncrono `fn(ev) -> boolean` (true = consumido). `ev`: `{type: "key"\|"mouse"\|"paste", key?, mods?, x?, y?, text?, path?}`. `InputHandle:pop()`. |
 | `nu.ui.keymap(seq: string, fn, opts?) -> Keymap` | Azúcar sobre la pila: `seq` en notación `"ctrl+k"`, `"alt+enter"`, secuencias `"g g"`. `Keymap:unmap()`. Resolución de secuencias con timeout en el core. Conflictos: la pila manda — el registro más reciente activo gana (y el `init.lua` del usuario se carga el último, §14). |
+
+Pegar una imagen (G30): cuando el portapapeles trae contenido **no-texto**
+(una imagen), el core lo vuelca a un fichero temporal de la sesión
+(`nu.fs.tmpdir`) y entrega el evento `paste` con `path` (la ruta volcada) en
+vez de `text`. La UI inserta esa ruta igual que una mención `@` y el agente
+decide leerla (no se incrusta el contenido a ciegas); así los bytes binarios
+nunca cruzan las fronteras de texto/JSON (coherente con G11, §12). Pintar la
+imagen en pantalla es otra cosa ([pospuesto.md](pospuesto.md) P6).
 
 ---
 
