@@ -8,13 +8,19 @@ Guía para asistentes de IA que trabajen en este repositorio.
 harness**: un único binario Go con un kernel mínimo donde todo lo demás —
 incluido el propio agente — son extensiones Lua.
 
-**Crítico:** el proyecto está en **fase de diseño**. *No hay código todavía*:
-los documentos en `docs/` **son** el proyecto. La API se valida escribiendo
-pseudocódigo contra ella antes de congelarla. Tu trabajo aquí es casi siempre
-de **diseño y documentación** (razonar sobre la API, encontrar grietas,
-registrar decisiones), no de implementación. No crees ficheros de código Go o
-Lua salvo que se pida explícitamente; el pseudocódigo ilustrativo vive dentro
-de los `.md`.
+**Crítico:** por defecto el proyecto está en **fase de diseño**. Los documentos
+en `docs/` **son** el proyecto. La API se valida escribiendo pseudocódigo contra
+ella antes de congelarla. Tu trabajo en una tarea de diseño es **diseño y
+documentación** (razonar sobre la API, encontrar grietas, registrar
+decisiones): **no crees ficheros de código Go o Lua salvo que se pida
+explícitamente**; el pseudocódigo ilustrativo vive dentro de los `.md`.
+
+**Excepción — fase de construcción:** cuando la tarea sea *implementar* el
+kernel, se rige por [docs/implementacion.md](docs/implementacion.md) y su
+**protocolo de sesión** (una feature por sesión, puntero, checkpoints, tests).
+Eso *es* "pedirlo explícitamente": ahí sí se escribe código. El default "no
+código" sigue valiendo para todo lo demás. Cómo operar en esa fase: la sección
+"[Cuando implementes](#cuando-implementes-fase-de-construcción)" de abajo.
 
 ## Idioma y estilo
 
@@ -46,6 +52,7 @@ Todo vive en `docs/`. Orden de lectura sugerido (y dependencias conceptuales):
 | `docs/pseudocodigo.md` | **El ejercicio de validación**: rondas de pseudocódigo que torturan la API. |
 | `docs/problemas.md` | Grietas que la v1 *necesita* cerradas (hallazgos G##, con estado). |
 | `docs/pospuesto.md` | Lo que se decidió no decidir todavía (P##), cada uno con su *disparador* de reapertura. |
+| `docs/implementacion.md` | Plan de construcción incremental: una feature por sesión (S##), ordenado por dependencias del kernel. |
 
 `README.md` es el índice de entrada con el mismo orden de lectura.
 
@@ -145,6 +152,37 @@ Este es el corazón del proyecto y debes respetarlo:
 - Antes de añadir una primitiva al core, pregúntate si es **vocabulario de
   producto** (entonces va a una extensión) o si la división "Lua decide, Go
   ejecuta" la justifica por rendimiento.
+
+## Cuando implementes (fase de construcción)
+
+Si la tarea es construir el kernel (no diseñar), **el plan manda**:
+[docs/implementacion.md](docs/implementacion.md). No improvises el orden ni
+juntes features: una sesión = una feature. El estado vive en el repo, no en tu
+memoria. Protocolo, sin saltarte pasos:
+
+1. **Antes de tocar nada**, abre `docs/implementacion.md` y lee el **puntero ▶**
+   ("Próxima sesión") y la **última fila de la bitácora**. Eso es dónde seguir y
+   en qué estado quedó. Implementa **solo** esa sesión; respeta el grafo de
+   dependencias (no abras una sesión cuyas dependencias no estén cerradas).
+2. **Tests — la lógica clave no se skippea.** Si la sesión está en el
+   **inventario 🔒** (§"Política de tests" del plan), lleva tests unitarios Go
+   exhaustivos de sus casos límite, **obligatorios**, nombrando el `G##` que
+   blindan. Si es un wrapper fino, basta el snippet Lua + el checkpoint; no
+   inventes tests de código ajeno. Toda sesión deja `go build ./...` verde.
+3. **La API del core es sagrada.** Implementas [api.md](api.md), no lo amplías.
+   Si descubres que la API no basta, **párate**: es un hallazgo `G##` que se
+   resuelve primero en los documentos (problemas.md → api.md → contratos) y solo
+   *después* se implementa. El código nunca corrige la espec por la vía de hecho.
+4. **Al terminar, en el mismo commit que la feature:** avanza el puntero ▶,
+   marca el tablero si cerraste una fase, y añade fila a la bitácora. Si cierras
+   una fase, ejecuta antes su **checkpoint de integración (🔎)**; si falla, no
+   avances el puntero. Un commit que toca código sin mover el puntero es una
+   sesión a medias.
+5. **Commit en español** citando la sesión (`S07: ...`) y el `G##` si lo hubo.
+
+El plan tiene todo el detalle (las 45 sesiones, los 11 checkpoints, el
+inventario 🔒 y los hitos de veto). Esta sección solo garantiza que lo
+**consultes y lo sigas** aunque arranques sin más contexto que este fichero.
 
 ## Convenciones de Git
 

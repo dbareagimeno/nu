@@ -34,3 +34,4 @@ Proceso y registro de trabajo:
 - [Pseudocódigo de validación](docs/pseudocodigo.md) — las rondas que torturaron la API
 - [Problemas abiertos](docs/problemas.md) — grietas que la v1 necesita cerradas
 - [Pospuesto](docs/pospuesto.md) — lo que decidimos no decidir todavía, con su disparador
+- [Plan de implementación](docs/implementacion.md) — la secuencia de construcción, una feature por sesión
