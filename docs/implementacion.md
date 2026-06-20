@@ -86,15 +86,81 @@ una capacidad *observable y probada*. La granularidad es deliberada: una sesión
 Una sesión no está hecha hasta cumplir las cinco:
 
 1. **Compila**: `go build ./...` verde, `CGO_ENABLED=0` (ADR-001).
-2. **Se prueba**: tests Go de la primitiva *y* al menos un snippet Lua
-   ejecutado contra el runtime embebido que ejercite la firma desde el lado del
-   autor de extensiones (el arnés llega en S02).
+2. **Se prueba al nivel que pide su lógica** (ver "Política de tests"): *toda*
+   sesión lleva al menos un snippet Lua que ejercita la firma desde el lado del
+   autor de extensiones (el arnés llega en S02). Las sesiones con **lógica
+   clave** (marcadas 🔒 en el inventario) llevan **además** tests unitarios Go
+   exhaustivos de sus casos límite — esos **no se omiten nunca**. Un wrapper
+   fino sobre la stdlib no inventa tests de código ajeno: lo cubre el snippet y
+   el checkpoint de fase.
 3. **Respeta la espec**: la firma y la semántica implementadas son las de
    `api.md` §correspondiente, marcadores **⏸**/**[W]** incluidos. Ni una
    función de más.
 4. **No regresiona**: las features de sesiones previas siguen verdes.
 5. **Deja rastro**: commit en español citando la sesión; si hubo hallazgo,
    enlazado desde `problemas.md`.
+
+### Política de tests: qué merece test unitario
+
+No todo merece un test unitario, pero **la lógica clave no se puede skippear**.
+La regla no es "cobertura" sino *dónde está el riesgo*. Un test unitario Go
+(table-driven, con sus casos límite) es **obligatorio** cuando se cumple
+cualquiera de estas:
+
+- **La lógica es nuestra**: un algoritmo, una máquina de estados o un invariante
+  que escribimos nosotros — no una delegación a la stdlib de Go ni a una
+  librería. Una semántica de cancelación, un parser, un recorte de viewport.
+- **El fallo es silencioso o de borde**: off-by-one, orden, concurrencia,
+  recorte, parsing incremental, EOF, backpressure. Cosas que un camino feliz
+  (el snippet o el checkpoint) **no** toca.
+- **Implementa un hallazgo `G##`**: cada G## codifica un caso límite que costó
+  decidir. Su regresión debe quedar blindada por un test que lo **nombre**
+  (`// G27: out[i] alineado con fns[i]`), para que nadie lo deshaga sin enterarse.
+
+**Basta el snippet Lua + el checkpoint de fase** (no inventes unitario) cuando:
+
+- Es un **wrapper fino** sobre la stdlib de Go o una librería (`toml`/`yaml`
+  encode, `sys.platform/hostname/now_ms`, `fs.cwd`): probar eso es probar código
+  ajeno.
+- Es **glue de paso** sin decisión propia (la mayoría de getters).
+- Es **render visual/interactivo**: se valida inspeccionando el `Block`
+  resultante o mirando la pantalla en el checkpoint, no pixel a pixel.
+
+### Inventario de lógica clave (🔒 — tests unitarios obligatorios)
+
+Estas sesiones implementan lógica que no puede quedar sin unitario, con el caso
+exacto que cada test debe blindar. Es la lista contra la que se audita una
+sesión antes de cerrarla:
+
+| Sesión | Lógica clave a blindar |
+|---|---|
+| 🔒 **S02** | Forma de la tabla de error `{code,message,detail}`; un código reservado nunca se traga ni se reescribe. |
+| 🔒 **S04** | El puente corrutina↔goroutine: suspensión y reanudación por la cola; cero data races (`-race`). |
+| 🔒 **S06** | `Future`: `set` una sola vez (segundo → `EINVAL`); varios `await` ven el valor ya resuelto. |
+| 🔒 **S07** | `task.all` alinea `out[i]` con `fns[i]` (G27); `race` cancela a las perdedoras. |
+| 🔒 **S08** | Desenrollado **no capturable** por `pcall` (§1.3); orden LIFO de `cleanup`; `ECANCELED` solo observable. |
+| 🔒 **S09** | El watchdog corta el slice excedido y **no** se captura; emite `EBUDGET` + `core:plugin.misbehaved`. |
+| 🔒 **S10** | Despacho sobre **foto** de suscriptores (G10); cancelar surte efecto inmediato; emits anidados **encolados** (anchura, no recursión). |
+| 🔒 **S11** | Orden topológico por `requires`; unicidad de nombre (colisión = error); `init.lua` del usuario el último. |
+| 🔒 **S13** | `reload` no deja handlers huérfanos (etiquetado por dueño, G2). |
+| 🔒 **S14** | Escritura atómica (temporal+rename); `exclusive`=`O_EXCL` → `EEXIST` (G17); `stat` de inexistente → `nil`, no lanza. |
+| 🔒 **S15** | Watcher: entrega **en lotes**, `debounce_ms`, filtrado `gitignore` (G7). |
+| 🔒 **S16** | Vida del proceso: kill por `cleanup`; `alive` informa de existencia, no identidad (pid reciclado → `true`, G17). |
+| 🔒 **S18** | `json` UTF-8 **estricto** → `EINVAL` (G11); sentinel `NULL` ida y vuelta sin perder claves. |
+| 🔒 **S20** | **Parser SSE** de `Stream:events()` (eventos partidos entre chunks, `id`, comentarios); backpressure → `EIO`. |
+| 🔒 **S22** | `text.width`: graphemes, east-asian, emoji ZWJ (la base de todo el layout). |
+| 🔒 **S23** | `markdown` **streaming-safe**: entrada incompleta (bloque de código a medias) no rompe; el Block crece estable. |
+| 🔒 **S25** | `diff`: hunks correctos en inserción/borrado/cambio y en los bordes. |
+| 🔒 **S27** | `fuzzy` ordena por score de forma estable; `files` respeta `.gitignore`. |
+| 🔒 **S29** | `blit` como **viewport**: offsets negativos y recorte por ambos extremos (G28); recorte de región fuera de pantalla en resize sin tocar coordenadas (G1). |
+| 🔒 **S31** | Resolución de **secuencias** de teclas con timeout; pila de input (quien no consume, deja pasar). |
+| 🔒 **S34** | `caps` **deny-by-default**, dos granularidades `"fs"` vs `"fs.read"` (G6); colas acotadas con backpressure. |
+| 🔒 **S35** | Exclusividad `on_message`/`recv` → `EINVAL` en el acto (G8). |
+
+Las sesiones **fuera** de esta lista (S01, S03, S05, S12, S17, S19, S21, S24,
+S26, S28, S30, S32, S33 y las de extensiones Lua de la Fase 8) se cierran con
+snippet + checkpoint; si al implementarlas aparece lógica propia no trivial, se
+añaden aquí — el inventario crece, nunca se relaja.
 
 ### Columnas de las tablas
 
