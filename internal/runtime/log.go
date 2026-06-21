@@ -104,10 +104,10 @@ func padLevel(level logLevel) string {
 }
 
 // defaultDataDir calcula el `data_dir` por defecto donde vive el log (§14):
-// `$XDG_DATA_HOME/nu` o `~/.local/share/nu`. S11 promoverá esta lógica a
-// `nu.config.data_dir`; aquí solo se necesita el destino del log. Si no hay
-// `HOME`, cae a un subdirectorio de los temporales del sistema antes que fallar:
-// loguear nunca debe ser la razón de que el runtime no arranque.
+// `$XDG_DATA_HOME/nu` o `~/.local/share/nu`. S11 lo expone como
+// `nu.config.data_dir()` (loader.go); aquí se usa además como destino del log. Si
+// no hay `HOME`, cae a un subdirectorio de los temporales del sistema antes que
+// fallar: loguear nunca debe ser la razón de que el runtime no arranque.
 func defaultDataDir() string {
 	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
 		return filepath.Join(xdg, "nu")
@@ -116,6 +116,20 @@ func defaultDataDir() string {
 		return filepath.Join(home, ".local", "share", "nu")
 	}
 	return filepath.Join(os.TempDir(), "nu")
+}
+
+// defaultConfigDir calcula el `config.dir` por defecto (§14): `$XDG_CONFIG_HOME/nu`
+// o `~/.config/nu`. De ahí cuelga el `init.lua` del usuario (el último del
+// arranque canónico) y, en S12, `nu.toml`. Misma red de seguridad que el data_dir
+// si no hay `HOME`.
+func defaultConfigDir() string {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "nu")
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".config", "nu")
+	}
+	return filepath.Join(os.TempDir(), "nu-config")
 }
 
 // registerLog cuelga la tabla `nu.log` (con sus cuatro niveles) del global `nu`
@@ -138,15 +152,16 @@ func registerLog(rt *Runtime, nu *lua.LTable) {
 	L.SetGlobal("print", info)
 }
 
-// logFunc fabrica la closure Go que respalda un nivel de `nu.log`. Lee
-// `rt.owner` en cada llamada (no al construirse): S11 hará que ese campo siga la
-// pila de plugins, y el log reflejará el plugin activo en el momento de loguear.
+// logFunc fabrica la closure Go que respalda un nivel de `nu.log`. Lee el owner
+// en cada llamada (no al construirse) vía `currentOwner`: S11 hizo que siga la
+// pila de plugins del arranque, así que el log refleja el plugin activo en el
+// momento de loguear (durante su `init.lua`, su nombre; fuera, "user").
 func (rt *Runtime) logFunc(level logLevel) lua.LGFunction {
 	return func(L *lua.LState) int {
 		msg := logMessage(L)
 		// Best-effort: un fallo de escritura no se propaga a Lua ni a la
 		// pantalla (§15). Si el disco está roto, el programa sigue.
-		_ = rt.log.write(level, rt.owner, msg)
+		_ = rt.log.write(level, rt.currentOwner(), msg)
 		return 0
 	}
 }

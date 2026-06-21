@@ -31,6 +31,16 @@ func run() int {
 	rt := runtime.New()
 	defer rt.Close()
 
+	// Arranque canónico (§14, S11): carga los plugins activados en orden
+	// topológico, ejecuta el `init.lua` del usuario el último y emite `core:ready`.
+	// Sin directorios de plugins configurados (el caso de `nu -e` desnudo de S11)
+	// solo corre el `init.lua` del usuario si existe. Un grafo de plugins roto
+	// (colisión, ciclo, dependencia ausente) es un error de arranque accionable.
+	if err := rt.Boot(); err != nil {
+		fmt.Fprintln(os.Stderr, "error de arranque:", err)
+		return 1
+	}
+
 	results, err := rt.EvalString(*eval)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

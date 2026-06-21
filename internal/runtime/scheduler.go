@@ -417,7 +417,7 @@ func (s *scheduler) runTask(t *task) {
 	// resto de errores de task). S10 lo cableará a
 	// `nu.events.emit("core:plugin.misbehaved", ...)`.
 	if budget {
-		s.rt.emitMisbehaved(s.rt.owner, "una task excedió el presupuesto de slice del watchdog (EBUDGET)")
+		s.rt.emitMisbehaved(s.rt.currentOwner(), "una task excedió el presupuesto de slice del watchdog (EBUDGET)")
 	}
 
 	// Error fire-and-forget: si la task lanzó y nadie la espera, déjalo en el
@@ -425,7 +425,7 @@ func (s *scheduler) runTask(t *task) {
 	// `awaited` ya es true si un `await` se registró antes de terminar, así que
 	// el caso esperado-y-fallido no genera ruido.
 	if t.errValue != nil && !t.awaited {
-		_ = s.rt.log.write(levelError, s.rt.owner,
+		_ = s.rt.log.write(levelError, s.rt.currentOwner(),
 			"una task terminó con error y nadie hizo await: "+errString(t.errValue))
 	}
 
@@ -581,7 +581,7 @@ func (s *scheduler) runCleanups(t *task) {
 		fn := t.cleanups[i]
 		co, _ := s.host.NewThread()
 		if err := co.CallByParam(lua.P{Fn: fn, NRet: 0, Protect: true}); err != nil {
-			_ = s.rt.log.write(levelError, s.rt.owner,
+			_ = s.rt.log.write(levelError, s.rt.currentOwner(),
 				"un liberador de nu.task.cleanup lanzó: "+errString(raisedValue(err)))
 		}
 	}

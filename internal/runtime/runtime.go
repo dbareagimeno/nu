@@ -30,11 +30,21 @@ type Runtime struct {
 
 	// log respalda `nu.log` (§15): un fichero append-only en data_dir.
 	log *logger
-	// owner es el plugin de origen que se anota en cada línea de log. Por
-	// defecto "user" (código del usuario vía `-e` o `init.lua`, sin plugin
-	// dueño). S11 hará que siga la pila de plugins activa; las funciones de log
-	// lo leen en cada llamada, así que ese cambio será transparente aquí.
-	owner string
+
+	// ldr es el loader de plugins (§14, S11): descubre los directorios con
+	// `plugin.toml`, los ordena topológicamente por `requires` y ejecuta su
+	// arranque canónico. También respalda `nu.plugin.current/list` y
+	// `nu.config.dir/data_dir`. Inmutable tras `New`.
+	ldr *loader
+
+	// ownerStack es la pila de contextos de plugin activos (§14). El tope es el
+	// plugin "en cuyo contexto corre el código" que devuelve `nu.plugin.current`;
+	// vacía = código del usuario/core (`init.lua` del usuario, chunk de `-e`),
+	// cuyo owner de log es "user". El loader la empuja antes de correr el
+	// `init.lua` de un plugin y la saca al terminar. **Solo se muta bajo el token**
+	// (el arranque corre en el estado principal con el token tomado), y solo se lee
+	// desde código Lua —que también exige el token—: sin candado ni carrera.
+	ownerStack []*pluginInfo
 }
 
 // config recoge los parámetros de construcción de un Runtime. Es interno: se
@@ -45,6 +55,17 @@ type config struct {
 	// **desactiva** el watchdog —útil para tests que no lo quieren—; el default de
 	// producción es `defaultSliceBudget` (100 ms).
 	sliceBudget time.Duration
+
+	// configDir respalda `nu.config.dir()` (§14): `~/.config/nu` por defecto. De
+	// ahí cuelga el `init.lua` del usuario (el último del arranque canónico) y, en
+	// S12, `nu.toml`. Los tests lo apuntan a un `t.TempDir()`.
+	configDir string
+	// pluginDirs son los directorios donde el loader busca plugins (cada
+	// subdirectorio con `plugin.toml` es un plugin, §14). En S11 se pasan por
+	// Option; la activación gobernada por `nu.toml` y las embebidas (`go:embed`)
+	// son S12. Vacío = arranque desnudo (sin plugins), solo el `init.lua` del
+	// usuario.
+	pluginDirs []string
 }
 
 // Option ajusta la construcción de un Runtime. El default sirve para producción
@@ -67,12 +88,32 @@ func WithSliceBudget(d time.Duration) Option {
 	return func(c *config) { c.sliceBudget = d }
 }
 
+// WithConfigDir fija el directorio de configuración (`nu.config.dir()`, §14): de
+// ahí sale el `init.lua` del usuario y, en S12, `nu.toml`. Los tests lo apuntan a
+// un `t.TempDir()` para no leer el `~/.config/nu` real ni depender del entorno.
+func WithConfigDir(dir string) Option {
+	return func(c *config) { c.configDir = dir }
+}
+
+// WithPluginDir añade un directorio donde el loader busca plugins (cada
+// subdirectorio con `plugin.toml` es un plugin, §14). Acumulable. En S11 es la vía
+// de carga; S12 añade las extensiones embebidas (`go:embed`) y la activación por
+// `nu.toml`. Los directorios se exploran en el orden en que se añaden (antes de la
+// ordenación topológica, que es la que fija el orden de carga real).
+func WithPluginDir(dir string) Option {
+	return func(c *config) { c.pluginDirs = append(c.pluginDirs, dir) }
+}
+
 // New construye un Runtime listo para ejecutar Lua: abre solo las librerías
 // permitidas por el baseline (§1.2), recorta `os`, elimina `io`/`dofile`/
 // `loadfile`, redirige `print` a `nu.log.info` e inyecta el global `nu` con sus
 // submódulos disponibles en esta sesión.
 func New(opts ...Option) *Runtime {
-	cfg := config{dataDir: defaultDataDir(), sliceBudget: defaultSliceBudget}
+	cfg := config{
+		dataDir:     defaultDataDir(),
+		configDir:   defaultConfigDir(),
+		sliceBudget: defaultSliceBudget,
+	}
 	for _, o := range opts {
 		o(&cfg)
 	}
@@ -84,14 +125,27 @@ func New(opts ...Option) *Runtime {
 	L := lua.NewState(lua.Options{SkipOpenLibs: true})
 
 	rt := &Runtime{
-		L:     L,
-		log:   newLogger(filepath.Join(cfg.dataDir, logFileName)),
-		owner: "user",
+		L:   L,
+		log: newLogger(filepath.Join(cfg.dataDir, logFileName)),
 	}
+	rt.ldr = newLoader(rt, cfg.dataDir, cfg.configDir, cfg.pluginDirs)
 	rt.sched = newScheduler(rt, cfg.sliceBudget)
 	applySandbox(L)
 	registerNu(rt)
 	return rt
+}
+
+// currentOwner devuelve el nombre del plugin en cuyo contexto corre el código
+// ahora mismo: el tope de `ownerStack` o "user" si está vacía (chunk de `-e`,
+// `init.lua` del usuario, handlers sin plugin dueño). Es lo que `nu.log` anota en
+// cada línea y lo que el watchdog reporta en `core:plugin.misbehaved`. Se lee
+// siempre bajo el token (todo el que ejecuta Lua lo tiene), igual que se muta solo
+// bajo el token en el arranque: sin carrera.
+func (rt *Runtime) currentOwner() string {
+	if n := len(rt.ownerStack); n > 0 {
+		return rt.ownerStack[n-1].Name
+	}
+	return ownerUser
 }
 
 // emitMisbehaved es el **gancho interno** de `core:plugin.misbehaved` (api.md
@@ -130,6 +184,18 @@ func (rt *Runtime) emitMisbehaved(owner, reason string) {
 	// watchdog —la task que lo motivó ya está abortada—), así que no se ata al
 	// borde cooperativo del watchdog de `emit`.
 	rt.sched.emit(rt.L, "core:plugin.misbehaved", payload)
+}
+
+// Boot ejecuta el **arranque canónico** del runtime (api.md §14, S11): descubre y
+// carga los plugins de los directorios configurados en orden topológico por
+// `requires`, ejecuta el `init.lua` del usuario el último y emite `core:ready` una
+// sola vez. Devuelve un error de carga **accionable** (colisión de nombre, ciclo o
+// dependencia ausente) si el grafo de plugins es inválido; en ese caso no se ejecutó
+// ningún `init.lua`. Llamarlo más de una vez es no-op. `main` lo invoca antes de
+// `EvalString`; un `nu -e` sin directorios de plugins arranca igual (solo corre el
+// `init.lua` del usuario, si existe, y emite `core:ready`).
+func (rt *Runtime) Boot() error {
+	return rt.ldr.Boot()
 }
 
 // Close libera el estado Lua subyacente, corta los timers periódicos activos
