@@ -1,9 +1,6 @@
 package runtime
 
 import (
-	"fmt"
-	"os"
-
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -61,23 +58,9 @@ func applySandbox(L *lua.LState) {
 	L.SetGlobal("dofile", lua.LNil)
 	L.SetGlobal("loadfile", lua.LNil)
 
-	// `print` se redirige (§1.2). En esta sesión aún no existe `nu.log.info`
-	// (llega en S03): de momento va a stderr, nunca a stdout, para no
-	// contaminar la salida de `nu -e` (que es el valor de retorno del chunk).
-	L.SetGlobal("print", L.NewFunction(sandboxPrint))
-}
-
-// sandboxPrint es el `print` provisional del baseline: escribe a stderr con el
-// mismo formato que el `print` de Lua (argumentos separados por tabulador,
-// terminados en nueva línea). S03 lo reemplaza por un alias de `nu.log.info`.
-func sandboxPrint(L *lua.LState) int {
-	top := L.GetTop()
-	for i := 1; i <= top; i++ {
-		if i > 1 {
-			fmt.Fprint(os.Stderr, "\t")
-		}
-		fmt.Fprint(os.Stderr, L.ToStringMeta(L.Get(i)).String())
-	}
-	fmt.Fprintln(os.Stderr)
-	return 0
+	// `print` se redirige (§1.2). OpenBase lo define escribiendo a stdout, lo
+	// que contaminaría la salida de `nu -e` (que es el valor de retorno del
+	// chunk) y, con TTY, la pantalla. `registerLog` (S03) lo reemplaza por un
+	// alias de `nu.log.info`, que va al fichero de log y nunca a la pantalla.
+	// Aquí no se toca: New() llama a registerNu justo después de applySandbox.
 }

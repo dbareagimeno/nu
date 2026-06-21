@@ -1,6 +1,8 @@
 package runtime
 
 import (
+	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -29,9 +31,31 @@ type harness struct {
 // automático al terminar la prueba.
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	rt := New()
+	// data_dir temporal: `nu.log` escribe en disco y no debe tocar el data_dir
+	// real del usuario. El TempDir se borra al acabar la prueba.
+	rt := New(WithDataDir(t.TempDir()))
 	t.Cleanup(rt.Close)
 	return &harness{t: t, rt: rt}
+}
+
+// logLines devuelve las líneas escritas hasta ahora en el fichero de `nu.log`
+// del runtime bajo prueba. Devuelve vacío si nada se ha logueado (el fichero se
+// crea perezosamente en la primera escritura). Es la vía por la que una prueba
+// comprueba lo que un snippet logueó.
+func (h *harness) logLines() []string {
+	h.t.Helper()
+	data, err := os.ReadFile(h.rt.log.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		h.t.Fatalf("no se pudo leer el log: %v", err)
+	}
+	trimmed := strings.TrimRight(string(data), "\n")
+	if trimmed == "" {
+		return nil
+	}
+	return strings.Split(trimmed, "\n")
 }
 
 // register instala `fn` como global `name` en el estado Lua, para que los

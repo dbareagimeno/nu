@@ -26,8 +26,9 @@ var capabilities = map[string]bool{
 }
 
 // registerNu construye la tabla global `nu` y cuelga de ella los submódulos
-// disponibles en esta sesión: `version` y `has`.
-func registerNu(L *lua.LState) {
+// disponibles en esta sesión: `version`, `has` y `log`.
+func registerNu(rt *Runtime) {
+	L := rt.L
 	nu := L.NewTable()
 
 	version := L.NewTable()
@@ -38,6 +39,9 @@ func registerNu(L *lua.LState) {
 	nu.RawSetString("version", version)
 
 	nu.RawSetString("has", L.NewFunction(nuHas))
+
+	// `nu.log` (§15) y, de paso, el alias `print` = `nu.log.info`.
+	registerLog(rt, nu)
 
 	L.SetGlobal("nu", nu)
 }
