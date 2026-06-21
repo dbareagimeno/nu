@@ -118,6 +118,10 @@ func (s *scheduler) register(nu *lua.LTable) {
 	// Timers y diferidos (S05): `sleep`/`defer`/`every` + el tipo `Timer`,
 	// colgados de la misma tabla `nu.task` (timers.go).
 	s.registerTimers(nu, taskTbl)
+
+	// Futures (S06): `nu.task.future` + el tipo `Future` con `set`/`await`,
+	// colgados de la misma tabla `nu.task` (future.go).
+	s.registerFuture(taskTbl)
 }
 
 // waitIdle bloquea hasta que no quede **trabajo de primer plano**: ninguna task
