@@ -17,7 +17,7 @@ redundantes a propósito:
 
 1. **El puntero** (esta misma línea, la única imperativa del documento):
 
-   > **▶ Próxima sesión: `S01`** · Fase 0 · ninguna iniciada todavía.
+   > **▶ Próxima sesión: `S02`** · Fase 0 · S01 cerrada (bootstrap + sandbox).
 
 2. **El tablero por fases** (vista de pájaro; se marca al cerrar la última
    sesión de cada fase):
@@ -466,4 +466,4 @@ construirse.
 
 | Fecha | Sesión | Commit | Notas (hallazgos, desviaciones, lo que debe saber la siguiente) |
 |---|---|---|---|
-| — | — | — | *(aún sin sesiones cerradas)* |
+| 2026-06-20 | S01 | _(este commit)_ | Bootstrap del binario `nu` con gopher-lua v1.1.2 (puro Go, `CGO_ENABLED=0`). Estructura: `main.go` (CLI `-e`) + `internal/runtime/` (`runtime.go` constructor, `sandbox.go` baseline §1.2, `nu.go` version/has, `eval.go`). Módulo Go: `github.com/dbareagimeno/nu`. **Desviación menor:** el sandbox retira además `os.setenv` y `os.tmpname` (no listadas en §1.2 pero coherentes con su razón: env→`nu.sys.setenv` S17, temporales→`nu.fs.tmpdir` S14); es tightening, no amplía API. `print` va a stderr provisional (S03 lo cablea a `nu.log.info`). `package`/`require` aún sin abrir (loader = S11). Sin hallazgos. Arnés de tests llega en S02, así que S01 se validó con snippets `nu -e` manuales. |

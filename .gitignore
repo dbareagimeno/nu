@@ -1,2 +1,5 @@
 .claude/settings.local.json
 .DS_Store
+
+# binario compilado
+/nu
