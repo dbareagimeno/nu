@@ -217,7 +217,7 @@ func (s *scheduler) callSyncLocked(fn *lua.LFunction) {
 	co, _ := s.host.NewThread()
 	err := co.CallByParam(lua.P{Fn: fn, NRet: 0, Protect: true})
 	if err != nil {
-		_ = s.rt.log.write(levelError, s.rt.owner,
+		_ = s.rt.log.write(levelError, s.rt.currentOwner(),
 			"un handler síncrono (defer/every) lanzó: "+errString(raisedValue(err)))
 	}
 	// El thread efímero queda para que lo recoja el GC de gopher-lua; no hay

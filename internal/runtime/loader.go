@@ -1,0 +1,446 @@
+package runtime
+
+// Loader de plugins (api.md §14, S11). Un plugin es un directorio con
+// `plugin.toml` (`name`, `version`, `requires?: string[]`) e `init.lua`, que se
+// ejecuta al cargar. El directorio `lua/` del plugin se añade a las rutas de
+// `require`, de modo que los plugins se requieren entre sí (composabilidad,
+// ADR-008). El **nombre es la identidad** del plugin (§14): el loader la mantiene
+// única —dos plugins con el mismo nombre son un error de carga accionable—, y esa
+// unicidad es lo que deja que los namespaces de eventos (§4) sean libres de
+// colisión por convención (namespace = nombre del plugin), sin que el core reserve
+// nombre de extensión alguno (G26).
+//
+// Arranque canónico (§14): core → plugins activados (orden **topológico por
+// `requires`**) → `init.lua` del usuario → evento `core:ready`. El init del
+// usuario va **el último** a propósito: como en la pila de input el registro más
+// reciente gana, el usuario tiene la última palabra (keymaps, theme, overrides)
+// por construcción, sin sistema de prioridades.
+//
+// FRONTERA con S12/S13. S11 carga los plugins de los directorios pasados por
+// Option (`WithPluginDir`); todos quedan `enabled = true` y `source = "user"`. La
+// activación gobernada por `nu.toml` y las **extensiones embebidas** (`go:embed`,
+// inactivas por defecto, ADR-010) son **S12** —el campo `source` y el gancho de
+// activación están ya previstos aquí, sin adelantar su lógica—. `nu.plugin.reload`
+// es **S13**: el etiquetado de handles por dueño se apoya en el `ownerStack` que
+// este loader empuja, pero la recarga en sí no se implementa todavía.
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/BurntSushi/toml"
+	lua "github.com/yuin/gopher-lua"
+)
+
+// ownerUser es el owner que se anota cuando no hay plugin en el contexto: el chunk
+// de `-e`, el `init.lua` del usuario y los handlers sin plugin dueño (§14, §15).
+const ownerUser = "user"
+
+// pluginSource distingue de dónde vino un plugin (§14). En S11 todos son "user"
+// (cargados de un directorio del disco); las embebidas ("builtin") llegan en S12.
+type pluginSource string
+
+const (
+	sourceUser    pluginSource = "user"
+	sourceBuiltin pluginSource = "builtin"
+)
+
+// pluginManifest es el `plugin.toml` decodificado (§14). Solo estos tres campos
+// son del contrato del kernel; un plugin puede añadir los suyos al fichero y el
+// loader los ignora (forward-compatibilidad: `toml.Decode` no falla por claves de
+// más). El parseo es interno del loader —reusa la misma librería TOML pura-Go que
+// S18 expondrá como `nu.toml`, pero NO es esa API.
+type pluginManifest struct {
+	Name     string   `toml:"name"`
+	Version  string   `toml:"version"`
+	Requires []string `toml:"requires"`
+}
+
+// pluginInfo es un plugin descubierto y listo para cargar: su manifiesto + su
+// directorio raíz en disco + su procedencia. El tope del `ownerStack` (runtime.go)
+// es un `*pluginInfo`, y `nu.plugin.current/list` se construyen a partir de él.
+type pluginInfo struct {
+	Name     string
+	Version  string
+	Requires []string
+	Dir      string       // directorio raíz del plugin (el que contiene plugin.toml)
+	Source   pluginSource // "user" en S11; "builtin" para embebidas (S12)
+	Enabled  bool         // true por defecto en S11; S12 lo gobierna desde nu.toml
+}
+
+// loader administra el descubrimiento, la ordenación y la carga de plugins, y
+// respalda `nu.config.dir/data_dir`. Vive en el Runtime (rt.ldr) y se toca solo
+// desde el estado principal con el token tomado (el arranque es síncrono).
+type loader struct {
+	rt         *Runtime
+	dataDir    string
+	configDir  string
+	pluginDirs []string
+
+	// ordered es el resultado de `Boot`: los plugins efectivamente cargados, en el
+	// orden topológico en que corrieron. Lo lee `nu.plugin.list`.
+	ordered []*pluginInfo
+	booted  bool
+}
+
+// newLoader prepara el loader sin tocar el disco todavía (el descubrimiento ocurre
+// en `Boot`).
+func newLoader(rt *Runtime, dataDir, configDir string, pluginDirs []string) *loader {
+	return &loader{
+		rt:         rt,
+		dataDir:    dataDir,
+		configDir:  configDir,
+		pluginDirs: pluginDirs,
+	}
+}
+
+// Boot ejecuta el arranque canónico (§14): descubre los plugins de los directorios
+// configurados, los ordena topológicamente por `requires`, ejecuta el `init.lua`
+// de cada uno (empujando su contexto al `ownerStack` y emitiendo
+// `core:plugin.loaded`), luego el `init.lua` del usuario (el último), y por fin
+// emite `core:ready` **una sola vez**.
+//
+// Corre en el estado principal con el token tomado —como un chunk de `-e`, no como
+// una task—: el `init.lua` es código síncrono que no puede llamar funciones ⏸
+// (§1.3); puede lanzar tasks con `nu.task.spawn`, que progresarán al soltar el
+// token. Devuelve un error de carga **accionable** (nombre del conflicto, ciclo o
+// dependencia ausente) sin haber ejecutado ningún `init.lua`: la validación del
+// grafo es total antes de correr una línea de Lua de plugin, para que un grafo roto
+// no deje medio-cargado el sistema.
+func (l *loader) Boot() error {
+	if l.booted {
+		return nil
+	}
+	l.booted = true
+
+	s := l.rt.sched
+	s.acquire()
+	defer s.release()
+
+	plugins, err := l.discover()
+	if err != nil {
+		return err
+	}
+	ordered, err := topoSort(plugins)
+	if err != nil {
+		return err
+	}
+	l.ordered = ordered
+
+	// Configura las rutas de `require` ANTES de correr ningún `init.lua`: un plugin
+	// puede `require` a otro que ya se cargó (orden topológico) o a un módulo de su
+	// propio `lua/`. Que todas las rutas estén disponibles desde el primer init
+	// simplifica el modelo (un `require` resuelve contra el conjunto completo de
+	// `lua/`), coherente con que el grafo ya esté validado.
+	l.setupRequirePaths(ordered)
+
+	// Cada plugin: empuja su contexto, corre su `init.lua`, emite
+	// `core:plugin.loaded`. Un `init.lua` que lanza un error NO tumba el arranque
+	// (ADR-008): queda en el log y se emite `core:plugin.error`; los demás plugins y
+	// el usuario siguen cargando. El owner se saca pase lo que pase (defer).
+	for _, p := range ordered {
+		l.runInit(p)
+	}
+
+	// `init.lua` del usuario: el ÚLTIMO (§14). Corre con owner "user" (pila vacía).
+	l.runUserInit()
+
+	// `core:ready` UNA vez, al final del arranque canónico (§4, §14).
+	s.emit(l.rt.L, "core:ready", lua.LNil)
+	return nil
+}
+
+// discover recorre los directorios de plugins configurados y devuelve un
+// `*pluginInfo` por cada subdirectorio que tenga `plugin.toml`. Valida el
+// manifiesto (nombre no vacío) y la **unicidad de nombre** (§14): dos plugins con
+// el mismo nombre —en el mismo directorio o en distintos— son un error de carga
+// accionable que nombra el conflicto y ambas rutas.
+func (l *loader) discover() ([]*pluginInfo, error) {
+	byName := make(map[string]*pluginInfo)
+	var found []*pluginInfo
+
+	for _, root := range l.pluginDirs {
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				// Un directorio de plugins inexistente no es fatal: simplemente no
+				// aporta plugins (p. ej. el usuario aún no creó `~/.config/nu/plugins`).
+				continue
+			}
+			return nil, &StructuredError{Code: CodeEIO,
+				Message: fmt.Sprintf("no se pudo leer el directorio de plugins %q: %v", root, err)}
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			dir := filepath.Join(root, e.Name())
+			manifestPath := filepath.Join(dir, pluginManifestName)
+			if _, err := os.Stat(manifestPath); err != nil {
+				// Subdirectorio sin `plugin.toml`: no es un plugin, se ignora en
+				// silencio (puede ser cualquier carpeta del usuario).
+				continue
+			}
+			p, err := l.loadManifest(dir, manifestPath)
+			if err != nil {
+				return nil, err
+			}
+			if prev, dup := byName[p.Name]; dup {
+				return nil, &StructuredError{Code: CodeEINVAL,
+					Message: fmt.Sprintf("colisión de nombre de plugin %q: definido en %q y en %q (el nombre es la identidad del plugin, §14)",
+						p.Name, prev.Dir, p.Dir)}
+			}
+			byName[p.Name] = p
+			found = append(found, p)
+		}
+	}
+	return found, nil
+}
+
+// loadManifest parsea el `plugin.toml` de un plugin con la librería TOML pura-Go
+// (la misma que S18 expone como `nu.toml`) y valida sus campos mínimos. Un
+// manifiesto sin `name`, ilegible o mal formado es un error de carga accionable que
+// nombra la ruta.
+func (l *loader) loadManifest(dir, manifestPath string) (*pluginInfo, error) {
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil, &StructuredError{Code: CodeEIO,
+			Message: fmt.Sprintf("no se pudo leer %q: %v", manifestPath, err)}
+	}
+	var m pluginManifest
+	if err := toml.Unmarshal(data, &m); err != nil {
+		return nil, &StructuredError{Code: CodeEINVAL,
+			Message: fmt.Sprintf("plugin.toml inválido en %q: %v", manifestPath, err)}
+	}
+	if strings.TrimSpace(m.Name) == "" {
+		return nil, &StructuredError{Code: CodeEINVAL,
+			Message: fmt.Sprintf("plugin.toml en %q sin campo `name` (el nombre es obligatorio: es la identidad del plugin, §14)", manifestPath)}
+	}
+	return &pluginInfo{
+		Name:     m.Name,
+		Version:  m.Version,
+		Requires: m.Requires,
+		Dir:      dir,
+		Source:   sourceUser, // S11: todo lo cargado de disco es "user"; "builtin" es S12
+		Enabled:  true,       // S11: enabled por defecto; S12 lo gobierna desde nu.toml
+	}, nil
+}
+
+// runInit ejecuta el `init.lua` de un plugin con su contexto empujado al
+// `ownerStack` (así `nu.plugin.current()` y el owner del log son ese plugin
+// durante el init, §14). Un `init.lua` ausente es válido (un plugin puede ser solo
+// módulos `lua/` que otros requieren). Un error en el init queda **aislado**
+// (ADR-008): se loguea, se emite `core:plugin.error`, y el arranque continúa con
+// los demás. El owner se saca pase lo que pase.
+func (l *loader) runInit(p *pluginInfo) {
+	initPath := filepath.Join(p.Dir, pluginInitName)
+	if _, err := os.Stat(initPath); err != nil {
+		// Sin init.lua: nada que ejecutar, pero el plugin existe (sus módulos `lua/`
+		// ya están en las rutas de require). Se considera cargado.
+		l.emitLoaded(p)
+		return
+	}
+
+	l.rt.ownerStack = append(l.rt.ownerStack, p)
+	err := l.doFile(initPath)
+	l.rt.ownerStack = l.rt.ownerStack[:len(l.rt.ownerStack)-1]
+
+	if err != nil {
+		_ = l.rt.log.write(levelError, p.Name,
+			fmt.Sprintf("el init.lua del plugin %q falló: %v", p.Name, err))
+		payload := l.rt.L.NewTable()
+		payload.RawSetString("plugin", lua.LString(p.Name))
+		payload.RawSetString("error", lua.LString(err.Error()))
+		l.rt.sched.emit(l.rt.L, "core:plugin.error", payload)
+		return
+	}
+	l.emitLoaded(p)
+}
+
+// emitLoaded emite `core:plugin.loaded` con `{name, version, dir}` (§4, §14).
+func (l *loader) emitLoaded(p *pluginInfo) {
+	payload := l.rt.L.NewTable()
+	payload.RawSetString("name", lua.LString(p.Name))
+	payload.RawSetString("version", lua.LString(p.Version))
+	payload.RawSetString("dir", lua.LString(p.Dir))
+	l.rt.sched.emit(l.rt.L, "core:plugin.loaded", payload)
+}
+
+// runUserInit ejecuta `config.dir()/init.lua` —el último del arranque canónico
+// (§14)— con owner "user" (pila de plugins vacía). Ausente es lo normal (no todo
+// usuario tiene config); un error se aísla igual que el de un plugin.
+func (l *loader) runUserInit() {
+	initPath := filepath.Join(l.configDir, pluginInitName)
+	if _, err := os.Stat(initPath); err != nil {
+		return
+	}
+	if err := l.doFile(initPath); err != nil {
+		_ = l.rt.log.write(levelError, ownerUser,
+			fmt.Sprintf("el init.lua del usuario (%q) falló: %v", initPath, err))
+		payload := l.rt.L.NewTable()
+		payload.RawSetString("plugin", lua.LString(ownerUser))
+		payload.RawSetString("error", lua.LString(err.Error()))
+		l.rt.sched.emit(l.rt.L, "core:plugin.error", payload)
+	}
+}
+
+// doFile carga y ejecuta un fichero Lua en el estado principal, bajo el token (que
+// `Boot` ya tomó). Usa el `LoadFile` interno de gopher-lua —el loader es justamente
+// el único autorizado a tocar el disco así (§1.2); `dofile`/`loadfile` siguen
+// deshabilitados como globales (sandbox.go)—. Corre como un chunk del estado
+// principal, no como task: errores capturables con normalidad (los devolvemos para
+// que `runInit`/`runUserInit` los aíslen, ADR-008).
+func (l *loader) doFile(path string) error {
+	L := l.rt.L
+	fn, err := L.LoadFile(path)
+	if err != nil {
+		return err
+	}
+	base := L.GetTop()
+	L.Push(fn)
+	if err := L.PCall(0, lua.MultRet, nil); err != nil {
+		return err
+	}
+	L.SetTop(base) // descarta cualquier valor de retorno del init: no se usa
+	return nil
+}
+
+// setupRequirePaths abre `package`/`require` (que el baseline dejó cerrado,
+// sandbox.go §1.2) y fija `package.path` a **solo** los directorios `lua/` de los
+// plugins cargados. Deliberadamente NO incluye el `./?.lua` que gopher-lua trae por
+// defecto: `require` es para módulos de plugins, no un agujero por el que cargar
+// ficheros arbitrarios del cwd (respeta el sandbox). Cada plugin aporta
+// `<dir>/lua/?.lua` y `<dir>/lua/?/init.lua`, de modo que `require("foo")` resuelve
+// `lua/foo.lua` o `lua/foo/init.lua` de cualquier plugin.
+func (l *loader) setupRequirePaths(plugins []*pluginInfo) {
+	L := l.rt.L
+
+	// Abre el módulo `package` una sola vez. `require` (global, ya presente del
+	// baselib) lo necesita para resolver `package.loaders`/`package.path`.
+	L.Push(L.NewFunction(lua.OpenPackage))
+	L.Push(lua.LString(lua.LoadLibName))
+	L.Call(1, 0)
+
+	var patterns []string
+	for _, p := range plugins {
+		luaDir := filepath.Join(p.Dir, "lua")
+		patterns = append(patterns,
+			filepath.Join(luaDir, "?.lua"),
+			filepath.Join(luaDir, "?", "init.lua"))
+	}
+
+	pkg, ok := L.GetGlobal("package").(*lua.LTable)
+	if !ok {
+		return
+	}
+	pkg.RawSetString("path", lua.LString(strings.Join(patterns, ";")))
+	// `cpath` vacío: nada de librerías C nativas (CGO_ENABLED=0, ADR-001).
+	pkg.RawSetString("cpath", lua.LString(""))
+}
+
+const (
+	pluginManifestName = "plugin.toml"
+	pluginInitName     = "init.lua"
+)
+
+// topoSort ordena los plugins de modo que cada uno aparezca DESPUÉS de aquellos a
+// los que `requires` (§14): el dependido se carga antes que el dependiente. Es un
+// orden topológico estable —entre plugins sin relación de dependencia se respeta el
+// orden de descubrimiento, desempatado por nombre para que el arranque sea
+// determinista—. Detecta dos errores de carga accionables:
+//
+//   - **dependencia ausente**: un `requires` que no corresponde a ningún plugin
+//     descubierto (nombra el plugin y la dependencia que falta);
+//   - **ciclo en `requires`**: nombra los plugins implicados.
+func topoSort(plugins []*pluginInfo) ([]*pluginInfo, error) {
+	byName := make(map[string]*pluginInfo, len(plugins))
+	for _, p := range plugins {
+		byName[p.Name] = p
+	}
+
+	// Valida dependencias presentes antes de ordenar: un `requires` colgando es un
+	// error accionable, no un nodo fantasma.
+	for _, p := range plugins {
+		for _, dep := range p.Requires {
+			if _, ok := byName[dep]; !ok {
+				return nil, &StructuredError{Code: CodeEINVAL,
+					Message: fmt.Sprintf("el plugin %q requiere %q, que no está disponible (¿directorio de plugins incorrecto o nombre mal escrito?)",
+						p.Name, dep)}
+			}
+		}
+	}
+
+	// Orden de visita determinista: por orden de descubrimiento, desempate por
+	// nombre. Un DFS post-orden produce el orden topológico (dependidos primero).
+	roots := make([]*pluginInfo, len(plugins))
+	copy(roots, plugins)
+	sort.SliceStable(roots, func(i, j int) bool { return roots[i].Name < roots[j].Name })
+
+	const (
+		white = 0 // sin visitar
+		gray  = 1 // en la pila de recursión (un re-encuentro = ciclo)
+		black = 2 // terminado
+	)
+	color := make(map[string]int, len(plugins))
+	var ordered []*pluginInfo
+	var stack []string // para reconstruir el ciclo en el mensaje
+
+	var visit func(p *pluginInfo) error
+	visit = func(p *pluginInfo) error {
+		switch color[p.Name] {
+		case black:
+			return nil
+		case gray:
+			// Re-encontramos un nodo en la pila de recursión: ciclo. Reconstruye el
+			// tramo del ciclo desde `stack` para un mensaje accionable.
+			return &StructuredError{Code: CodeEINVAL,
+				Message: fmt.Sprintf("ciclo de dependencias entre plugins: %s (los `requires` no pueden formar un ciclo, §14)",
+					cycleDescription(stack, p.Name))}
+		}
+		color[p.Name] = gray
+		stack = append(stack, p.Name)
+
+		// Visita las dependencias en orden determinista (por nombre) para que el
+		// resultado no dependa del orden de `requires` en el TOML.
+		deps := make([]string, len(p.Requires))
+		copy(deps, p.Requires)
+		sort.Strings(deps)
+		for _, dep := range deps {
+			if err := visit(byName[dep]); err != nil {
+				return err
+			}
+		}
+
+		stack = stack[:len(stack)-1]
+		color[p.Name] = black
+		ordered = append(ordered, p) // post-orden: las dependencias ya están dentro
+		return nil
+	}
+
+	for _, p := range roots {
+		if err := visit(p); err != nil {
+			return nil, err
+		}
+	}
+	return ordered, nil
+}
+
+// cycleDescription construye una descripción legible del ciclo: el tramo de la pila
+// de recursión desde la primera aparición del nodo que se re-encontró, cerrado
+// sobre sí mismo (`a -> b -> c -> a`).
+func cycleDescription(stack []string, repeated string) string {
+	start := 0
+	for i, n := range stack {
+		if n == repeated {
+			start = i
+			break
+		}
+	}
+	cycle := append([]string{}, stack[start:]...)
+	cycle = append(cycle, repeated)
+	return strings.Join(cycle, " -> ")
+}

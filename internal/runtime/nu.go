@@ -59,6 +59,12 @@ func registerNu(rt *Runtime) {
 	// `nu.log` (§15) y, de paso, el alias `print` = `nu.log.info`.
 	registerLog(rt, nu)
 
+	// `nu.plugin` y `nu.config` (§14, S11): `current`/`list` del loader y
+	// `dir`/`data_dir` de la configuración. El arranque canónico (carga de plugins,
+	// `init.lua` del usuario, `core:ready`) lo dispara `Boot` (loader.go), que
+	// `main` invoca; aquí solo se cuelga la superficie de consulta.
+	rt.registerPlugin(nu)
+
 	L.SetGlobal("nu", nu)
 }
 

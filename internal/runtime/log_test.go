@@ -160,11 +160,13 @@ func TestLogPermisos0600(t *testing.T) {
 }
 
 // TestLogOwnerSigueElCampo comprueba que el plugin de origen anotado es el del
-// runtime en el momento de loguear (S11 moverá ese campo según la pila de
-// plugins; aquí se valida que la anotación lo lee, no que esté hardcodeada).
+// contexto activo en el momento de loguear. S11 movió el owner a una pila
+// (`ownerStack`) que el loader empuja durante el `init.lua` de cada plugin; aquí
+// se simula ese contexto empujando un plugin a mano y se valida que la anotación
+// lo lee, no que esté hardcodeada.
 func TestLogOwnerSigueElCampo(t *testing.T) {
 	h := newHarness(t)
-	h.rt.owner = "miplugin"
+	h.rt.ownerStack = append(h.rt.ownerStack, &pluginInfo{Name: "miplugin"})
 	h.eval(`nu.log.info("hey")`)
 	lines := h.logLines()
 	if len(lines) != 1 || !strings.Contains(lines[0], "[miplugin]") {

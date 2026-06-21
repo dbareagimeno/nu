@@ -293,7 +293,7 @@ func (s *scheduler) callEventHandler(fn *lua.LFunction, payload lua.LValue) {
 	co, _ := s.host.NewThread()
 	err := co.CallByParam(lua.P{Fn: fn, NRet: 0, Protect: true}, payload)
 	if err != nil {
-		_ = s.rt.log.write(levelError, s.rt.owner,
+		_ = s.rt.log.write(levelError, s.rt.currentOwner(),
 			"un handler de nu.events lanzó: "+errString(raisedValue(err)))
 	}
 }
