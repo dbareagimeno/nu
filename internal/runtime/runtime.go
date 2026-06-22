@@ -31,6 +31,12 @@ type Runtime struct {
 	// log respalda `nu.log` (§15): un fichero append-only en data_dir.
 	log *logger
 
+	// fs es el estado de sesión de `nu.fs` (§5, S14): hoy solo el directorio
+	// temporal propio (`tmpdir`), creado perezosamente y borrado en `Close`. Las
+	// primitivas de `fs` son funciones sobre `rt` (el IO es sin estado salvo el
+	// tmpdir de sesión).
+	fs *fsState
+
 	// ldr es el loader de plugins (§14, S11): descubre los directorios con
 	// `plugin.toml`, los ordena topológicamente por `requires` y ejecuta su
 	// arranque canónico. También respalda `nu.plugin.current/list` y
@@ -158,6 +164,7 @@ func New(opts ...Option) *Runtime {
 	rt := &Runtime{
 		L:   L,
 		log: newLogger(filepath.Join(cfg.dataDir, logFileName)),
+		fs:  &fsState{},
 	}
 	rt.ldr = newLoader(rt, cfg.dataDir, cfg.configDir, pluginDirs)
 	// El gating por `nu.toml` (qué se activa) y el error de config aplazado viven en
@@ -239,6 +246,11 @@ func (rt *Runtime) Boot() error {
 func (rt *Runtime) Close() {
 	if rt.sched != nil {
 		rt.sched.stopAllTimers()
+	}
+	// Borra el directorio temporal de la sesión (`nu.fs.tmpdir`, §5) si llegó a
+	// crearse: el scratch no debe sobrevivir al proceso.
+	if rt.fs != nil {
+		rt.fs.closeTmpdir()
 	}
 	if rt.log != nil {
 		_ = rt.log.close()

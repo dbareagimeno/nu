@@ -56,6 +56,14 @@ func registerNu(rt *Runtime) {
 	// `core:plugin.misbehaved` (rt.emitMisbehaved, cableado en runtime.go).
 	rt.sched.registerEvents(nu)
 
+	// `nu.fs` (§5, S14): IO de disco. Todas ⏸ (sobre el puente `suspend` de S04)
+	// salvo `cwd` ([W], síncrona). Es el primer submódulo de IO real; su patrón de
+	// "trabajo Go en la goroutine de fondo, datos a Lua en la deliverFn" lo reusan
+	// S15 (watch) y S16 (proc). Registrado en el estado principal (los workers son
+	// S34); `fs` es [W] salvo `watch` (§16), pero la API [W] se recorta con `caps`
+	// en la Fase 7.
+	rt.registerFs(nu)
+
 	// `nu.log` (§15) y, de paso, el alias `print` = `nu.log.info`.
 	registerLog(rt, nu)
 
