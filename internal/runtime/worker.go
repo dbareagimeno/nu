@@ -38,6 +38,12 @@ import (
 // `nu.worker.spawn` (en el estado principal).
 const workerTypeName = "nu.worker.Worker"
 
+// workerSubTypeName identifica la metatabla del `Sub` que devuelve
+// `Worker:on_message` (§13). Es un handle distinto del `Sub` de `nu.events`
+// (events.go): aquel lleva `*subscriber`; este, `*workerSub`. Ambos exponen
+// `:cancel()`.
+const workerSubTypeName = "nu.worker.Sub"
+
 // workerQueueCap es la capacidad de las colas acotadas worker↔padre. Pequeña a
 // propósito: el backpressure (G de §13) debe ser observable —un productor que
 // adelanta al consumidor SUSPENDE pronto, en vez de acumular una cola ilimitada
@@ -73,6 +79,26 @@ type luaWorker struct {
 	// `terminate`/`Close` cerrarlo y soltar sus recursos.
 	wrt *Runtime
 
+	// sched es el scheduler del PADRE: lo necesita el handle para que `on_message`
+	// pueda colgar su drenador (que toma el token del padre para entregar `fn(msg)`
+	// en el estado principal) y para registrar/soltar el `Sub` por dueño (S13).
+	sched *scheduler
+
+	// EXCLUSIVIDAD `on_message`/`recv` (G8, lo 🔒 de S35). Ambos campos los tocan
+	// SOLO funciones que corren bajo el token del PADRE (`Worker:recv`,
+	// `Worker:on_message`, `Sub:cancel`): el token los serializa, sin candado.
+	//
+	//   - `recvPending` cuenta los `Worker:recv` en vuelo (suspendidos esperando un
+	//     mensaje). Se incrementa BAJO EL TOKEN antes de suspender y se decrementa al
+	//     re-adquirirlo. Registrar un `on_message` con `recvPending > 0` → `EINVAL` en
+	//     el acto (nunca prioridad silenciosa).
+	//   - `onMsg` es la suscripción `on_message` activa (nil si ninguna). Hacer un
+	//     `Worker:recv` con `onMsg != nil` → `EINVAL` en el acto. Registrar un segundo
+	//     `on_message` con uno ya activo → `EINVAL` también (uno a la vez: el canal
+	//     worker→padre tiene un único consumidor lógico).
+	recvPending int
+	onMsg       *workerSub
+
 	terminateOnce sync.Once
 	terminated    chan struct{} // se cierra al terminar (espejo legible)
 }
@@ -89,8 +115,18 @@ func (rt *Runtime) registerWorker(nu *lua.LTable) {
 	methods := L.NewTable()
 	methods.RawSetString("send", L.NewFunction(rt.workerSend))
 	methods.RawSetString("recv", L.NewFunction(rt.workerRecv))
+	methods.RawSetString("on_message", L.NewFunction(rt.workerOnMessage))
 	methods.RawSetString("terminate", L.NewFunction(rt.workerTerminate))
 	L.SetField(mt, "__index", methods)
+
+	// Metatabla del `Sub` que devuelve `Worker:on_message` (§13). Es un handle
+	// propio —no el `Sub` de `nu.events` (events.go), que lleva `*subscriber`—, con
+	// el mismo método público `:cancel()`: cancelar la suscripción libera el worker
+	// para volver a `recv` (G8).
+	smt := L.NewTypeMetatable(workerSubTypeName)
+	sidx := L.NewTable()
+	sidx.RawSetString("cancel", L.NewFunction(rt.workerSubCancel))
+	L.SetField(smt, "__index", sidx)
 
 	workerT := L.NewTable()
 	workerT.RawSetString("spawn", L.NewFunction(rt.workerSpawn))
@@ -150,6 +186,7 @@ func (rt *Runtime) workerSpawn(L *lua.LState) int {
 	w := &luaWorker{
 		chans:      chans,
 		wrt:        wrt,
+		sched:      rt.sched,
 		terminated: make(chan struct{}),
 	}
 
@@ -242,6 +279,16 @@ func (rt *Runtime) workerSend(L *lua.LState) int {
 // worker→padre). SUSPENDE hasta que haya un mensaje. Reconstruye el valor (goToLua)
 // AQUÍ, bajo el token del padre. Un worker terminado SIN mensajes pendientes →
 // `nil` (fin del canal, coherente con §8: una punta cerrada da `nil`, no lanza).
+//
+// EXCLUSIVIDAD con `on_message` (G8, lo 🔒 de S35): si ya hay un `on_message`
+// registrado sobre este worker, `recv` lanza `EINVAL` **en el acto** —nunca
+// prioridad silenciosa: no se elige uno y se ignora el otro, se rechaza explícito—.
+// El chequeo corre bajo el token del padre (donde vive `onMsg`), antes de suspender.
+//
+// CONTABILIDAD `recvPending` (G8): se incrementa BAJO EL TOKEN antes de suspender y
+// se decrementa al re-adquirirlo (con `defer`, pase lo que pase: mensaje, fin de
+// canal o aborto por `terminate`). Es lo que hace que un `on_message` registrado
+// MIENTRAS este `recv` está suspendido vea `recvPending > 0` y lance `EINVAL`.
 func (rt *Runtime) workerRecv(L *lua.LState) int {
 	if !rt.requireTask(L, "Worker:recv") {
 		return 0
@@ -250,7 +297,185 @@ func (rt *Runtime) workerRecv(L *lua.LState) int {
 	if w == nil {
 		return 0
 	}
+	if w.onMsg != nil {
+		raiseError(L, CodeEINVAL,
+			"Worker:recv: hay un on_message registrado sobre este worker (excluyentes, G8); cancélalo antes de usar recv", lua.LNil)
+		return 0
+	}
+	w.recvPending++
+	defer func() { w.recvPending-- }()
 	return recvOnBoundedChan(L, rt.sched, w.chans.fromWorker, w.chans.done)
+}
+
+// ── Worker:on_message (lado del padre, §13, G8) ──────────────────────────────
+
+// workerSub es la suscripción que devuelve `Worker:on_message`: la `fn` a invocar
+// por cada mensaje del worker, el worker al que pertenece, el `stopCh` que corta su
+// drenador y el dueño (S13) para que `reload` la suelte. Toda su vida (registro,
+// `cancel`, fin del drenador) ocurre bajo el token del PADRE; `stopCh` se cierra una
+// sola vez (`stopOnce`). Implementa `ownedHandle`.
+type workerSub struct {
+	w         *luaWorker
+	fn        *lua.LFunction
+	stopCh    chan struct{}
+	stopOnce  sync.Once
+	live      bool // false tras `cancel`/`release`: el drenador deja de entregar
+	ownerName string
+}
+
+func (sub *workerSub) owner() string { return sub.ownerName }
+
+// release suelta la suscripción (la usa `reload` vía el registro de handles, S13, y
+// `cancel` a mano): marca muerta y corta el drenador. Idempotente (`stopOnce`). NO
+// toca el registro de handles (eso lo orquesta quien llama). **Presupone el token.**
+func (sub *workerSub) release() {
+	sub.live = false
+	if sub.w.onMsg == sub {
+		sub.w.onMsg = nil // libera el worker para volver a `recv` (G8)
+	}
+	sub.stopOnce.Do(func() { close(sub.stopCh) })
+}
+
+// workerOnMessage implementa `Worker:on_message(fn) -> Sub` (§13): la ALTERNATIVA
+// por callback en el ESTADO PRINCIPAL a `Worker:recv`. En vez de hacer `recv()` ⏸ en
+// bucle, registra `fn(msg)` que el loop principal invoca (síncrono, bajo `pcall` por
+// frontera, ADR-008) por cada mensaje que llega del worker. Devuelve un `Sub` con
+// `:cancel()`. NO suspende: el registro es síncrono y arranca el drenador en paralelo.
+//
+// EXCLUSIVIDAD con `recv` (G8, lo 🔒 de S35): registrar `on_message` con un `recv`
+// pendiente (`recvPending > 0`) o con otro `on_message` ya activo (`onMsg != nil`)
+// lanza `EINVAL` **en el acto** —nunca prioridad silenciosa—. El chequeo corre bajo
+// el token del padre, antes de crear nada.
+//
+// ENTREGA (cómo se drena): un drenador en goroutine de fondo (como el ticker de
+// `every`, timers.go) saca los mensajes de la cola worker→padre, toma el token del
+// padre y llama `fn(msg)` en el estado principal —reconstruyendo el valor (`goToLua`)
+// BAJO EL TOKEN, igual que `recv`—. El drenador NO es una task ni cuenta para la
+// quiescencia del padre (es facilidad de fondo, como `every`): su fin de vida es
+// `Sub:cancel`, `terminate` (cierra `done`) o `Close`. Sin fugas al cancelar (cierra
+// su `stopCh`) ni al terminar el worker (`done` lo despierta).
+func (rt *Runtime) workerOnMessage(L *lua.LState) int {
+	w := checkWorker(L)
+	if w == nil {
+		return 0
+	}
+	fn := L.CheckFunction(2)
+
+	// Exclusividad G8, en el acto (bajo el token): un `recv` suspendido o un
+	// `on_message` ya activo bloquean el registro. Nunca se ignora uno en favor del
+	// otro: se rechaza explícito.
+	if w.recvPending > 0 {
+		raiseError(L, CodeEINVAL,
+			"Worker:on_message: hay un Worker:recv pendiente sobre este worker (excluyentes, G8); no se mezclan", lua.LNil)
+		return 0
+	}
+	if w.onMsg != nil {
+		raiseError(L, CodeEINVAL,
+			"Worker:on_message: ya hay un on_message registrado sobre este worker (uno a la vez, G8)", lua.LNil)
+		return 0
+	}
+
+	sub := &workerSub{
+		w:         w,
+		fn:        fn,
+		stopCh:    make(chan struct{}),
+		live:      true,
+		ownerName: rt.currentOwner(),
+	}
+	w.onMsg = sub
+	rt.sched.track(sub) // registro de handles por dueño (S13, G2): que `reload` lo suelte
+
+	// Drenador de fondo: como el ticker de `every`, no compite por el token salvo
+	// para entregar cada mensaje, y se corta por `stopCh`/`done`.
+	go w.drainOnMessage(sub)
+
+	ud := L.NewUserData()
+	ud.Value = sub
+	L.SetMetatable(ud, L.GetTypeMetatable(workerSubTypeName))
+	L.Push(ud)
+	return 1
+}
+
+// drainOnMessage es el cuerpo de la goroutine de fondo del drenador de `on_message`
+// (lo arrancó `workerOnMessage`). Saca mensajes de la cola worker→padre y, por cada
+// uno, toma el token del padre y llama `fn(msg)` en el estado principal, bajo `pcall`
+// por frontera. Termina cuando se cancela la `Sub` (`stopCh`) o el worker termina
+// (`done`): un worker terminado deja de tener emisor, así que no hay más que drenar.
+//
+// CÓMO LLEGA A `fn(msg)` SIN CARRERA. La cola `fromWorker` lleva el valor Go ya
+// COPIADO (luaToGo del lado del worker, bajo SU token); el drenador lo reconstruye
+// con `goToLua` BAJO EL TOKEN del padre, igual que `Worker:recv`. Ningún `LValue`
+// cruza goroutines —el aislamiento de ADR-008 intacto—. El `fn` corre sobre un
+// thread efímero del estado principal, bajo `pcall` (`callOnMessage`): un `fn` que
+// lance queda en el log (best-effort) y el drenado SIGUE con el próximo mensaje.
+//
+// LIVENESS (cancelar deja de entregar, G8). Antes de entregar cada mensaje se vuelve
+// a comprobar `sub.live` BAJO EL TOKEN: si la `Sub` se canceló entre que el mensaje
+// se sacó de la cola y se tomó el token, no se entrega (cancelar surte efecto
+// inmediato, como el `live` del bus de eventos, events.go).
+func (w *luaWorker) drainOnMessage(sub *workerSub) {
+	s := w.sched
+	for {
+		var goMsg interface{}
+		select {
+		case <-sub.stopCh:
+			return // `Sub:cancel`/`release`: corte explícito, NO se drena lo pendiente
+		case <-w.chans.done:
+			// Worker terminado: NO se sale aún si quedan mensajes encolados ANTES del
+			// cierre —se entregan primero, igual que `recvOnBoundedChan` drena la cola
+			// antes de declarar fin de canal—. El `select` de Go, con `done` y
+			// `fromWorker` ambos listos, elige al azar; por eso, al despertar por `done`,
+			// se intenta un saque NO bloqueante de `fromWorker`. Si la cola está vacía,
+			// se acabó el emisor: no hay más que entregar.
+			select {
+			case goMsg = <-w.chans.fromWorker:
+			default:
+				return
+			}
+		case goMsg = <-w.chans.fromWorker:
+		}
+		// Entrega bajo el token del padre. Si la `Sub` se canceló mientras tanto, el
+		// mensaje se descarta (ya sacado de la cola, pero la entrega se salta): cancelar
+		// surte efecto inmediato.
+		s.acquire()
+		if sub.live {
+			s.callOnMessage(sub.fn, goMsg)
+		}
+		s.release()
+	}
+}
+
+// callOnMessage reconstruye el mensaje (`goToLua`) y corre `fn(msg)` sobre un thread
+// efímero del estado principal, bajo `pcall` por frontera (ADR-008). **Presupone el
+// token tomado.** Es la misma estrategia que `callEventHandler`/`callSyncLocked`: un
+// thread por disparo para no tocar la pila del estado principal. Un `fn` que lance
+// queda aislado en el log (best-effort); no rompe el drenado.
+func (s *scheduler) callOnMessage(fn *lua.LFunction, goMsg interface{}) {
+	co, _ := s.host.NewThread()
+	msg := s.rt.goToLua(co, goMsg, false)
+	if err := co.CallByParam(lua.P{Fn: fn, NRet: 0, Protect: true}, msg); err != nil {
+		_ = s.rt.log.write(levelError, s.rt.currentOwner(),
+			"un handler de Worker:on_message lanzó: "+errString(raisedValue(err)))
+	}
+}
+
+// workerSubCancel implementa `Sub:cancel()` del `Sub` de `on_message` (§13): corta el
+// drenador y libera el worker para volver a `recv` (G8). Marca la `Sub` muerta
+// (entrega inmediato-stop), la desregistra del registro de handles por dueño (S13,
+// para que un `reload` posterior no la re-libere) y cierra su `stopCh` (idempotente).
+func (rt *Runtime) workerSubCancel(L *lua.LState) int {
+	ud := L.CheckUserData(1)
+	sub, ok := ud.Value.(*workerSub)
+	if !ok {
+		raiseError(L, CodeEINVAL, "Sub:cancel espera un handle de Sub", lua.LNil)
+		return 0
+	}
+	sub.release()
+	// Desregistra del registro de handles por dueño (S13): un `cancel` a mano no debe
+	// dejar la suscripción colgando en `ownerHandles` (fuga; un `reload` posterior la
+	// re-liberaría). `untrack` es idempotente.
+	rt.sched.untrack(sub)
+	return 0
 }
 
 // workerTerminate implementa `Worker:terminate()` (§13): corta el worker de forma
