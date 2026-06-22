@@ -64,6 +64,14 @@ type Runtime struct {
 	// `null`. Se crea una sola vez en `registerCodecs` y nunca cambia.
 	jsonNull *lua.LUserData
 
+	// ui es el estado de sesión de `nu.ui` (§9.1, S29): el **compositor** (rejilla
+	// de pantalla, regiones con z-order, diff→ANSI, coalescing). Vive en el estado
+	// principal bajo el token (ADR-008: `nu.ui` es solo estado principal). Las
+	// regiones que entrega son `ownedHandle` (S13): un `reload` las destruye con el
+	// resto de los handles del plugin (G2). Inmutable tras `New` (el compositor sí
+	// muta: regiones, tamaño, frames).
+	ui *uiState
+
 	// ownerStack es la pila de contextos de plugin activos (§14). El tope es el
 	// plugin "en cuyo contexto corre el código" que devuelve `nu.plugin.current`;
 	// vacía = código del usuario/core (`init.lua` del usuario, chunk de `-e`),
@@ -98,6 +106,14 @@ type config struct {
 	// son S12. Vacío = arranque desnudo (sin plugins), solo el `init.lua` del
 	// usuario.
 	pluginDirs []string
+
+	// uiW, uiH fijan el tamaño inicial de la pantalla de `nu.ui` (§9.1) cuando no
+	// hay un TTY del que leerlo (entorno headless de S29: la negociación con el
+	// terminal real y el gating G20 son S32). Cero = sin Option: se resuelve por
+	// `COLUMNS`/`LINES` del entorno o, en su defecto, 80×24 (default razonable). Los
+	// tests del compositor inyectan un tamaño pequeño con `WithUISize` para forzar
+	// el recorte de regiones fuera de pantalla (G1).
+	uiW, uiH int
 }
 
 // Option ajusta la construcción de un Runtime. El default sirve para producción
@@ -134,6 +150,20 @@ func WithConfigDir(dir string) Option {
 // ordenación topológica, que es la que fija el orden de carga real).
 func WithPluginDir(dir string) Option {
 	return func(c *config) { c.pluginDirs = append(c.pluginDirs, dir) }
+}
+
+// WithUISize fija el tamaño inicial de la pantalla de `nu.ui` en celdas (§9.1).
+// Es el gancho de los tests del compositor: inyectan una pantalla pequeña para
+// forzar el recorte de regiones fuera de pantalla (G1) sin depender de un TTY. En
+// producción, sin Option, el tamaño sale del entorno (`COLUMNS`/`LINES`) o del
+// default 80×24 (la negociación con el terminal real y el gating headless G20 son
+// S32). Valores no positivos se ignoran (se cae al default).
+func WithUISize(w, h int) Option {
+	return func(c *config) {
+		if w > 0 && h > 0 {
+			c.uiW, c.uiH = w, h
+		}
+	}
 }
 
 // New construye un Runtime listo para ejecutar Lua: abre solo las librerías
@@ -191,6 +221,11 @@ func New(opts ...Option) *Runtime {
 		// `[net]` deja ambos vacíos (comportamiento estándar). No se aplica si el
 		// `nu.toml` está mal formado (el error se aplaza a `Boot`).
 		http: newHTTPState(nuCfg.Net.CAFile, nuCfg.Net.Proxy),
+		// El compositor de `nu.ui` (§9.1, S29). Su tamaño sale de la Option (tests),
+		// del entorno (`COLUMNS`/`LINES`) o del default 80×24 (headless). El timer de
+		// coalescing (a lo sumo cada ~30 ms) se arma en `Boot`, cuando el event loop
+		// ya corre; en `New` solo se construye el estado.
+		ui: newUIState(cfg.uiW, cfg.uiH),
 	}
 	rt.ldr = newLoader(rt, cfg.dataDir, cfg.configDir, pluginDirs)
 	// El gating por `nu.toml` (qué se activa) y el error de config aplazado viven en
@@ -263,6 +298,11 @@ func (rt *Runtime) emitMisbehaved(owner, reason string) {
 // `EvalString`; un `nu -e` sin directorios de plugins arranca igual (solo corre el
 // `init.lua` del usuario, si existe, y emite `core:ready`).
 func (rt *Runtime) Boot() error {
+	// Arma el timer de coalescing de `nu.ui` (§9.1, S29): ahora que el event loop
+	// corre, una goroutine pinta el compositor como mucho cada ~30 ms si hay
+	// cambios. En headless el pintado solo construye el buffer ANSI en memoria (no
+	// hay TTY hasta S32); el timer se corta en `Close`.
+	rt.armPainter()
 	return rt.ldr.Boot()
 }
 
@@ -291,6 +331,9 @@ func (rt *Runtime) Close() {
 		// de seguridad, tras el `cleanup` de la task que consume el iterador).
 		rt.sched.stopAllGreps()
 	}
+	// Corta el timer de coalescing de `nu.ui` (S29): su goroutine de pintado no debe
+	// sobrevivir al proceso.
+	rt.stopPainter()
 	// Borra el directorio temporal de la sesión (`nu.fs.tmpdir`, §5) si llegó a
 	// crearse: el scratch no debe sobrevivir al proceso.
 	if rt.fs != nil {

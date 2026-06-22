@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -24,9 +25,111 @@ import (
 // la condición de TTY por encima sin tocar estas firmas. Es deuda explícita
 // (NOTA DE FRONTERA del plan), no una contradicción de G20.
 
-// registerUI cuelga `nu.ui` del global `nu` con la superficie de S22:
-// `block`/`caps` y, de paso, instala la metatabla del tipo `Block` (block.go).
-// El resto de §9 (size/region/input/clipboard) son sesiones posteriores.
+// regionTypeName identifica la metatabla del handle opaco `Region` (§9.1, S29).
+// De ella cuelgan los métodos de S29 (`blit`/`fill`/`clear`); el resto del ciclo
+// de vida (`move`/`resize`/`raise`/`lower`/`show`/`hide`/`destroy`/`cursor`) es
+// S30, el input es S31. Userdata opaco, como el Block: Lua lo pasa de vuelta, no
+// inspecciona su interior.
+const regionTypeName = "nu.ui.Region"
+
+// coalesceInterval es el periodo de pintado del compositor (§9.1, ADR-007): se
+// pinta como mucho cada ~30 ms. Los cambios entre dos pintados se acumulan y
+// producen UN frame, no N —no hay "flush" manual—. 30 ms ≈ 33 fps, la frontera de
+// la fluidez percibida que el spike de ADR-012 usó como presupuesto.
+const coalesceInterval = 30 * time.Millisecond
+
+// uiState es el estado de sesión de `nu.ui` (§9.1, S29): el compositor y el timer
+// de coalescing que lo pinta. Vive en el estado principal bajo el token (ADR-008);
+// el timer (una goroutine armada en `Boot`) toma el token para pintar, de modo que
+// el pintado nunca pisa una mutación de Lua. En headless (S29) el "pintado" solo
+// construye el buffer ANSI en memoria (no hay TTY hasta S32); su forma y su tamaño
+// son inspeccionables por los tests.
+type uiState struct {
+	comp   *compositor
+	stopCh chan struct{} // cierra el timer de coalescing en `Close`
+	armed  bool          // el timer ya se armó (idempotencia de `armPainter`)
+}
+
+// newUIState construye el estado de UI con un compositor del tamaño pedido. Si la
+// Option `WithUISize` no fijó tamaño (w/h <= 0), se resuelve por el entorno
+// (`COLUMNS`/`LINES`) o el default 80×24. El timer de coalescing NO se arma aquí
+// (no hay event loop todavía): lo arma `Boot` con `armPainter`.
+func newUIState(w, h int) *uiState {
+	if w <= 0 || h <= 0 {
+		w, h = detectSize()
+	}
+	return &uiState{comp: newCompositor(w, h), stopCh: make(chan struct{})}
+}
+
+// detectSize estima el tamaño del terminal en celdas sin tocar el TTY (la
+// negociación real con el terminal y el gating headless G20 son S32). Lee
+// `COLUMNS`/`LINES` del entorno (que algunos shells exportan) y, si no están o no
+// son enteros positivos, cae al default 80×24 —el tamaño clásico, razonable para
+// un primer frame headless—. No es sniffing frágil: es un default; con TTY real,
+// S32 lo sustituirá por el tamaño del terminal y los `ui:resize`.
+func detectSize() (int, int) {
+	w, h := 80, 24
+	if c, err := strconv.Atoi(os.Getenv("COLUMNS")); err == nil && c > 0 {
+		w = c
+	}
+	if l, err := strconv.Atoi(os.Getenv("LINES")); err == nil && l > 0 {
+		h = l
+	}
+	return w, h
+}
+
+// armPainter arranca el timer de coalescing: una goroutine que, cada
+// `coalesceInterval`, toma el token y pinta el compositor **si hay cambios**
+// (`dirty`). Así N mutaciones entre dos ticks producen UN frame (ADR-007). Lo
+// llama `Boot` (cuando el event loop ya corre); es idempotente. En headless el
+// pintado construye el buffer ANSI en memoria (no hay TTY hasta S32). El timer se
+// corta en `Close` cerrando `stopCh`.
+//
+// Toma el token para pintar (como `runSyncHandler`): el pintado toca el compositor
+// (estado principal, ADR-008), que las mutaciones de Lua también tocan bajo el
+// token; serializarlos por el token evita la carrera sin un candado propio. El
+// pintado es Go puro (no llama a Lua), así que no necesita un thread Lua dedicado.
+func (rt *Runtime) armPainter() {
+	if rt.ui == nil || rt.ui.armed {
+		return
+	}
+	rt.ui.armed = true
+	s := rt.sched
+	ticker := time.NewTicker(coalesceInterval)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-rt.ui.stopCh:
+				return
+			case <-ticker.C:
+				s.acquire()
+				if rt.ui.comp.dirty {
+					rt.ui.comp.paint()
+				}
+				s.release()
+			}
+		}
+	}()
+}
+
+// stopPainter corta el timer de coalescing (su goroutine). Idempotente: cerrar
+// `stopCh` dos veces entraría en pánico, así que se protege con el flag `armed`
+// —solo el primer `Close` cierra—. Lo llama `Close`.
+func (rt *Runtime) stopPainter() {
+	if rt.ui == nil || !rt.ui.armed {
+		return
+	}
+	rt.ui.armed = false
+	close(rt.ui.stopCh)
+}
+
+// registerUI cuelga `nu.ui` del global `nu`: la superficie de S22
+// (`block`/`caps`) más la de S29 (`size`/`region` y los métodos `blit`/`fill`/
+// `clear` de `Region`). El resto de §9 (resto del ciclo de vida de Region en S30,
+// input en S31, clipboard/eventos/gating headless en S32) son sesiones
+// posteriores. Instala además la metatabla del tipo `Block` (block.go) y la de
+// `Region`.
 func (rt *Runtime) registerUI(nu *lua.LTable) {
 	L := rt.L
 
@@ -34,10 +137,175 @@ func (rt *Runtime) registerUI(nu *lua.LTable) {
 	// constructor manual y el resto de productores (nu.text.*) la comparten.
 	rt.registerBlockType()
 
+	// La metatabla del tipo opaco `Region` (§9.1, S29) con los métodos de S29.
+	rt.registerRegionType()
+
 	uiT := L.NewTable()
 	uiT.RawSetString("block", L.NewFunction(rt.uiBlock))
 	uiT.RawSetString("caps", L.NewFunction(rt.uiCaps))
+	uiT.RawSetString("size", L.NewFunction(rt.uiSize))
+	uiT.RawSetString("region", L.NewFunction(rt.uiRegionNew))
 	nu.RawSetString("ui", uiT)
+}
+
+// registerRegionType instala la metatabla del tipo `Region` con un `__index` que
+// resuelve sus métodos de S29: `blit`/`fill`/`clear`. La Region es opaca (§9.1):
+// no se expone su interior a Lua, solo sus métodos. El resto de métodos (S30) se
+// añadirán a este `__index` sin tocar el tipo.
+func (rt *Runtime) registerRegionType() {
+	L := rt.L
+	mt := L.NewTypeMetatable(regionTypeName)
+	index := L.NewTable()
+	index.RawSetString("blit", L.NewFunction(rt.regionBlit))
+	index.RawSetString("fill", L.NewFunction(rt.regionFill))
+	index.RawSetString("clear", L.NewFunction(rt.regionClear))
+	L.SetField(mt, "__index", index)
+}
+
+// uiSize implementa `nu.ui.size() -> {w, h}` (§9.1): el tamaño de la pantalla en
+// celdas. En S29 sale del compositor (inyectado por `WithUISize` en tests, o del
+// entorno/default headless); con TTY real, S32 lo mantendrá al día con los
+// `ui:resize`. Devuelve una tabla `{w=, h=}`.
+func (rt *Runtime) uiSize(L *lua.LState) int {
+	t := L.NewTable()
+	t.RawSetString("w", lua.LNumber(rt.ui.comp.w))
+	t.RawSetString("h", lua.LNumber(rt.ui.comp.h))
+	L.Push(t)
+	return 1
+}
+
+// uiRegionNew implementa `nu.ui.region(opts) -> Region` (§9.1): crea una región
+// rectangular de composición. `opts`: `{x, y, w, h, z?}` (z opcional, default 0).
+// El z-order es propiedad de quien la crea (mayor z gana en la zona común). La
+// región se etiqueta con el dueño vigente (`currentOwner()`) y se registra como
+// `ownedHandle` (S13): un `reload` la destruye con el resto de los handles del
+// plugin (G2). NO se exponen aquí move/resize/raise/lower/show/hide/destroy/cursor
+// (eso es S30): solo crear la región y sus métodos de S29.
+//
+// **Resize (G1)**: una región total o parcialmente fuera de pantalla NO es error
+// —se crea con sus coordenadas tal cual y el compositor la recorta al pintar—; sus
+// `w`/`h` definen su lienzo lógico, independiente del tamaño de la pantalla, así
+// que reaparece intacta si la pantalla crece. `w`/`h` deben ser >= 0; `x`/`y` son
+// libres (incluso negativos: la región empieza fuera por la izquierda/arriba).
+func (rt *Runtime) uiRegionNew(L *lua.LState) int {
+	opts := L.CheckTable(1)
+
+	x := optInt(opts, "x", 0)
+	y := optInt(opts, "y", 0)
+	z := optInt(opts, "z", 0)
+	w, okW := reqInt(opts, "w")
+	h, okH := reqInt(opts, "h")
+	if !okW || !okH {
+		raiseError(L, CodeEINVAL, "nu.ui.region: opts necesita `w` y `h` enteros", lua.LNil)
+		return 0
+	}
+	if w < 0 || h < 0 {
+		raiseError(L, CodeEINVAL, "nu.ui.region: `w` y `h` no pueden ser negativos", lua.LNil)
+		return 0
+	}
+
+	reg := rt.ui.comp.addRegion(x, y, w, h, z, rt.currentOwner())
+	// Registro de handles por dueño (S13): que `reload` la encuentre y destruya.
+	rt.sched.track(reg)
+
+	ud := L.NewUserData()
+	ud.Value = reg
+	L.SetMetatable(ud, L.GetTypeMetatable(regionTypeName))
+	L.Push(ud)
+	return 1
+}
+
+// optInt lee un campo entero opcional de una tabla de opciones; si falta o no es
+// número, devuelve `def`. Lo usan los campos opcionales de `nu.ui.region` (`x`,
+// `y`, `z`).
+func optInt(t *lua.LTable, key string, def int) int {
+	if n, ok := t.RawGetString(key).(lua.LNumber); ok {
+		return int(n)
+	}
+	return def
+}
+
+// reqInt lee un campo entero requerido; devuelve `(valor, true)` si está presente
+// como número, o `(0, false)` si falta o no es número (el llamante lanza EINVAL con
+// el contexto). Lo usan `w`/`h` de `nu.ui.region`.
+func reqInt(t *lua.LTable, key string) (int, bool) {
+	if n, ok := t.RawGetString(key).(lua.LNumber); ok {
+		return int(n), true
+	}
+	return 0, false
+}
+
+// checkRegion recupera el `*uiRegion` del userdata del argumento `idx`. Lanza
+// `EINVAL` si no es un handle de Region o si ya se destruyó/recargó (alive=false):
+// blittear sobre una región muerta es un error de uso accionable, no un no-op
+// silencioso.
+func checkRegion(L *lua.LState, idx int) *uiRegion {
+	ud := L.CheckUserData(idx)
+	r, ok := ud.Value.(*uiRegion)
+	if !ok {
+		raiseError(L, CodeEINVAL, "Region: se esperaba un handle de Region", lua.LNil)
+		return nil
+	}
+	if !r.alive {
+		raiseError(L, CodeEINVAL, "Region: la región ya fue destruida", lua.LNil)
+		return nil
+	}
+	return r
+}
+
+// regionBlit implementa `Region:blit(x, y, block)` (§9.1): estampa un Block en
+// coordenadas LOCALES de la región. Es **copia, nunca re-render** (G28): copia la
+// ventana visible del Block al lienzo de la región sin reconstruir el Block —
+// blittear el mismo Block con otro offset es otra copia, no recalcula nada—. `x/y`
+// pueden ser **negativos** y recortan el borde inicial del Block (un scroll hacia
+// abajo es `blit(0, -n, doc)`); el exceso recorta el final (viewport con recorte
+// por ambos extremos, G28). El contenido persiste hasta el próximo blit/fill/clear;
+// el pintado real lo coalesce el timer (~30 ms). Marca sucio el compositor.
+func (rt *Runtime) regionBlit(L *lua.LState) int {
+	r := checkRegion(L, 1)
+	if r == nil {
+		return 0
+	}
+	x := L.CheckInt(2)
+	y := L.CheckInt(3)
+	b := checkBlock(L, 4)
+	r.content.blitBlock(x, y, b)
+	r.comp.markDirty()
+	return 0
+}
+
+// regionFill implementa `Region:fill(style?)` (§9.1): rellena la región con un
+// estilo (espacios con ese estilo). Sin `style` (o nil), es fondo sin estilo
+// —equivalente a `clear`—. Marca sucio el compositor.
+func (rt *Runtime) regionFill(L *lua.LState) int {
+	r := checkRegion(L, 1)
+	if r == nil {
+		return 0
+	}
+	var st *style
+	if L.GetTop() >= 2 && L.Get(2) != lua.LNil {
+		parsed, err := parseStyle(L, L.Get(2))
+		if err != "" {
+			raiseError(L, CodeEINVAL, "Region:fill: "+err, lua.LNil)
+			return 0
+		}
+		st = parsed
+	}
+	r.content.fill(st)
+	r.comp.markDirty()
+	return 0
+}
+
+// regionClear implementa `Region:clear()` (§9.1): limpia la región (todas sus
+// celdas a fondo, sin estilo). Es `fill(nil)`. Marca sucio el compositor.
+func (rt *Runtime) regionClear(L *lua.LState) int {
+	r := checkRegion(L, 1)
+	if r == nil {
+		return 0
+	}
+	r.content.fill(nil)
+	r.comp.markDirty()
+	return 0
 }
 
 // uiBlock implementa `nu.ui.block(lines) -> Block` (§9.2): construcción manual de
