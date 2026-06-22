@@ -249,6 +249,9 @@ func (rt *Runtime) Close() {
 		// Corta los `nu.fs.watch` activos (S15): sus goroutines de fondo y los
 		// watchers del SO no deben sobrevivir al proceso.
 		rt.sched.stopAllWatchers()
+		// Mata los subprocesos vivos de `nu.proc.spawn` (S16): la última red de
+		// seguridad de la vida del proceso (§6), tras `cleanup` y el finalizer del GC.
+		rt.sched.stopAllProcs()
 	}
 	// Borra el directorio temporal de la sesión (`nu.fs.tmpdir`, §5) si llegó a
 	// crearse: el scratch no debe sobrevivir al proceso.
