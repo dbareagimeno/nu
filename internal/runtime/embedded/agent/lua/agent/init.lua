@@ -653,6 +653,10 @@ function Session:send(content)
     end
     if usage ~= nil then
       self.usage.context_tokens = usage.input_tokens or self.usage.context_tokens
+      -- last_usage: el usage del proveedor del ÚLTIMO turno (input/output_tokens),
+      -- distinto de `self.usage` (acumulado de la sesión). Lo usa el digesto de un
+      -- subagente en modo task (§9) para alinear su forma con la del modo worker.
+      self.last_usage = usage
     end
     self.usage.turns = self.usage.turns + 1
     emit(self.handle.id, "message", { message = assistant, usage = usage, stop_reason = done.stop_reason })
@@ -687,6 +691,27 @@ function Session:send(content)
 
   emit(self.handle.id, "turn.end", { message = final_message })
   return final_message
+end
+
+-- Session:spawn(opts) -> Sub (agente.md §9). Lanza un SUBAGENTE: un agente que
+-- corre AISLADO y devuelve a este (su padre) un resultado DIGERIDO. Delega en el
+-- módulo `subagent` (cableado al final de este fichero con `subagent.attach(M)`).
+-- opts = los de agent.session + { worker? = false, caps?: string[] }.
+function Session:spawn(opts)
+  if self.closed then
+    eagent("la sesión está cerrada")
+  end
+  return M._subagent.spawn(self, opts)
+end
+
+-- M.run_tool_proxy(session, call) -> tool_result. Corre UNA tool por el pipeline
+-- COMPLETO (permisos → hooks → handler → tool_result) sobre `session` (agente.md
+-- §9). Es lo que el PADRE invoca cuando un subagente-worker proxya una tool: la
+-- ejecución ocurre SIEMPRE en el estado principal, bajo el pipeline centralizado
+-- (el worker no puede saltárselo). Devuelve el bloque tool_result canónico
+-- (JSON-able: cruza al worker). Reusa `run_tool`, idéntico al del turno (§2 paso 5).
+function M.run_tool_proxy(session, call)
+  return run_tool(session, call)
 end
 
 -- Session:set_model(model) cambio en caliente (agente.md §2 G19). Valida contra el
@@ -831,5 +856,13 @@ function M.session(opts)
   emit(self.handle.id, "session.start", { model = model })
   return self
 end
+
+-- ---------------------------------------------------------------------------
+-- Subagentes (agente.md §9, S40). Se cablea al final, cuando `M` (con `session`,
+-- `run_tool_proxy`, `caps`) ya está completo: `subagent.attach(M)` inyecta el
+-- módulo `agent` en el de subagentes (evita un require circular) y expone
+-- `M._subagent.spawn`, que usa `Session:spawn`.
+-- ---------------------------------------------------------------------------
+M._subagent = require("agent.subagent").attach(M)
 
 return M
