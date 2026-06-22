@@ -192,8 +192,41 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
      (`allow = {"mcp__<servidor>__*"}`) y en headless sin él se DENIEGAN con
      error accionable. No hay caso especial: una tool MCP pasa por la misma
      valla que cualquier otra.
-5. **Superficie CLI**: `nu -e` y `--auto-permissions` aparecen en los
+5. ~~**Superficie CLI**: `nu -e` y `--auto-permissions` aparecen en los
    contratos sin especificación propia (flags, subcomandos, comportamiento
    headless, códigos de salida). El azúcar de reanudación (un `--continue`
    sobre `agent.session{ resume }`) se decidirá aquí: G18 lo dejó
-   deliberadamente fuera de los contratos.
+   deliberadamente fuera de los contratos.~~ **RESUELTA** por la
+   implementación de S45 ([implementacion.md](implementacion.md)). La
+   superficie CLI vive en el **binario** (`main.go`), NO en la API sagrada
+   `nu.*` (api.md): es la interfaz de línea de comandos del ejecutable, y el
+   core sigue sin saber lo que es un agente (ADR-003) — el CLI orquesta las
+   extensiones (`agent`, `sessions`) por la API pública, como podría hacerlo un
+   `init.lua` de usuario. Lo fijado:
+   - **Flags**: `nu -e '<lua>'` (evalúa un chunk Lua headless e imprime sus
+     retornos, ya de S01); `nu -p '<prompt>'` (ejecuta un **turno de agente
+     headless** — agente.md §1, "modo scripting/CI gratis" — e imprime el texto
+     final del asistente a stdout); `--auto-permissions` (permisos del agente en
+     modo `"auto"`, agente.md §5 amortiguador 3 — sin él, en headless las tools
+     sensibles se DENIEGAN); `--model 'prov/modelo'` (anula el modelo por defecto
+     de `agent.toml`); `--continue`/`-c` (azúcar de reanudación, abajo).
+   - **Headless / códigos de salida**: `nu -e` y el modo agente corren SIN TTY
+     (G20) con códigos de salida coherentes para CI/scripts — **0** éxito;
+     **1** error de ejecución (el chunk, el turno o el provider lanzaron, o el
+     arranque falló); **2** uso inválido (flags/argumentos); **3** permiso
+     denegado en headless (una tool sensible se denegó por falta de
+     `--auto-permissions`, agente.md §5 — código DISTINTO para que un script
+     distinga "el modelo no pudo actuar por permisos" de un fallo de ejecución).
+   - **`--continue` (G18)**: reanuda la sesión MÁS RECIENTE del proyecto (cwd)
+     antes de enviar el prompt — `sessions.list(cwd)` (los ids ordenan
+     lexicográfico = temporal, sesiones.md §2/§7) elige la última, que se pasa
+     como `resume` a `agent.session{...}`. Es el `--continue` que G18 dejó
+     deliberadamente fuera de los contratos por pertenecer a esta superficie.
+   - **Arranque** (S33): sin args y con TTY → arranque normal (pantalla de
+     runtime desnudo si no hay plugins, G21); sin args y sin TTY → uso (código 2);
+     `nu -e`/`-p`/`--continue` → modo headless.
+   El ejecutor headless de los modos suspendientes (el turno del agente es ⏸) es
+   `Runtime.EvalTaskString` (corre un chunk Lua como TASK a término): interfaz Go
+   del binario, NO superficie Lua sagrada (como `EvalString`/`RenderBareScreen`);
+   api.md quedó INTACTO (corolario de completitud satisfecho: la API pública +
+   las extensiones bastaron, sin hallazgo `G##`).

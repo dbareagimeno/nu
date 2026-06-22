@@ -120,7 +120,19 @@ func structuredFromError(err error) (*StructuredError, bool) {
 	if !ok {
 		return nil, false
 	}
-	tbl, ok := apiErr.Object.(*lua.LTable)
+	return structuredFromValue(apiErr.Object)
+}
+
+// structuredFromValue recupera la forma estructurada (§1.4) de un **valor Lua**
+// lanzado tal cual (no envuelto en un `*lua.ApiError`): es lo que guarda una task
+// en `errValue` cuando su `fn` lanza (scheduler.go usa `raisedValue`). Devuelve
+// `(se, true)` solo si el valor es una tabla con un campo `code` de tipo string;
+// si no, `(nil, false)` para que el llamante deje pasar el error tal cual. Es la
+// misma mitad del invariante 🔒 de S02 que `structuredFromError` —de hecho aquélla
+// delega aquí—, pero accesible desde el lado de las tasks (`EvalTaskString`), donde
+// el error no llega como `error` de Go sino como el `LValue` crudo.
+func structuredFromValue(v lua.LValue) (*StructuredError, bool) {
+	tbl, ok := v.(*lua.LTable)
 	if !ok {
 		return nil, false
 	}
