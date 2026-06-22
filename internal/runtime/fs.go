@@ -72,6 +72,10 @@ func (rt *Runtime) registerFs(nu *lua.LTable) {
 	fs.RawSetString("copy", L.NewFunction(rt.fsCopy))
 	fs.RawSetString("tmpdir", L.NewFunction(rt.fsTmpdir))
 	fs.RawSetString("cwd", L.NewFunction(rt.fsCwd))
+	// `nu.fs.watch` (S15, §5): observador del FS. NO es ⏸ (no suspende) y es solo
+	// estado principal (§16); entrega en lotes con debounce y filtrado gitignore
+	// (G7). Su superficie y el tipo `Watcher` viven en watch.go.
+	rt.registerWatch(fs)
 	nu.RawSetString("fs", fs)
 }
 

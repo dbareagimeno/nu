@@ -170,6 +170,12 @@ type scheduler struct {
 	// solo disparo y se autolimpia.
 	timers map[*luaTimer]struct{}
 
+	// watchers son los `nu.fs.watch` activos (S15). Se rastrean por la misma razón
+	// que los `timers`: cortarlos todos en `Close` para no dejar goroutines de
+	// fondo ni watchers del SO colgados. Su goroutine vigila fsnotify + debounce;
+	// como un `every`, un watcher activo **no** cuenta para la quiescencia.
+	watchers map[*luaWatcher]struct{}
+
 	// coToTask mapea el thread Lua de cada task viva (su `co`) a su `*task`. Lo
 	// usa `suspend` para observar el `cancelCh` de la task que se suspende (S07):
 	// quien suspende es la goroutine de esa task, que corre sobre `co == L`. Se
@@ -206,11 +212,12 @@ type scheduler struct {
 // el presupuesto de slice del watchdog (S09).
 func newScheduler(rt *Runtime, budget time.Duration) *scheduler {
 	s := &scheduler{
-		rt:     rt,
-		host:   rt.L,
-		gil:    make(chan struct{}, 1),
-		timers: make(map[*luaTimer]struct{}),
-		budget: budget,
+		rt:       rt,
+		host:     rt.L,
+		gil:      make(chan struct{}, 1),
+		timers:   make(map[*luaTimer]struct{}),
+		watchers: make(map[*luaWatcher]struct{}),
+		budget:   budget,
 	}
 	s.cond = sync.NewCond(&s.mu)
 	s.gil <- struct{}{} // token disponible: el primero que lo pida corre Lua
@@ -323,6 +330,51 @@ func (s *scheduler) stopAllTimers() {
 		delete(s.timers, t)
 	}
 	s.mu.Unlock()
+}
+
+// trackWatcher registra un `nu.fs.watch` activo (S15) para poder cortarlo al
+// cerrar el runtime. Mismo patrón que `trackTimer`.
+func (s *scheduler) trackWatcher(w *luaWatcher) {
+	s.mu.Lock()
+	s.watchers[w] = struct{}{}
+	s.mu.Unlock()
+}
+
+// stopWatcher corta un watcher (vía `Watcher:stop`, el cierre del runtime o un
+// `reload`) y lo deja de rastrear. Es **idempotente**: cerrar `stopCh` dos veces
+// entraría en pánico, así que el cierre solo ocurre la primera vez (cuando el
+// watcher sigue en el mapa). Tras esto, su goroutine `run` ve `stopCh` cerrado y
+// retorna; el watcher del SO se cierra (libera sus descriptores) sin dejar
+// goroutines colgadas. El `Close` de fsnotify cierra sus canales `Events`/`Errors`,
+// que la goroutine ya no leerá tras retornar.
+func (s *scheduler) stopWatcher(w *luaWatcher) {
+	s.mu.Lock()
+	_, live := s.watchers[w]
+	if live {
+		delete(s.watchers, w)
+	}
+	s.mu.Unlock()
+	if !live {
+		return
+	}
+	w.stopOnce.Do(func() { close(w.stopCh) })
+	_ = w.fsw.Close()
+}
+
+// stopAllWatchers corta todos los `nu.fs.watch` activos. Lo llama `Runtime.Close`
+// para no dejar goroutines de fondo ni watchers del SO colgados al terminar.
+func (s *scheduler) stopAllWatchers() {
+	s.mu.Lock()
+	ws := make([]*luaWatcher, 0, len(s.watchers))
+	for w := range s.watchers {
+		ws = append(ws, w)
+	}
+	s.watchers = make(map[*luaWatcher]struct{})
+	s.mu.Unlock()
+	for _, w := range ws {
+		w.stopOnce.Do(func() { close(w.stopCh) })
+		_ = w.fsw.Close()
+	}
 }
 
 // spawn crea una task y lanza su goroutine. El arranque no es síncrono: la nueva

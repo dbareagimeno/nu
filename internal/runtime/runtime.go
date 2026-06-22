@@ -246,6 +246,9 @@ func (rt *Runtime) Boot() error {
 func (rt *Runtime) Close() {
 	if rt.sched != nil {
 		rt.sched.stopAllTimers()
+		// Corta los `nu.fs.watch` activos (S15): sus goroutines de fondo y los
+		// watchers del SO no deben sobrevivir al proceso.
+		rt.sched.stopAllWatchers()
 	}
 	// Borra el directorio temporal de la sesión (`nu.fs.tmpdir`, §5) si llegó a
 	// crearse: el scratch no debe sobrevivir al proceso.
