@@ -103,6 +103,20 @@ func registerNu(rt *Runtime) {
 	// cerrarse la conexión; un fallo de transporte lanza `ENET`. Cierra la Fase 4.
 	rt.registerWs(nu)
 
+	// `nu.text` (§10, S22): width/wrap/truncate. CPU puro (ninguna ⏸) y [W] (§16;
+	// hoy en el estado principal, los workers son S34). `width` es la lógica 🔒
+	// —anchura en celdas con graphemes/east-asian/emoji ZWJ (uniseg)—, base de todo
+	// el layout; `wrap` produce un `Block` (block.go) y `truncate` recorta por
+	// grapheme con elipsis. markdown/highlight/diff/re son S23–S26.
+	rt.registerText(nu)
+
+	// `nu.ui` (§9.2, S22): por ahora solo `block`/`caps` + el parseo de `Style` y la
+	// metatabla del tipo opaco `Block`. El compositor (regiones/blit/input) es
+	// S28–S31 y el gating headless (G20) es S32; en S22 `nu.ui` se cuelga SIEMPRE
+	// (también headless) para que S23–S31 puedan construir e inspeccionar Blocks
+	// (NOTA DE FRONTERA del plan). `nu.has("ui")` sigue en false hasta S32.
+	rt.registerUI(nu)
+
 	// `nu.log` (§15) y, de paso, el alias `print` = `nu.log.info`.
 	registerLog(rt, nu)
 
