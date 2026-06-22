@@ -14,15 +14,26 @@ const (
 	APILevel     = 1
 )
 
-// capabilities es el mapa que respalda `nu.has` (§2): detección de capacidades
-// para extensiones portables. En esta sesión no hay ninguna superficie opcional
-// activa todavía —no hay UI (headless), ni red TCP cruda (reservada, no v1)—,
-// así que todas son false. Crece por adición conforme las sesiones implementan
-// cada capacidad; lo no listado es false (deny-by-default).
-var capabilities = map[string]bool{
-	"ui":        false,
-	"ui.images": false,
-	"net.tcp":   false,
+// caps construye el mapa que respalda `nu.has` PARA ESTE runtime (§2): detección de
+// capacidades para extensiones portables. No es un mapa global porque algunas caps
+// dependen del runtime concreto —en particular `"ui"`, TRUE solo si el módulo
+// `nu.ui` se registró (hay TTY interactivo, o se forzó por test), y FALSE en headless
+// (G20: sin TTY el módulo directamente no existe, y `nu.has("ui")` lo refleja, §9)—.
+// Lo no listado es false (deny-by-default): una capacidad desconocida nunca se
+// afirma. Crece por adición conforme las sesiones implementan cada superficie.
+func (rt *Runtime) caps() map[string]bool {
+	return map[string]bool{
+		// `"ui"` sigue al gating de §9/G20: el módulo `nu.ui` existe ⇔ hay superficie
+		// de UI concedida (TTY interactivo o `WithForceUI` en test). Es el mismo modelo
+		// que las caps de los workers: "la superficie no concedida no está".
+		"ui": rt.uiActive,
+		// `"ui.images"` exige, además de UI, que el terminal negocie el protocolo de
+		// imágenes (kitty/iTerm). Esa negociación es del driver de TTY (S33+); hasta
+		// entonces se reporta false (deny-by-default), nunca true sin comprobarlo.
+		"ui.images": false,
+		// `net.tcp` es superficie reservada para el futuro (no v1, §8): false.
+		"net.tcp": false,
+	}
 }
 
 // registerNu construye la tabla global `nu` y cuelga de ella los submódulos
@@ -38,7 +49,7 @@ func registerNu(rt *Runtime) {
 	version.RawSetString("api", lua.LNumber(APILevel))
 	nu.RawSetString("version", version)
 
-	nu.RawSetString("has", L.NewFunction(nuHas))
+	nu.RawSetString("has", L.NewFunction(rt.nuHas))
 
 	// `nu.task` (§3): scheduler, `spawn`, `Task:await`, `Task:cancel`,
 	// `nu.task.cleanup`... La quilla async.
@@ -130,12 +141,19 @@ func registerNu(rt *Runtime) {
 	// la Fase 5.
 	rt.registerSearch(nu)
 
-	// `nu.ui` (§9.2, S22): por ahora solo `block`/`caps` + el parseo de `Style` y la
-	// metatabla del tipo opaco `Block`. El compositor (regiones/blit/input) es
-	// S28–S31 y el gating headless (G20) es S32; en S22 `nu.ui` se cuelga SIEMPRE
-	// (también headless) para que S23–S31 puedan construir e inspeccionar Blocks
-	// (NOTA DE FRONTERA del plan). `nu.has("ui")` sigue en false hasta S32.
-	rt.registerUI(nu)
+	// `nu.ui` (§9, S22–S32): `block`/`caps`/`size`/`region` + el compositor, el input
+	// y el portapapeles (clipboard OSC 52, S32). **GATING HEADLESS (G20, §9, S32):**
+	// el módulo `nu.ui` se cuelga del global `nu` **solo si hay superficie de UI
+	// concedida** (`rt.uiActive`: un TTY interactivo, o `WithForceUI` en test). Sin
+	// TTY (`nu -e`, CI, salida redirigida) `nu.ui` directamente NO EXISTE —el mismo
+	// modelo que las caps de los workers: "la superficie no concedida no está"; la
+	// detección es `nu.has("ui")`, nunca probar-y-capturar—. Hasta S31 `nu.ui` se
+	// colgaba SIEMPRE (NOTA DE FRONTERA del plan, para que S23–S31 inspeccionaran
+	// Blocks); S32 cierra esa deuda: ahora el gating real aplica, y los tests de UI
+	// fuerzan la activación con `WithForceUI(true)` (vía `newHarness`).
+	if rt.uiActive {
+		rt.registerUI(nu)
+	}
 
 	// `nu.log` (§15) y, de paso, el alias `print` = `nu.log.info`.
 	registerLog(rt, nu)
@@ -149,11 +167,12 @@ func registerNu(rt *Runtime) {
 	L.SetGlobal("nu", nu)
 }
 
-// nuHas implementa `nu.has(cap) -> boolean` (§2). Una capacidad desconocida
-// devuelve false: las extensiones preguntan por lo que necesitan y no asumen
-// nada que el runtime no afirme.
-func nuHas(L *lua.LState) int {
+// nuHas implementa `nu.has(cap) -> boolean` (§2). Consulta las caps DE ESTE runtime
+// (`rt.caps()`), que incluyen el gating de `nu.ui` (G20: `"ui"` es true ⇔ el módulo
+// se registró). Una capacidad desconocida devuelve false: las extensiones preguntan
+// por lo que necesitan y no asumen nada que el runtime no afirme (deny-by-default).
+func (rt *Runtime) nuHas(L *lua.LState) int {
 	cap := L.CheckString(1)
-	L.Push(lua.LBool(capabilities[cap]))
+	L.Push(lua.LBool(rt.caps()[cap]))
 	return 1
 }

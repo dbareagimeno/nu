@@ -30,11 +30,19 @@ type harness struct {
 
 // newHarness construye un runtime sandboxeado y listo para snippets, con cierre
 // automático al terminar la prueba.
+//
+// **`WithForceUI(true)` (gating G20, S32):** los tests corren headless (sin TTY), así
+// que sin forzarlo `nu.ui` no existiría (el gating real lo decide la detección de
+// TTY). Como muchas pruebas de S22–S31 ejercitan `nu.ui` (block/region/input) en este
+// entorno headless, el arnés FUERZA la activación de la UI: así el gating real (por
+// TTY) sigue aplicando al binario `nu` y la suite no se rompe. Una prueba que quiera
+// observar el comportamiento HEADLESS (que `nu.ui` no exista) construye su runtime con
+// `WithForceUI(false)` a mano (ver `gating_test.go`).
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	// data_dir temporal: `nu.log` escribe en disco y no debe tocar el data_dir
 	// real del usuario. El TempDir se borra al acabar la prueba.
-	rt := New(WithDataDir(t.TempDir()))
+	rt := New(WithDataDir(t.TempDir()), WithForceUI(true))
 	t.Cleanup(rt.Close)
 	return &harness{t: t, rt: rt}
 }
@@ -43,9 +51,10 @@ func newHarness(t *testing.T) *harness {
 // pequeño para el watchdog (S09), de modo que un bucle de CPU puro se corte
 // rápido en los tests. Un `budget <= 0` desactiva el watchdog (lo usan los tests
 // que comprueban que el trabajo normal nunca se aborta sin necesidad de esperar).
+// Fuerza la UI (G20, como `newHarness`).
 func newHarnessBudget(t *testing.T, budget time.Duration) *harness {
 	t.Helper()
-	rt := New(WithDataDir(t.TempDir()), WithSliceBudget(budget))
+	rt := New(WithDataDir(t.TempDir()), WithSliceBudget(budget), WithForceUI(true))
 	t.Cleanup(rt.Close)
 	return &harness{t: t, rt: rt}
 }

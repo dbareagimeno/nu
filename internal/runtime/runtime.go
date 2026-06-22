@@ -69,8 +69,18 @@ type Runtime struct {
 	// principal bajo el token (ADR-008: `nu.ui` es solo estado principal). Las
 	// regiones que entrega son `ownedHandle` (S13): un `reload` las destruye con el
 	// resto de los handles del plugin (G2). Inmutable tras `New` (el compositor sí
-	// muta: regiones, tamaño, frames).
+	// muta: regiones, tamaño, frames). **En headless es `nil`** (G20, S32): sin
+	// superficie de UI no hay compositor; `armPainter`/`stopPainter`/`Close` ya lo
+	// toleran (`rt.ui == nil`).
 	ui *uiState
+
+	// uiActive decide el GATING HEADLESS de `nu.ui` (G20, §9, S32): si es true, el
+	// módulo `nu.ui` se registra en el global `nu`, el compositor se construye y
+	// `nu.has("ui")` es true; si es false (headless: `nu -e`, CI, salida redirigida),
+	// `nu.ui` NO EXISTE y `nu.has("ui")` es false. Lo fija `New`: por `WithForceUI`
+	// (precedencia, lo usan los tests de UI) o, en su defecto, por la detección de un
+	// TTY interactivo (`detectTTY`). Inmutable tras `New`.
+	uiActive bool
 
 	// ownerStack es la pila de contextos de plugin activos (§14). El tope es el
 	// plugin "en cuyo contexto corre el código" que devuelve `nu.plugin.current`;
@@ -109,11 +119,21 @@ type config struct {
 
 	// uiW, uiH fijan el tamaño inicial de la pantalla de `nu.ui` (§9.1) cuando no
 	// hay un TTY del que leerlo (entorno headless de S29: la negociación con el
-	// terminal real y el gating G20 son S32). Cero = sin Option: se resuelve por
-	// `COLUMNS`/`LINES` del entorno o, en su defecto, 80×24 (default razonable). Los
-	// tests del compositor inyectan un tamaño pequeño con `WithUISize` para forzar
-	// el recorte de regiones fuera de pantalla (G1).
+	// terminal real son S33+). Cero = sin Option: se resuelve por `COLUMNS`/`LINES`
+	// del entorno o, en su defecto, 80×24 (default razonable). Los tests del
+	// compositor inyectan un tamaño pequeño con `WithUISize` para forzar el recorte de
+	// regiones fuera de pantalla (G1).
 	uiW, uiH int
+
+	// forceUI / forceUISet gobiernan el GATING HEADLESS de `nu.ui` (G20, §9, S32). Sin
+	// `WithForceUI` (`forceUISet=false`), la activación de `nu.ui` la decide la
+	// detección de un TTY interactivo (`detectTTY`): así `nu -e` o una salida
+	// redirigida arrancan SIN `nu.ui`. Con `WithForceUI(v)` (`forceUISet=true`), `v`
+	// manda y se salta la detección de TTY: es la vía de los TESTS, que corren
+	// headless pero necesitan `nu.ui` para ejercitar el compositor/input/clipboard
+	// (`newHarness` la activa). El gating REAL por TTY aplica al binario `nu`.
+	forceUI    bool
+	forceUISet bool
 }
 
 // Option ajusta la construcción de un Runtime. El default sirve para producción
@@ -156,14 +176,27 @@ func WithPluginDir(dir string) Option {
 // Es el gancho de los tests del compositor: inyectan una pantalla pequeña para
 // forzar el recorte de regiones fuera de pantalla (G1) sin depender de un TTY. En
 // producción, sin Option, el tamaño sale del entorno (`COLUMNS`/`LINES`) o del
-// default 80×24 (la negociación con el terminal real y el gating headless G20 son
-// S32). Valores no positivos se ignoran (se cae al default).
+// default 80×24 (la negociación con el terminal real es S33+). Valores no positivos
+// se ignoran (se cae al default).
 func WithUISize(w, h int) Option {
 	return func(c *config) {
 		if w > 0 && h > 0 {
 			c.uiW, c.uiH = w, h
 		}
 	}
+}
+
+// WithForceUI fuerza el estado del GATING HEADLESS de `nu.ui` (G20, §9, S32),
+// saltándose la detección de TTY. `WithForceUI(true)` registra `nu.ui` y deja
+// `nu.has("ui")` en true aunque no haya terminal; `WithForceUI(false)` lo desactiva
+// aunque lo haya. Es la vía de los **tests**: corren headless (sin TTY) pero
+// necesitan `nu.ui` para ejercitar el compositor/input/clipboard —el arnés
+// (`newHarness`) la activa, y por eso los tests de S22–S31 siguen verdes pese a que
+// ahora, sin esta Option, `nu.ui` no existiría en su entorno sin TTY—. En el binario
+// `nu` real esta Option NO se pasa: el gating lo decide `detectTTY` (un `nu -e` o una
+// salida redirigida arrancan sin `nu.ui`, como exige el "Criterio de hecho" de S32).
+func WithForceUI(active bool) Option {
+	return func(c *config) { c.forceUI = active; c.forceUISet = true }
 }
 
 // New construye un Runtime listo para ejecutar Lua: abre solo las librerías
@@ -212,20 +245,32 @@ func New(opts ...Option) *Runtime {
 	// de los workers, §13).
 	L := lua.NewState(lua.Options{SkipOpenLibs: true})
 
+	// GATING HEADLESS de `nu.ui` (G20, §9, S32): decide si hay superficie de UI. La
+	// Option `WithForceUI` manda (la usan los tests); sin ella, lo decide la detección
+	// de un TTY interactivo (`detectTTY`). En headless (`nu -e`, CI, salida
+	// redirigida) sale false: ni `nu.ui` ni su compositor se construyen, y
+	// `nu.has("ui")` será false.
+	uiActive := cfg.forceUI
+	if !cfg.forceUISet {
+		uiActive = detectTTY()
+	}
+
 	rt := &Runtime{
-		L:   L,
-		log: newLogger(filepath.Join(cfg.dataDir, logFileName)),
-		fs:  &fsState{},
-		sys: &sysState{},
+		L:        L,
+		log:      newLogger(filepath.Join(cfg.dataDir, logFileName)),
+		fs:       &fsState{},
+		sys:      &sysState{},
+		uiActive: uiActive,
 		// Defaults de red de `[net]` (§8, G12, S19). Un `nu.toml` ausente o sin
 		// `[net]` deja ambos vacíos (comportamiento estándar). No se aplica si el
 		// `nu.toml` está mal formado (el error se aplaza a `Boot`).
 		http: newHTTPState(nuCfg.Net.CAFile, nuCfg.Net.Proxy),
-		// El compositor de `nu.ui` (§9.1, S29). Su tamaño sale de la Option (tests),
-		// del entorno (`COLUMNS`/`LINES`) o del default 80×24 (headless). El timer de
-		// coalescing (a lo sumo cada ~30 ms) se arma en `Boot`, cuando el event loop
-		// ya corre; en `New` solo se construye el estado.
-		ui: newUIState(cfg.uiW, cfg.uiH),
+		// El compositor de `nu.ui` (§9.1, S29) **solo si hay UI** (G20, S32): en
+		// headless `rt.ui` queda nil y no se gasta ni rejilla ni timer. Su tamaño sale
+		// de la Option (tests), del entorno (`COLUMNS`/`LINES`) o del default 80×24. El
+		// timer de coalescing (a lo sumo cada ~30 ms) se arma en `Boot`, cuando el event
+		// loop ya corre; en `New` solo se construye el estado.
+		ui: maybeUIState(uiActive, cfg.uiW, cfg.uiH),
 	}
 	rt.ldr = newLoader(rt, cfg.dataDir, cfg.configDir, pluginDirs)
 	// El gating por `nu.toml` (qué se activa) y el error de config aplazado viven en

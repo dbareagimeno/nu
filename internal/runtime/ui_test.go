@@ -14,10 +14,12 @@ import (
 
 // newHarnessUI construye un harness con un tamaño de pantalla de `nu.ui` fijo
 // (inyectado por `WithUISize`), para que `size()` y el recorte de regiones sean
-// deterministas sin depender del entorno ni de un TTY.
+// deterministas sin depender del entorno ni de un TTY. Fuerza la UI con
+// `WithForceUI(true)` (gating G20, S32): el entorno de test es headless, así que sin
+// forzarlo `nu.ui` no existiría.
 func newHarnessUI(t *testing.T, w, h int) *harness {
 	t.Helper()
-	rt := New(WithDataDir(t.TempDir()), WithUISize(w, h))
+	rt := New(WithDataDir(t.TempDir()), WithUISize(w, h), WithForceUI(true))
 	t.Cleanup(rt.Close)
 	return &harness{t: t, rt: rt}
 }
@@ -163,7 +165,7 @@ func TestUIRegionResizeNegative(t *testing.T) {
 // destruirla a mano, un `reload` (releaseOwnerHandles) no debe encontrar un handle
 // muerto que liberar (no fuga). Caja blanca, como TestUIRegionOwnedHandleG2.
 func TestUIRegionDestroyUntracks(t *testing.T) {
-	rt := New(WithDataDir(t.TempDir()), WithUISize(20, 5))
+	rt := New(WithDataDir(t.TempDir()), WithUISize(20, 5), WithForceUI(true))
 	defer rt.Close()
 
 	rt.ownerStack = append(rt.ownerStack, &pluginInfo{Name: "P"})
@@ -186,7 +188,7 @@ func TestUIRegionDestroyUntracks(t *testing.T) {
 // hace) se descuelga del compositor y queda muerta. Test de caja blanca: crea la
 // región desde Go simulando un dueño, comprueba el track y el efecto de release.
 func TestUIRegionOwnedHandleG2(t *testing.T) {
-	rt := New(WithDataDir(t.TempDir()), WithUISize(20, 5))
+	rt := New(WithDataDir(t.TempDir()), WithUISize(20, 5), WithForceUI(true))
 	defer rt.Close()
 
 	// Simula el contexto de un plugin "P" (como hace el loader al correr su init).

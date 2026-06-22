@@ -2,28 +2,31 @@ package runtime
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
+	"golang.org/x/term"
 )
 
-// `nu.ui` — construcción de Blocks, estilos y capacidades del terminal (api.md
-// §9.2, sesión S22). En S22 se registra **solo** la parte que NO depende de una
-// pantalla viva: `nu.ui.block` (construcción manual de Blocks), `nu.ui.caps`
-// (capacidades del terminal) y el parseo de `Style`. El compositor (regiones,
-// blit, input: §9.1/§9.3) llega en S28–S31, y el **gating headless** (G20:
-// "`nu.ui` no existe sin TTY") es S32.
+// `nu.ui` — Blocks, estilos, capacidades, compositor, input y portapapeles (api.md
+// §9). Se construyó por capas: `block`/`caps`/`Style` (S22), el compositor y las
+// regiones (S29/S30), el input (S31) y, en S32, el **portapapeles OSC 52**
+// (`osc52.go`), los **eventos `ui:*`** (`uiEvents`) y el **GATING HEADLESS (G20)**.
 //
-// POR QUÉ `nu.ui` EXISTE YA (también headless). El contrato dice que sin TTY el
-// módulo `nu.ui` directamente no existe (G20). Pero ese gating es trabajo de S32,
-// y S23–S31 necesitan `nu.ui.block`/`caps`/`Style` desde ya para construir e
-// inspeccionar Blocks en sus tests (markdown, highlight, diff producen Blocks; el
-// theme resuelve `Style`). Así que en S22 `nu.ui` se cuelga siempre; S32 añadirá
-// la condición de TTY por encima sin tocar estas firmas. Es deuda explícita
-// (NOTA DE FRONTERA del plan), no una contradicción de G20.
+// GATING HEADLESS (G20, §9, S32). El contrato dice que sin TTY interactivo (`nu -e`,
+// CI, salida redirigida) el módulo `nu.ui` directamente NO EXISTE —el mismo modelo
+// que las caps de los workers: "la superficie no concedida no está"; la detección es
+// `nu.has("ui")`, nunca probar-y-capturar—. Hasta S31 `nu.ui` se colgaba SIEMPRE
+// (NOTA DE FRONTERA del plan: S23–S31 necesitaban inspeccionar Blocks en sus tests
+// headless). S32 cierra esa deuda: `registerUI` solo se llama si `rt.uiActive`
+// (`registerNu`), que `New` fija por `WithForceUI` (tests) o por `detectTTY` (binario
+// real). Los tests de UI fuerzan la activación con `WithForceUI(true)` vía
+// `newHarness`, de modo que el gating real (por TTY) aplica al binario `nu` sin
+// romper la suite.
 
 // regionTypeName identifica la metatabla del handle opaco `Region` (§9.1). De ella
 // cuelgan los métodos de S29 (`blit`/`fill`/`clear`) y el ciclo de vida de S30
@@ -54,17 +57,58 @@ type uiState struct {
 	// (que ya tiene el `*Runtime` completo), no en `newUIState` (donde `rt` aún no
 	// existe). Vive bajo el token, como el compositor.
 	input *inputState
+
+	// clipWriter es el destino de las secuencias OSC 52 de `clipboard_set` (§9.2,
+	// S32): el terminal. En producción es `os.Stdout` (el TTY interactivo que el
+	// gating G20 garantizó); los tests lo sustituyen por un buffer para inspeccionar
+	// los bytes exactos emitidos. Solo se toca bajo el token (estado principal).
+	clipWriter io.Writer
+
+	// clipReader es la fuente de la RESPUESTA OSC 52 de `clipboard_get` (§9.2, S32).
+	// Lo provee el driver de TTY (S33+): el flujo de bytes del terminal del que se
+	// extrae la respuesta a la consulta. En este entorno headless es **nil** (no hay
+	// driver), así que `clipboard_get` resuelve a `nil` —y, por el gating G20, en
+	// headless `nu.ui` ni se registra—. El parseo de la respuesta (`parseOSC52Reply`)
+	// se prueba por unidad con bytes sintéticos. La lectura corre en la goroutine de
+	// fondo del ⏸ (sin token), así que `clipReader` no se toca bajo el token.
+	clipReader io.Reader
+}
+
+// maybeUIState construye el estado de UI **solo si hay superficie de UI concedida**
+// (`active`, el gating G20 de §9 que `New` resuelve). En headless devuelve nil: sin
+// `nu.ui` no hay compositor que mantener ni timer que armar, y `armPainter`/
+// `stopPainter`/`Close` ya toleran `rt.ui == nil`. Con UI activa delega en
+// `newUIState`.
+func maybeUIState(active bool, w, h int) *uiState {
+	if !active {
+		return nil
+	}
+	return newUIState(w, h)
 }
 
 // newUIState construye el estado de UI con un compositor del tamaño pedido. Si la
 // Option `WithUISize` no fijó tamaño (w/h <= 0), se resuelve por el entorno
-// (`COLUMNS`/`LINES`) o el default 80×24. El timer de coalescing NO se arma aquí
-// (no hay event loop todavía): lo arma `Boot` con `armPainter`.
+// (`COLUMNS`/`LINES`) o el default 80×24. El destino del portapapeles (OSC 52, S32)
+// es `os.Stdout` por defecto (el TTY que el gating garantizó); los tests lo
+// sustituyen. El timer de coalescing NO se arma aquí (no hay event loop todavía): lo
+// arma `Boot` con `armPainter`.
 func newUIState(w, h int) *uiState {
 	if w <= 0 || h <= 0 {
 		w, h = detectSize()
 	}
-	return &uiState{comp: newCompositor(w, h), stopCh: make(chan struct{})}
+	return &uiState{comp: newCompositor(w, h), stopCh: make(chan struct{}), clipWriter: os.Stdout}
+}
+
+// detectTTY decide si hay un TTY interactivo del que colgar `nu.ui` (el GATING
+// HEADLESS de G20, §9, S32). Exige que **tanto la salida estándar como la entrada
+// estándar** sean terminales: la UI a pantalla completa necesita escribir el render
+// (stdout) y leer las teclas (stdin), así que si CUALQUIERA está redirigida (`nu -e`,
+// un pipe, CI, salida a fichero) no hay superficie viable y `nu.ui` no existe. Usa
+// `golang.org/x/term.IsTerminal` (puro-Go, sin CGO, coherente con ADR-001). La
+// negociación fina del terminal (caps reales, raw mode) es del driver de TTY (S33+);
+// aquí solo se decide la existencia del módulo.
+func detectTTY() bool {
+	return term.IsTerminal(int(os.Stdout.Fd())) && term.IsTerminal(int(os.Stdin.Fd()))
 }
 
 // detectSize estima el tamaño del terminal en celdas sin tocar el TTY (la
@@ -130,12 +174,11 @@ func (rt *Runtime) stopPainter() {
 	close(rt.ui.stopCh)
 }
 
-// registerUI cuelga `nu.ui` del global `nu`: la superficie de S22
-// (`block`/`caps`) más la de S29 (`size`/`region` y los métodos `blit`/`fill`/
-// `clear` de `Region`). El resto de §9 (resto del ciclo de vida de Region en S30,
-// input en S31, clipboard/eventos/gating headless en S32) son sesiones
-// posteriores. Instala además la metatabla del tipo `Block` (block.go) y la de
-// `Region`.
+// registerUI cuelga `nu.ui` del global `nu` con TODA la superficie de §9:
+// `block`/`caps` (S22), `size`/`region` + métodos de `Region` (S29/S30),
+// `on_input`/`keymap` (S31) y `clipboard_set`/`clipboard_get` (OSC 52, S32). Instala
+// además la metatabla del tipo `Block` (block.go) y la de `Region`. **Solo se llama
+// si `rt.uiActive`** (`registerNu`, gating G20): en headless `nu.ui` no existe.
 func (rt *Runtime) registerUI(nu *lua.LTable) {
 	L := rt.L
 
@@ -156,7 +199,63 @@ func (rt *Runtime) registerUI(nu *lua.LTable) {
 	uiT.RawSetString("size", L.NewFunction(rt.uiSize))
 	uiT.RawSetString("region", L.NewFunction(rt.uiRegionNew))
 	rt.registerInput(uiT) // on_input/keymap (§9.3, S31)
+	// Portapapeles vía OSC 52 (§9.2, S32, osc52.go): `clipboard_set` (no ⏸) y
+	// `clipboard_get` (⏸, espera la respuesta del terminal).
+	uiT.RawSetString("clipboard_set", L.NewFunction(rt.uiClipboardSet))
+	uiT.RawSetString("clipboard_get", L.NewFunction(rt.uiClipboardGet))
 	nu.RawSetString("ui", uiT)
+}
+
+// uiClipboardSet implementa `nu.ui.clipboard_set(s)` (§9.2, S32): copia `s` al
+// portapapeles del sistema escribiendo la secuencia OSC 52 al terminal (`clipWriter`,
+// `os.Stdout` en producción). NO ⏸: es un write de unos bytes y el terminal no
+// responde. Un fallo de escritura al TTY se registra best-effort y no lanza —copiar al
+// portapapeles es accesorio, no debe tumbar al llamante—. Solo estado principal.
+func (rt *Runtime) uiClipboardSet(L *lua.LState) int {
+	s := L.CheckString(1)
+	seq := encodeOSC52Set(s)
+	if _, err := io.WriteString(rt.ui.clipWriter, seq); err != nil {
+		_ = rt.log.write(levelError, rt.currentOwner(),
+			"nu.ui.clipboard_set: no se pudo escribir OSC 52 al terminal: "+err.Error())
+	}
+	return 0
+}
+
+// uiClipboardGet implementa `nu.ui.clipboard_get() -> string?` (§9.2, S32) ⏸: pide el
+// portapapeles enviando la consulta OSC 52 y **espera la respuesta** del terminal,
+// que `parseOSC52Reply` decodifica. Devuelve `nil` si el terminal no soporta la
+// lectura o si pasa `clipboardReadTimeout` sin respuesta legible.
+//
+// Es ⏸ porque espera IO del terminal: suelta el token y lee la respuesta en la
+// goroutine de fondo (el puente `suspend` de S04, igual que `nu.fs`/`nu.http`), de
+// modo que el loop no se congela mientras tanto. La LECTURA real del TTY es del
+// driver (S33+, CP-7): aquí la lógica probada es la codificación de la consulta y el
+// **parseo** de la respuesta (`osc52_test.go`); el camino vivo lee de un terminal que
+// este entorno headless no tiene (y donde, por el gating G20, `nu.ui` ni existiría).
+func (rt *Runtime) uiClipboardGet(L *lua.LState) int {
+	// Envía la consulta al terminal bajo el token (toca `clipWriter`, estado
+	// principal); la espera de la respuesta es lo que suspende.
+	if _, err := io.WriteString(rt.ui.clipWriter, encodeOSC52Query()); err != nil {
+		_ = rt.log.write(levelError, rt.currentOwner(),
+			"nu.ui.clipboard_get: no se pudo escribir la consulta OSC 52: "+err.Error())
+		L.Push(lua.LNil)
+		return 1
+	}
+	reader := rt.ui.clipReader
+	vals := rt.sched.suspend(L, func() deliverFn {
+		// Trabajo de fondo (SIN token, no toca Lua): lee la respuesta del terminal con
+		// un timeout. En este entorno headless no hay lector (driver de S33+), así que
+		// `reader` es nil y se resuelve a `nil` de inmediato —el ida y vuelta real lo
+		// ejercita el driver—.
+		text, ok := readOSC52Reply(reader, clipboardReadTimeout)
+		return func(L *lua.LState) []lua.LValue {
+			if !ok {
+				return []lua.LValue{lua.LNil}
+			}
+			return []lua.LValue{lua.LString(text)}
+		}
+	})
+	return pushAll(L, vals)
 }
 
 // registerRegionType instala la metatabla del tipo `Region` con un `__index` que
