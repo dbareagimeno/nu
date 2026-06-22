@@ -71,7 +71,9 @@ jobs:
           git diff --exit-code go.mod go.sum
 
       - name: Lint (golangci-lint)
-        uses: golangci/golangci-lint-action@v6
+        # v7 instala golangci-lint v2, que es el formato de .golangci.yml (clave
+        # `version: "2"`). La v6 instalaba la v1, que rechazaba ese esquema.
+        uses: golangci/golangci-lint-action@v7
         with:
           # `only-new-issues` marca solo los hallazgos en líneas tocadas por el PR:
           # no bloquea por deuda preexistente en las ~33k líneas ya escritas. La
