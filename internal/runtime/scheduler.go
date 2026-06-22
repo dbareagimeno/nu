@@ -188,6 +188,15 @@ type scheduler struct {
 	// aunque el proceso ya haya salido—.
 	procs map[*luaProc]struct{}
 
+	// streams son los `nu.http.stream` vivos (S20). Se rastrean por la misma razón
+	// que `procs`/`watchers`: cerrarlos todos en `Close` (`stopAllStreams`) para no
+	// dejar goroutines de fondo (la que lee el body) ni conexiones colgadas tras el
+	// fin del proceso. Como un proceso o un watcher, un stream vivo **no** cuenta
+	// para la quiescencia: su fin de vida es `close`/`cleanup`, no esperar a que el
+	// servidor termine (un SSE puede no terminar nunca). El mapa lo tocan
+	// `trackStream` (al recibir cabeceras) y `untrackStream` (`Stream:close`).
+	streams map[*httpStream]struct{}
+
 	// coToTask mapea el thread Lua de cada task viva (su `co`) a su `*task`. Lo
 	// usa `suspend` para observar el `cancelCh` de la task que se suspende (S07):
 	// quien suspende es la goroutine de esa task, que corre sobre `co == L`. Se
@@ -230,6 +239,7 @@ func newScheduler(rt *Runtime, budget time.Duration) *scheduler {
 		timers:   make(map[*luaTimer]struct{}),
 		watchers: make(map[*luaWatcher]struct{}),
 		procs:    make(map[*luaProc]struct{}),
+		streams:  make(map[*httpStream]struct{}),
 		budget:   budget,
 	}
 	s.cond = sync.NewCond(&s.mu)
@@ -413,6 +423,42 @@ func (s *scheduler) stopAllProcs() {
 	for _, p := range ps {
 		p.killSignal(syscall.SIGKILL)
 		p.closeReadPipes()
+	}
+}
+
+// trackStream registra un `nu.http.stream` vivo (S20) para poder cerrarlo al cerrar
+// el runtime. Mismo patrón que `trackProc`. Se llama al recibir las cabeceras (en
+// la `deliverFn` de `nu.http.stream`, bajo el token).
+func (s *scheduler) trackStream(st *httpStream) {
+	s.mu.Lock()
+	s.streams[st] = struct{}{}
+	s.mu.Unlock()
+}
+
+// untrackStream deja de rastrear un stream cerrado (`Stream:close`). Idempotente:
+// quitar uno que ya no está es inocuo. Lo llama `httpStream.close`, que ya es
+// idempotente por su `closeOnce`.
+func (s *scheduler) untrackStream(st *httpStream) {
+	s.mu.Lock()
+	delete(s.streams, st)
+	s.mu.Unlock()
+}
+
+// stopAllStreams cierra todos los streams vivos. Lo llama `Runtime.Close`: ninguna
+// conexión ni goroutine de lectura de body debe sobrevivir al proceso de `nu`.
+// `httpStream.close` es idempotente (`closeOnce`), así que cerrar uno ya cerrado es
+// inocuo. Se copia el conjunto antes de iterar porque `close` llama a
+// `untrackStream`, que toca el mapa bajo el mismo candado.
+func (s *scheduler) stopAllStreams() {
+	s.mu.Lock()
+	sts := make([]*httpStream, 0, len(s.streams))
+	for st := range s.streams {
+		sts = append(sts, st)
+	}
+	s.streams = make(map[*httpStream]struct{})
+	s.mu.Unlock()
+	for _, st := range sts {
+		st.close()
 	}
 }
 

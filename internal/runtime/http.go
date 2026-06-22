@@ -130,13 +130,19 @@ func (o *reqOpts) needsCustomClient(st *httpState) bool {
 }
 
 // registerHTTP cuelga `nu.http` del global `nu` con su firma de §8. Lo llama
-// `registerNu` (nu.go). Hoy solo `request`; `stream` (S20) y `ws` (S21) se suman
-// luego sobre el mismo puente ⏸.
+// `registerNu` (nu.go). `request` (S19, buffereada) y `stream` (S20, streaming +
+// parser SSE) comparten el modelo de cliente y el mapeo de errores; `ws` (S21) se
+// suma luego sobre el mismo puente ⏸.
 func (rt *Runtime) registerHTTP(nu *lua.LTable) {
 	L := rt.L
 	httpT := L.NewTable()
 	httpT.RawSetString("request", L.NewFunction(rt.httpRequest))
+	httpT.RawSetString("stream", L.NewFunction(rt.httpStream))
 	nu.RawSetString("http", httpT)
+
+	// Metatabla del tipo `Stream` (S20): `chunks`/`events`/`close` + los campos
+	// `status`/`headers` (stream.go).
+	rt.registerStreamType()
 }
 
 // httpRequest implementa `nu.http.request(opts) -> {status, headers, body}` ⏸

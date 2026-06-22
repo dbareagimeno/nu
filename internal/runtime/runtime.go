@@ -278,6 +278,10 @@ func (rt *Runtime) Close() {
 		// Mata los subprocesos vivos de `nu.proc.spawn` (S16): la última red de
 		// seguridad de la vida del proceso (§6), tras `cleanup` y el finalizer del GC.
 		rt.sched.stopAllProcs()
+		// Cierra los `nu.http.stream` vivos (S20): sus goroutines de lectura del body
+		// y sus conexiones no deben sobrevivir al proceso (red de seguridad, tras el
+		// `cleanup` de quien abrió el stream).
+		rt.sched.stopAllStreams()
 	}
 	// Borra el directorio temporal de la sesión (`nu.fs.tmpdir`, §5) si llegó a
 	// crearse: el scratch no debe sobrevivir al proceso.
