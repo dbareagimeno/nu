@@ -110,6 +110,15 @@ func registerNu(rt *Runtime) {
 	// grapheme con elipsis. markdown/highlight/diff/re son S23–S26.
 	rt.registerText(nu)
 
+	// `nu.re` (§10, S26): expresiones regulares RE2 (`compile` + el handle `Re`
+	// con `match`/`find_all`/`replace`). CPU puro (ninguna ⏸) y [W] (§16; hoy en
+	// el estado principal, los workers son S34). Usa el `regexp` de la stdlib
+	// (RE2, puro-Go): tiempo lineal garantizado, sin backreferences ni lookaround
+	// (un patrón con `\1` → `EINVAL` claro). `match` da las capturas (array
+	// 1-based + grupos con nombre), `find_all` rangos de byte 1-based estilo
+	// `string.find`, y `replace` usa la sintaxis de `repl` de Go (`$1`/`${name}`).
+	rt.registerRe(nu)
+
 	// `nu.ui` (§9.2, S22): por ahora solo `block`/`caps` + el parseo de `Style` y la
 	// metatabla del tipo opaco `Block`. El compositor (regiones/blit/input) es
 	// S28–S31 y el gating headless (G20) es S32; en S22 `nu.ui` se cuelga SIEMPRE
