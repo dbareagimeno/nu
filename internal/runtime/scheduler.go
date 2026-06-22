@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
@@ -176,6 +177,17 @@ type scheduler struct {
 	// como un `every`, un watcher activo **no** cuenta para la quiescencia.
 	watchers map[*luaWatcher]struct{}
 
+	// procs son los subprocesos vivos de `nu.proc.spawn` (S16). Se rastrean para
+	// **matarlos todos en `Close`** (`stopAllProcs`): un subproceso que un script
+	// dejó corriendo no debe sobrevivir al proceso de `nu` —es la última red de
+	// seguridad de la vida del proceso (§6), tras el `cleanup` de quien lo creó y el
+	// finalizer del GC—. Como `watch`/`every`, un proceso vivo **no** cuenta para la
+	// quiescencia: la vía de fin de vida es `cleanup`/`kill`, no esperar a que el
+	// proceso muera (que podría no morir nunca). El mapa lo tocan `spawn` (al crear)
+	// y `wait` no lo desregistra a propósito —`Close` mata por idempotencia (`killed`)
+	// aunque el proceso ya haya salido—.
+	procs map[*luaProc]struct{}
+
 	// coToTask mapea el thread Lua de cada task viva (su `co`) a su `*task`. Lo
 	// usa `suspend` para observar el `cancelCh` de la task que se suspende (S07):
 	// quien suspende es la goroutine de esa task, que corre sobre `co == L`. Se
@@ -217,6 +229,7 @@ func newScheduler(rt *Runtime, budget time.Duration) *scheduler {
 		gil:      make(chan struct{}, 1),
 		timers:   make(map[*luaTimer]struct{}),
 		watchers: make(map[*luaWatcher]struct{}),
+		procs:    make(map[*luaProc]struct{}),
 		budget:   budget,
 	}
 	s.cond = sync.NewCond(&s.mu)
@@ -374,6 +387,32 @@ func (s *scheduler) stopAllWatchers() {
 	for _, w := range ws {
 		w.stopOnce.Do(func() { close(w.stopCh) })
 		_ = w.fsw.Close()
+	}
+}
+
+// trackProc registra un subproceso vivo de `nu.proc.spawn` (S16) para poder matarlo
+// al cerrar el runtime. Mismo patrón que `trackTimer`/`trackWatcher`.
+func (s *scheduler) trackProc(p *luaProc) {
+	s.mu.Lock()
+	s.procs[p] = struct{}{}
+	s.mu.Unlock()
+}
+
+// stopAllProcs mata todos los subprocesos vivos. Lo llama `Runtime.Close`: ningún
+// subproceso de la sesión debe sobrevivir al proceso de `nu`. `killSignal` es
+// idempotente (`killed`), así que matar uno que ya salió por su cuenta es inocuo —se
+// usa SIGKILL para que ninguno lo ignore, como red de seguridad final—.
+func (s *scheduler) stopAllProcs() {
+	s.mu.Lock()
+	ps := make([]*luaProc, 0, len(s.procs))
+	for p := range s.procs {
+		ps = append(ps, p)
+	}
+	s.procs = make(map[*luaProc]struct{})
+	s.mu.Unlock()
+	for _, p := range ps {
+		p.killSignal(syscall.SIGKILL)
+		p.closeReadPipes()
 	}
 }
 
@@ -620,12 +659,52 @@ func (s *scheduler) cancelTask(t *task) {
 // `pcall` de usuario (re-lanzado por los envoltorios) hasta el `CallByParam` de
 // `runTask`, que lo recupera; `runTask` ve `t.canceled`, descarta el desenlace y
 // corre la pila de `cleanup`.
+//
+// CIERRE DE UPVALUES ANTES DE DESENROLLAR (la corrección que S16 destapó). Un
+// `cleanup` registrado por la task casi siempre **captura locales por upvalue** —el
+// idioma canónico de §6 es `nu.task.cleanup(function() proc:kill() end)`, donde
+// `proc` es un local del cuerpo de la task—. Mientras la task corre, esos upvalues
+// están **abiertos**: apuntan a slots del registro de `co`. En un retorno normal,
+// gopher-lua los **cierra** (copia el valor dentro del `Upvalue`) al salir del
+// scope; pero nuestro aborto es un **pánico Go** que NO ejecuta ese cierre, y el
+// `PCall` que lo recupera **resetea el registro de `co`** (pone esos slots a `nil`).
+// Resultado: cuando luego `runCleanups` ejecuta el liberador, su upvalue lee un slot
+// ya `nil` → *nil pointer* al usar `proc`. Por eso, **antes** de panicar, cerramos
+// todos los upvalues abiertos de `co` con `closeOpenUpvalues` (vía el camino público
+// `Error` de gopher-lua, que hace `closeAllUpvalues`): así los valores capturados
+// sobreviven al reseteo del registro y los `cleanup` los ven intactos. Sin esto, el
+// criterio de hecho de S16 ("un spawn se mata por cleanup al cancelar la task")
+// fallaría con un nil deref. (Ver claude_decisions.md, S16.)
 func (s *scheduler) abort(t *task) {
 	t.aborting = true
 	if t.reason == abortNone {
 		t.reason = abortCancel
 	}
+	s.closeOpenUpvalues(t.co)
 	panic(abortSignal{t: t})
+}
+
+// abortUpvalueSentinel es el valor (una tabla, no un string) con que forzamos a
+// gopher-lua a cerrar los upvalues abiertos del thread que se aborta. `LState.Error`
+// con un valor **no-string** ejecuta `closeAllUpvalues` antes de panicar (es el mismo
+// cierre que un `error{...}` normal dispara); aprovechamos ese efecto sin depender de
+// API interna. El pánico que `Error` lanza lo capturamos de inmediato (recover) y lo
+// descartamos: el aborto real lo lleva el `abortSignal` que lanzamos justo después.
+var abortUpvalueSentinel = &struct{ tag string }{tag: "nu.abort.close-upvalues"}
+
+// closeOpenUpvalues cierra los upvalues abiertos del thread `co` (los que capturan
+// locales de los frames que el aborto va a desenrollar), de modo que los valores
+// capturados sobrevivan al reseteo del registro que hace el `PCall` al recuperar el
+// pánico (ver `abort`). Lo hace por el único camino público que gopher-lua ofrece
+// para ello: `co.Error(tabla)` —que internamente llama a `closeAllUpvalues`— envuelto
+// en un `recover` que se traga su pánico (no es el aborto; el aborto lo lleva el
+// `panic(abortSignal)` posterior). No toca el registro de tasks ni el token; solo
+// fuerza el cierre de upvalues sobre `co`, que es la goroutine que corre `abort`.
+func (s *scheduler) closeOpenUpvalues(co *lua.LState) {
+	defer func() { _ = recover() }() // el pánico de Error es solo el vehículo del cierre; se descarta
+	tbl := co.NewTable()
+	tbl.RawSetString("__nu_abort", lua.LString(abortUpvalueSentinel.tag))
+	co.Error(tbl, 0) // cierra closeAllUpvalues y panica; el recover de arriba lo absorbe
 }
 
 // runCleanups ejecuta la pila LIFO de liberadores registrados con

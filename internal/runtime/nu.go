@@ -64,6 +64,14 @@ func registerNu(rt *Runtime) {
 	// en la Fase 7.
 	rt.registerFs(nu)
 
+	// `nu.proc` (§6, S16): subprocesos. `run` (buffers) y los IO de `Proc`
+	// (`write`/`read*`/`wait`) son ⏸ sobre el puente `suspend` de S04 (mismo patrón
+	// que `nu.fs`); `spawn`/`close_stdin`/`kill`/`alive` no suspenden. Vida del
+	// proceso por `nu.task.cleanup` (S08) + red de seguridad del GC (finalizer) y de
+	// `Runtime.Close` (mata los vivos). `proc` es [W] (§16): hoy en el estado
+	// principal (los workers son S34).
+	rt.registerProc(nu)
+
 	// `nu.log` (§15) y, de paso, el alias `print` = `nu.log.info`.
 	registerLog(rt, nu)
 
