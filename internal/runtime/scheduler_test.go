@@ -297,6 +297,40 @@ func TestUnhandledTaskErrorLogged(t *testing.T) {
 	}
 }
 
+// TestEvalTaskStringErrorNoSpuriousLog: la contraparte de
+// TestUnhandledTaskErrorLogged. Cuando una task la lanza el HOST vía
+// `EvalTaskString` (el ejecutor headless del binario: un turno de agente,
+// `--continue`...), su error NO es fire-and-forget: `EvalTaskString` lo recoge de
+// `t.errValue` y lo devuelve como `*StructuredError` al llamante (que el CLI mapea
+// a un código de salida). Por eso una ruta de error LEGÍTIMA —p. ej. `--continue`
+// sin sesiones, que lanza un error estructurado— NO debe ensuciar el log con la
+// línea best-effort "una task terminó con error y nadie hizo await". Esta prueba
+// blinda las dos mitades: (a) el error sigue propagándose con su `code` intacto;
+// (b) la línea espuria NO aparece en el log.
+func TestEvalTaskStringErrorNoSpuriousLog(t *testing.T) {
+	h := newHarness(t)
+
+	_, err := h.rt.EvalTaskString(`error({ code = "EPROVIDER", message = "sin sesiones" })`)
+	if err == nil {
+		t.Fatalf("EvalTaskString debió devolver el error de la task")
+	}
+	se, ok := err.(*StructuredError)
+	if !ok {
+		t.Fatalf("se esperaba *StructuredError, llegó %T: %v", err, err)
+	}
+	if se.Code != "EPROVIDER" {
+		t.Fatalf("code inesperado: got %q, want EPROVIDER", se.Code)
+	}
+
+	// La línea best-effort de error sin await NO debe haberse escrito: el host SÍ
+	// consumió el desenlace (lo devolvió arriba), así que no es un error perdido.
+	for _, ln := range h.logLines() {
+		if strings.Contains(ln, "nadie hizo await") {
+			t.Fatalf("EvalTaskString dejó la línea espuria 'nadie hizo await' en el log:\n%s", ln)
+		}
+	}
+}
+
 // TestRuntimeReusableAcrossEvals: el scheduler queda quiescente tras cada
 // `EvalString`, así que el mismo runtime corre varios chunks con tasks sin
 // arrastrar estado (lo asume el arnés, que reusa el runtime entre asserts).

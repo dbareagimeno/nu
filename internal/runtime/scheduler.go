@@ -54,7 +54,7 @@ type task struct {
 
 	doneCh  chan struct{} // se cierra (bajo token) al terminar la task
 	done    bool          // espejo de doneCh legible bajo token sin select
-	awaited bool          // alguien hizo (o está haciendo) await sobre ella
+	awaited bool          // alguien hizo (o está haciendo) await sobre ella, o el HOST consume su desenlace síncronamente (EvalTaskString): en ambos casos un error suyo NO es fire-and-forget y no se loguea best-effort
 
 	results  []lua.LValue // valores de retorno si terminó bien
 	errValue lua.LValue   // objeto lanzado si terminó con error; nil si no
@@ -622,6 +622,32 @@ func (s *scheduler) stopAllWorkers() {
 // `spawn` lo suelta (al suspenderse o al terminar). Uniforme tanto si `spawn` se
 // llama desde el chunk principal como desde dentro de otra task.
 func (s *scheduler) spawn(fn *lua.LFunction, args []lua.LValue) *task {
+	return s.spawnTask(fn, args, false)
+}
+
+// spawnConsumed es como spawn pero marca la task como **consumida por el host**:
+// quien la lanza (el ejecutor Go `EvalTaskString`) va a recoger su desenlace
+// —incluido un error— en cuanto la task se quiesce, igual que un `await` lo
+// recogería. Por eso su error NO es fire-and-forget y `runTask` NO debe loguear
+// la línea best-effort "una task terminó con error y nadie hizo await" (api.md
+// §1.3): ese log avisa de errores que SE PIERDEN, y aquí el host los devuelve al
+// llamante (que el CLI mapea a un código de salida). Sin esto, una ruta de error
+// LEGÍTIMA —`--continue` sin sesiones, un turno que lanza `EPROVIDER`— ensuciaría
+// el log con un falso "nadie hizo await", aunque el error sí se propaga.
+//
+// El flag se fija **antes** de lanzar la goroutine: la creación de la goroutine
+// establece el happens-before, así que el `runTask` de la nueva goroutine ve
+// `awaited == true` sin carrera (la alternativa —marcarlo tras `spawn` desde el
+// host— tendría una doble grieta: data race con la lectura de `runTask` bajo el
+// token, y llegaría tarde si `runTask` ya corrió el log).
+func (s *scheduler) spawnConsumed(fn *lua.LFunction, args []lua.LValue) *task {
+	return s.spawnTask(fn, args, true)
+}
+
+// spawnTask es el cuerpo común de spawn/spawnConsumed. `awaited` pre-marca la
+// task como consumida por el host (ver spawnConsumed); se fija sobre `t` antes
+// del `go s.runTask(t)` para que sea visible sin carrera en la goroutine nueva.
+func (s *scheduler) spawnTask(fn *lua.LFunction, args []lua.LValue, awaited bool) *task {
 	co, _ := s.host.NewThread()
 
 	// Watchdog (S09): dota al thread de la task de un contexto cancelable que el
@@ -640,6 +666,7 @@ func (s *scheduler) spawn(fn *lua.LFunction, args []lua.LValue) *task {
 		doneCh:    make(chan struct{}),
 		cancelCh:  make(chan struct{}),
 		ctxCancel: cancel,
+		awaited:   awaited,
 	}
 	s.mu.Lock()
 	s.live++

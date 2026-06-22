@@ -97,7 +97,15 @@ func (rt *Runtime) EvalTaskString(code string) ([]string, error) {
 	// plano —la task y cuanto encole— se quiesca. `spawn` arranca la goroutine;
 	// `runTask` toma el token por su cuenta, así que aquí el token NO debe estar
 	// tomado (lo soltamos arriba tras compilar).
-	t := s.spawn(fn, nil)
+	//
+	// `spawnConsumed` (no `spawn`): este ejecutor SÍ recoge el desenlace de la task
+	// —incluido su error, abajo, vía `t.errValue`— y lo devuelve al llamante (que el
+	// CLI mapea a un código de salida). Por eso la task NO es fire-and-forget: marcarla
+	// como consumida por el host evita que `runTask` escriba la línea best-effort "una
+	// task terminó con error y nadie hizo await" en una ruta de error LEGÍTIMA (p. ej.
+	// `--continue` sin sesiones, un turno que lanza `EPROVIDER`). El flag se fija antes
+	// de arrancar la goroutine, así que es visible sin carrera (ver `spawnConsumed`).
+	t := s.spawnConsumed(fn, nil)
 	s.waitIdle()
 
 	s.acquire()
