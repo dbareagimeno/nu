@@ -48,6 +48,12 @@ type uiState struct {
 	comp   *compositor
 	stopCh chan struct{} // cierra el timer de coalescing en `Close`
 	armed  bool          // el timer ya se armó (idempotencia de `armPainter`)
+
+	// input es la pila de input de `nu.ui` (§9.3, S31): los handlers de `on_input`/
+	// `keymap` y la máquina de secuencias con timeout. Se construye en `registerUI`
+	// (que ya tiene el `*Runtime` completo), no en `newUIState` (donde `rt` aún no
+	// existe). Vive bajo el token, como el compositor.
+	input *inputState
 }
 
 // newUIState construye el estado de UI con un compositor del tamaño pedido. Si la
@@ -140,11 +146,16 @@ func (rt *Runtime) registerUI(nu *lua.LTable) {
 	// La metatabla del tipo opaco `Region` (§9.1, S29) con los métodos de S29.
 	rt.registerRegionType()
 
+	// La pila de input (§9.3, S31): se construye aquí, donde `rt` ya está completo
+	// (en `newUIState` aún no existe). El despacho y los handles viven bajo el token.
+	rt.ui.input = newInputState(rt)
+
 	uiT := L.NewTable()
 	uiT.RawSetString("block", L.NewFunction(rt.uiBlock))
 	uiT.RawSetString("caps", L.NewFunction(rt.uiCaps))
 	uiT.RawSetString("size", L.NewFunction(rt.uiSize))
 	uiT.RawSetString("region", L.NewFunction(rt.uiRegionNew))
+	rt.registerInput(uiT) // on_input/keymap (§9.3, S31)
 	nu.RawSetString("ui", uiT)
 }
 

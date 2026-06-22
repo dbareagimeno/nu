@@ -198,6 +198,60 @@ func (s *scheduler) timerStop(L *lua.LState) int {
 	return 0
 }
 
+// oneShot es un timer de UN SOLO disparo en Go puro (no expone superficie Lua): un
+// `time.Timer` cuya goroutine, al cumplirse el plazo, toma el token y ejecuta un
+// callback Go. Lo usa la resolución de secuencias de teclas de S31 (input.go) para
+// el timeout de `"g g"`: si la segunda tecla no llega a tiempo, el callback aborta
+// la secuencia bajo el token. NO es un `nu.task.every` ni `nu.fs` ⏸ —el callback es
+// Go puro, no Lua, y corre una sola vez—, así que vive aquí como utilidad del
+// scheduler, no en la superficie de `nu.task`.
+//
+// CONCURRENCIA. El callback corre tomando el token (`acquire`/`release`), igual que
+// el painter de `nu.ui`: el estado que toca (la máquina de secuencias) es estado
+// principal (ADR-008), y serializarlo por el token evita la carrera con el despacho
+// de input sin un candado propio. `stop` es idempotente y best-effort: si el timer
+// ya disparó, la generación de la secuencia (input.go) descarta el efecto.
+type oneShot struct {
+	timer   *time.Timer
+	stopped chan struct{}
+}
+
+// newOneShot arma un timer de un disparo a `d` que ejecutará `fn` bajo el token. La
+// goroutine espera el plazo o el `stop`; al cumplirse el plazo toma el token, ejecuta
+// `fn` y termina. Un `stop` antes del plazo cancela el timer y la goroutine sale sin
+// ejecutar `fn`.
+func newOneShot(s *scheduler, d time.Duration, fn func()) *oneShot {
+	o := &oneShot{timer: time.NewTimer(d), stopped: make(chan struct{})}
+	go func() {
+		select {
+		case <-o.stopped:
+			o.timer.Stop()
+			return
+		case <-o.timer.C:
+			// Plazo cumplido: toma el token y ejecuta el callback en el estado
+			// principal. Si entre el disparo y la toma del token alguien llamó `stop`,
+			// igualmente corremos —es inocuo: la máquina de secuencias comprueba su
+			// generación y descarta un disparo obsoleto—.
+			s.acquire()
+			fn()
+			s.release()
+		}
+	}()
+	return o
+}
+
+// stop cancela el timer si aún no disparó (idempotente: cerrar el canal dos veces
+// entraría en pánico, así que el cierre se protege con un `select` no bloqueante).
+// No espera a la goroutine: best-effort, como el resto de los cortes del scheduler.
+func (o *oneShot) stop() {
+	select {
+	case <-o.stopped:
+		// ya parado
+	default:
+		close(o.stopped)
+	}
+}
+
 // runSyncHandler corre un handler síncrono (`defer` o un disparo de `every`)
 // tomando el token y ejecutándolo en un thread Lua dedicado, bajo `pcall`. No
 // suspende: el handler no es ⏸. Un error queda en el log (best-effort, ADR-008;

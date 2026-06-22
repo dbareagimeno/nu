@@ -217,3 +217,76 @@ func TestUIRegionOwnedHandleG2(t *testing.T) {
 	// release es idempotente (reload puede liberar algo ya soltado).
 	reg.release()
 }
+
+// S31: snippet de la superficie pública de input (§9.3) desde el autor de
+// extensiones (Definition of Done §2): apila un `on_input`, registra un `keymap` y
+// comprueba que las firmas no lanzan y devuelven handles con sus métodos. La lógica
+// fina (pila, secuencias, timeout, G30) se blinda en `input_test.go`.
+func TestUIInputSnippet(t *testing.T) {
+	h := newHarnessUI(t, 20, 5)
+	h.expectEval(`
+		local ih = nu.ui.on_input(function(ev) return false end)
+		local km = nu.ui.keymap("g g", function() end)
+		local km2 = nu.ui.keymap("ctrl+k", function() end, { timeout_ms = 100 })
+		ih:pop()      -- quita el handler de la pila
+		km:unmap()    -- quita el keymap
+		km2:unmap()
+		ih:pop()      -- idempotente: no lanza
+		return "ok"
+	`, "ok")
+}
+
+// S31: un `seq` mal formado en keymap es EINVAL accionable (no un panic ni un
+// keymap muerto silencioso).
+func TestUIKeymapBadSeqEINVAL(t *testing.T) {
+	h := newHarnessUI(t, 20, 5)
+	se := h.evalErr(`nu.ui.keymap("ctrl+", function() end)`)
+	if se.Code != CodeEINVAL {
+		t.Fatalf("un seq mal formado debería ser EINVAL, fue %q", se.Code)
+	}
+}
+
+// S31, G2: los handlers de input son `ownedHandle`. Un `reload` (releaseOwnerHandles)
+// suelta los de un plugin —no deja handlers de input huérfanos—. Caja blanca: crea
+// los handlers bajo un dueño simulado y comprueba que tras la liberación dejan de
+// recibir input.
+func TestUIInputOwnedHandleG2(t *testing.T) {
+	h := newHarnessUI(t, 20, 5)
+	counts := registerGoCounter(h)
+
+	// Simula el contexto del plugin "P": un on_input y un keymap creados ahí.
+	h.rt.ownerStack = append(h.rt.ownerStack, &pluginInfo{Name: "P"})
+	h.eval(`
+		nu.ui.on_input(function(ev) mark("raw:"..ev.key); return true end)
+		nu.ui.keymap("x", function() mark("km") end)
+	`)
+	h.rt.ownerStack = h.rt.ownerStack[:0]
+
+	if got := len(h.rt.sched.ownerHandles["P"]); got != 2 {
+		t.Fatalf("P debería tener 2 handles de input trackeados, tiene %d", got)
+	}
+
+	// Antes del reload: el input llega a los handlers de P.
+	in := h.rt.ui.input
+	withToken(h.rt, func() { feedKey(in, "y"); feedKey(in, "x") })
+	if counts["raw:y"] != 1 || counts["km"] != 1 {
+		t.Fatalf("antes de reload, los handlers de P deben recibir: %v", counts)
+	}
+
+	// reload de P: libera sus handlers de input (G2).
+	h.rt.sched.releaseOwnerHandles("P")
+	if _, ok := h.rt.sched.ownerHandles["P"]; ok {
+		t.Fatal("G2: tras releaseOwnerHandles no debe quedar ningún handle de P")
+	}
+
+	// Tras el reload: el input ya no llega a ningún handler (la pila quedó vacía).
+	withToken(h.rt, func() {
+		if feedKey(in, "y") {
+			t.Fatal("G2: tras reload no debe quedar handler que consuma")
+		}
+		feedKey(in, "x")
+	})
+	if counts["raw:y"] != 1 || counts["km"] != 1 {
+		t.Fatalf("G2: tras reload los handlers de P NO deben recibir más: %v", counts)
+	}
+}
