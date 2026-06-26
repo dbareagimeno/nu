@@ -36,9 +36,11 @@ Session:set_model(model: string)                     -- cambio en caliente (G19)
 Session.id / Session.usage -> { context_tokens, cost_usd, turns }
 ```
 
-> **Estado de implementación.** La extensión `agent` `0.1.0` implementa
-> `send/spawn/set_model/close`; `cancel`, `fork`, `compact` y `clear_queue`
-> (abajo) son **implementación diferida** ([pospuesto.md](pospuesto.md) **P22**).
+> **Estado de implementación.** ✅ Implementado `send/spawn/set_model/close` y
+> también `cancel`, `fork`, `compact` y `clear_queue` ([pospuesto.md](pospuesto.md)
+> **P22**, resuelto). El turno corre en una task **propia de la sesión** (la que
+> `cancel` cancela); `send` espera el resultado por un future, no por la task, así
+> que cancelar el turno no cancela a quien llamó (su `send` devuelve nil).
 
 **El turno** (`send`) es el corazón del contrato:
 
@@ -61,8 +63,9 @@ nunca a mitad de un stream). El usuario puede así corregir al agente
 mientras trabaja ("usa pnpm, no npm"). Todos los `send` consumidos por un
 mismo turno resuelven con el mensaje final de ese turno. `Session:cancel()`
 cancela el turno, **no** vacía la cola (vaciarla es acción aparte:
-`Session:clear_queue()`). *(Implementación diferida:
-[pospuesto.md](pospuesto.md) **P23**; depende de `cancel`, P22.)*
+`Session:clear_queue()`). *(✅ Implementado: [pospuesto.md](pospuesto.md) **P23**.
+El loop drena la cola al inicio de cada iteración; todos los `send` consumidos por
+un turno resuelven con su mensaje final.)*
 
 **Reanudación (G18)**: `opts.resume = <id>` reabre una sesión existente en
 vez de crearla: replay del transcript ([sesiones.md](sesiones.md) §3) y
@@ -184,10 +187,10 @@ worker sin `proc` no ejecuta procesos, opine quien opine.
 
 ## 6. Skills
 
-> **Implementación diferida** ([pospuesto.md](pospuesto.md) **P24**). El
-> ensamblado del system prompt de la `0.1.0` aún no descubre skills ni inyecta
-> su índice; `agent.skills.list()` no está expuesto. Esta sección describe el
-> diseño; su construcción espera el disparador de P24.
+> ✅ **Implementado** ([pospuesto.md](pospuesto.md) **P24**). El ensamblado
+> descubre skills, inyecta su índice y expone `agent.skills.list(cwd)`; el
+> contenido completo lo carga la tool interna `skill` bajo demanda. El contenido
+> del repo va tras la puerta TOFU (§11.2, `agent.trust`).
 
 Compatibles con el formato del ecosistema existente: directorio con
 `SKILL.md` (frontmatter YAML: `name`, `description` — vía `nu.yaml`).
@@ -208,16 +211,18 @@ fichero de contexto del proyecto (`nu.md` en la raíz del repo, si existe) →
 `opts.system`. Los hooks `request.pre` pueden retocar el resultado. Cada
 pieza es sustituible por configuración — no hay prompt mágico inaccesible.
 
-> **Implementación diferida** ([pospuesto.md](pospuesto.md) **P24**). La `0.1.0`
-> ensambla solo `base → opts.system`: las piezas de **índice de skills** y de
-> **`nu.md`** (con su puerta TOFU de §11.2) aún no se inyectan.
+> ✅ **Implementado** ([pospuesto.md](pospuesto.md) **P24**). El ensamblado es
+> `base → índice de skills → nu.md (tras TOFU) → opts.system`. El descubrimiento
+> se captura al abrir la sesión; la inclusión del contenido del repo se decide por
+> confianza en cada ensamblado.
 
 ## 8. Compactación
 
-> **Implementación diferida** ([pospuesto.md](pospuesto.md) **P25**). El hook
-> `compact`, el replay desde el resumen y el soporte de entradas `compact` en el
-> store existen; lo que la `0.1.0` aún no hace es **disparar** la compactación al
-> superar el umbral ni emitir el evento `agent:compact`.
+> ✅ **Implementado** ([pospuesto.md](pospuesto.md) **P25**). La compactación se
+> dispara al rebasar el umbral (defecto 80% del `context`) en el **límite del
+> turno** (no entre iteraciones, para no romper el emparejamiento
+> tool_call↔tool_result), y emite `agent:compact`. `Session:compact()` es la vía
+> manual; el hook `compact` personaliza o impide el resumen.
 
 - Disparo automático: cuando `usage.input_tokens` supera el umbral
   configurable (defecto: 80% del `context` del modelo, dato del
