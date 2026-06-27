@@ -92,7 +92,15 @@ Chat.__index = Chat
 -- actualizar, auto-scroll al final (chat.md: ver lo último). Es el punto por el que
 -- el Block del transcript CRECE con el texto en streaming (el criterio de hecho).
 function Chat:_refresh_transcript()
-  local md = self.transcript:markdown()
+  -- Pantalla de BIENVENIDA (chat.md §8): mientras la conversación está vacía, el
+  -- transcript muestra un saludo con el modelo, el cwd y las pistas de uso —en vez de
+  -- una pantalla en blanco—. Al primer mensaje, lo sustituye la conversación.
+  local md
+  if self.transcript:count() == 0 and not self.degraded then
+    md = self:_welcome_md()
+  else
+    md = self.transcript:markdown()
+  end
   self.transcript_widget:set_text(md)
   -- auto-scroll al final: la última línea visible. El alto del contenido a ancho
   -- del widget menos su banda da el offset de scroll (api.md §9.1: scroll = offset
@@ -119,21 +127,39 @@ function Chat:_update_statusline()
     pending_asks = self.pending_count or 0,
     thinking = (self.session.thinking_mode and self.session:thinking_mode()) or "off",
   }
-  -- une los segmentos de cada lado en un solo texto por label (v1: un label por
-  -- lado, separado por " · "). La forma rica (un label por segmento en el hbox) es
-  -- una extensión natural; v1 concatena para simplicidad.
-  local function side_text(side)
-    local parts = {}
+  -- Construye los SPANS coloreados de un lado de la barra (chat.md §6): cada segmento
+  -- aporta su `{text, style}` y se separan con un `·` atenuado. Un segmento puede
+  -- devolver un string suelto (compat) o "" para ocultarse. Todos los spans llevan
+  -- `bg = "bg_surface"` para que la barra sea un fondo continuo (el `box` ya pinta el
+  -- relleno; el bg en los spans evita cortes bajo el texto).
+  local function side_spans(side)
+    local spans = {}
+    local function sep()
+      if #spans > 0 then
+        spans[#spans + 1] = { text = "  ·  ", style = { fg = "border", bg = "bg_surface" } }
+      end
+    end
     for _, seg in ipairs(statusline.ordered(side)) do
       local ok, s = pcall(seg.render, ctx)
       if ok and s ~= nil and s ~= "" then
-        parts[#parts + 1] = tostring(s)
+        local text, style
+        if type(s) == "table" then
+          text, style = tostring(s.text or ""), s.style or {}
+        else
+          text, style = tostring(s), {}
+        end
+        if text ~= "" then
+          style = { fg = style.fg, bold = style.bold, italic = style.italic,
+            bg = "bg_surface" }
+          sep()
+          spans[#spans + 1] = { text = text, style = style }
+        end
       end
     end
-    return table.concat(parts, " · ")
+    return spans
   end
-  self.status_left:set_text(side_text("left"))
-  self.status_right:set_text(side_text("right"))
+  self.status_left:set_spans(side_spans("left"))
+  self.status_right:set_spans(side_spans("right"))
 end
 
 -- Chat:_place_cursor() coloca el cursor REAL del terminal en el caret del editor
@@ -158,12 +184,26 @@ function Chat:_repaint()
   self:_place_cursor()
 end
 
--- Chat:open_modal(widget) / Chat:close_modal() muestran/ocultan una capa modal
--- (chat.md §1/§5: diálogo de permisos, pickers) en el `stack`. Mientras hay un
--- modal, el foco va a él (chat.md §5). Una sola capa visible a la vez (v1; la cola
--- FIFO de varios asks la lleva la lista `ask_queue`).
-function Chat:open_modal(widget)
-  self.modal_layer:add(widget)
+-- Chat:open_modal(widget, opts?) / Chat:close_modal() muestran/ocultan una capa
+-- modal (chat.md §1/§5: diálogo de permisos, pickers). El widget interno se ENMARCA
+-- en un `toolkit.box` (borde + título + fondo de overlay) CENTRADO sobre la columna,
+-- en vez de plano contra el margen: la firma de un modal de producto. El foco va al
+-- widget INTERNO (focusable) aunque el contenedor sea la caja. `opts`: `title`
+-- (cabecera del marco), `height` (alto en filas del contenido; el marco añade 2).
+function Chat:open_modal(widget, opts)
+  opts = opts or {}
+  local box = toolkit.box({
+    id = "modal-frame", child = widget, border = "rounded",
+    title = opts.title, pad = { 0, 1 }, bg = "overlay",
+  })
+  -- tamaño del panel: ancho acotado y centrado; alto = contenido + borde, sin pasar
+  -- de la pantalla. El `modal_layer` (vbox con justify/align center) lo centra.
+  local aw = self.app.w or 80
+  local ah = self.app.h or 24
+  box.pref_w = math.max(24, math.min(76, aw - 8))
+  box.pref_h = math.max(3, math.min(ah - 4, (opts.height or 6) + 2))
+  self._modal_frame = box
+  self.modal_layer:add(box)
   self.app:relayout()
   if widget.focusable then
     self.app:set_focus(widget)
@@ -171,9 +211,12 @@ function Chat:open_modal(widget)
   self:_repaint()
 end
 
-function Chat:close_modal(widget)
-  if widget then
-    self.modal_layer:remove(widget)
+function Chat:close_modal(_widget)
+  -- siempre quitamos el marco (envuelve al widget interno, que se va con él).
+  if self._modal_frame then
+    if self._modal_frame.dispose then self._modal_frame:dispose() end
+    self.modal_layer:remove(self._modal_frame)
+    self._modal_frame = nil
   end
   self.app:relayout()
   -- el foco vuelve al editor.
@@ -207,7 +250,7 @@ function Chat:open_file_picker()
       end,
     })
     self._picker = pick
-    self:open_modal(pick)
+    self:open_modal(pick, { title = "Mencionar fichero (@)", height = 12 })
   end)
 end
 
@@ -240,7 +283,7 @@ function Chat:open_command_picker()
     end,
   })
   self._picker = pick
-  self:open_modal(pick)
+  self:open_modal(pick, { title = "Comando (/)", height = 12 })
 end
 
 -- Chat:submit() ENVÍA el contenido del editor (chat.md §3: enter envía). Si el
@@ -281,9 +324,11 @@ function Chat:submit()
   self:_repaint()
 
   nu.task.spawn(function()
+    self:_set_busy(true, "Pensando…")
     local ok, err = pcall(function()
       return self.session:send(text)
     end)
+    self:_set_busy(false)
     if not ok then
       -- error del turno (el adaptador, max_turns…): al transcript como error
       -- (los eventos agent:error ya lo pintan; esto cubre un fallo de send mismo).
@@ -315,6 +360,7 @@ function Chat:cancel_turn()
   if self.session and self.session.cancel then
     pcall(self.session.cancel, self.session)
   end
+  self:_set_busy(false)
 end
 
 -- Chat:switch_session(new_session) cambia la sesión ACTIVA del chat (lo usa
@@ -418,12 +464,19 @@ function Chat:_subscribe_agent()
   subs[#subs + 1] = nu.events.on("agent:tool.start", function(p)
     if not mine(p) then return end
     self.transcript:add_tool(p.id, p.name, p.args)
+    -- el spinner refleja la fase: "Ejecutando <tool>…".
+    if self.activity and self.activity.visible then
+      self:_set_busy(true, "Ejecutando " .. tostring(p.name or "tool") .. "…")
+    end
     self:_refresh_transcript()
     self:_repaint()
   end)
   subs[#subs + 1] = nu.events.on("agent:tool.end", function(p)
     if not mine(p) then return end
     self.transcript:tool_end(p.id, p.is_error, p.error)
+    if self.activity and self.activity.visible then
+      self:_set_busy(true, "Pensando…")
+    end
     self:_refresh_transcript()
     self:_repaint()
   end)
@@ -513,7 +566,12 @@ function Chat:_show_next_ask()
       local label = ({ once = "concedido (una vez)", always = "concedido (siempre)",
         always_global = "concedido (siempre, global)", deny = "denegado" })[action] or "denegado"
       self.transcript:add_system(string.format("permiso para %q: %s", tostring(p.tool), label))
-      self.modal_layer:remove(dialog)
+      -- quita el MARCO del modal (envuelve al diálogo), no el diálogo suelto.
+      if self._modal_frame then
+        if self._modal_frame.dispose then self._modal_frame:dispose() end
+        self.modal_layer:remove(self._modal_frame)
+        self._modal_frame = nil
+      end
       self.current_modal = nil
       self:_refresh_transcript()
       self:_show_next_ask()
@@ -522,7 +580,7 @@ function Chat:_show_next_ask()
   self.current_modal = dialog
   self.pending_count = #self.ask_queue + 1
   self:_update_statusline()
-  self:open_modal(dialog)
+  self:open_modal(dialog, { title = "Permiso requerido", height = 8 })
 end
 
 -- ---------------------------------------------------------------------------
@@ -533,40 +591,68 @@ end
 -- transcript (flex) / input / statusline, y un stack que superpone la columna y la
 -- capa modal. La raíz de la app es ese stack (la capa modal va "encima").
 function Chat:_build_ui(opts)
-  -- la columna principal (transcript / input / statusline).
+  -- la columna principal (transcript / actividad / input enmarcado / statusline).
   local column = toolkit.vbox({ id = "chat-column" })
 
   self.transcript_widget = toolkit.text({ id = "transcript", markdown = true })
   self.transcript_widget.flex = 1  -- ocupa el alto sobrante (chat.md §1)
 
+  -- Fila de ACTIVIDAD (chat.md §2): un spinner animado mientras el turno corre,
+  -- oculto en reposo. Es lo que evita la sensación de "terminal muerta" entre el
+  -- envío y el primer delta. La anima `nu.task.every` (toolkit.spinner).
+  self.activity = toolkit.spinner({ id = "activity", label = "", color = "accent" })
+  self.activity.pref_h = 1
+  self.activity:set_visible(false)
+
+  -- Editor ENMARCADO con un prompt "› " (la firma visual del harness, al estilo de
+  -- la caja de entrada de Claude Code). El editor multilínea vive dentro de un `box`
+  -- (borde redondeado, realce de foco) junto a un label-prompt.
   self.input = chat_input.new({
     id = "input",
-    placeholder = "Escribe un mensaje (enter envía · shift+enter nueva línea · @ ficheros · /help)",
+    placeholder = "Escribe un mensaje · enter envía · shift+enter nueva línea · @ ficheros · /help",
     on_history_prev = function() self:history_prev() end,
     on_history_next = function() self:history_next() end,
     on_mention = function() self:open_file_picker() end,
+    on_change = function() self:_sync_input_height() end,
   })
-  self.input.pref_h = opts.input_height or 3  -- alto inicial del editor (chat.md §3)
+  self.input.flex = 1
+  self._input_max_lines = opts.input_height or 6
+  self._prompt = toolkit.label({ id = "prompt", text = "› ",
+    style = { fg = "accent", bold = true } })
+  self._prompt.pref_w = 2
+  local input_row = toolkit.hbox({ id = "input-row" })
+  input_row:add(self._prompt)
+  input_row:add(self.input)
+  self.input_box = toolkit.box({ id = "input-box", child = input_row,
+    border = "rounded", pad = { 0, 1 } })
+  self.input_box.pref_h = 3  -- 1 línea visible + borde; crece con _sync_input_height
 
-  -- statusline: un hbox con un label a la izquierda y otro a la derecha (chat.md §6).
-  local status_bar = toolkit.hbox({ id = "statusline" })
-  self.status_left = toolkit.label({ id = "status-left" })
+  -- STATUSLINE como BARRA (chat.md §6): un fondo `bg_surface` a todo lo ancho y dos
+  -- richtext (izquierda/derecha) con segmentos coloreados por el theme. El `box`
+  -- sin borde pero con `bg` pinta el fondo continuo; los richtext se blittean encima.
+  self.status_left = toolkit.richtext({ id = "status-left" })
   self.status_left.flex = 1
-  self.status_right = toolkit.label({ id = "status-right" })
-  -- el derecho ocupa su contenido; v1 le damos un ancho fijo razonable por flex.
+  self.status_right = toolkit.richtext({ id = "status-right",
+    align = "right", fill_bg = "bg_surface" })
   self.status_right.flex = 1
-  status_bar.pref_h = 1
-  status_bar:add(self.status_left)
-  status_bar:add(self.status_right)
+  local status_row = toolkit.hbox({ id = "status-row" })
+  status_row:add(self.status_left)
+  status_row:add(self.status_right)
+  self.status_box = toolkit.box({ id = "status-box", child = status_row,
+    border = "none", bg = "bg_surface", pad = { 0, 1 } })
+  self.status_box.pref_h = 1
 
   column:add(self.transcript_widget)
-  column:add(self.input)
-  column:add(status_bar)
+  column:add(self.activity)
+  column:add(self.input_box)
+  column:add(self.status_box)
 
   -- la raíz: un stack con la columna y (encima) la capa modal (chat.md §1).
   local root = toolkit.stack({ id = "chat-root" })
   root:add(column)
-  self.modal_layer = toolkit.vbox({ id = "modal-layer" })
+  -- la capa modal CENTRA su contenido (un panel enmarcado) sobre la columna
+  -- (chat.md §1/§5): justify/align center colocan la caja del modal en el medio.
+  self.modal_layer = toolkit.vbox({ id = "modal-layer", justify = "center", align = "center" })
   self.modal_layer:set_visible(true)
   root:add(self.modal_layer)
 
@@ -576,6 +662,74 @@ function Chat:_build_ui(opts)
   -- arranca en el editor.
   self.app = toolkit.app({ root = root, theme = opts.theme })
   self.app:set_focus(self.input)
+  self:_sync_input_height()
+end
+
+-- Chat:_welcome_md() -> string. El markdown de la pantalla de bienvenida (chat.md
+-- §8): identifica el harness, el modelo y el cwd activos, y recuerda las pistas
+-- mínimas. El render lo colorea el theme del markdown (G22) — encabezado en acento,
+-- etc.—, así que la primera pantalla ya se ve como producto, no en blanco.
+function Chat:_welcome_md()
+  local v = nu.version
+  local model = (self.session and self.session.model) or "?"
+  local cwd = (self.session and self.session.cwd) or nu.fs.cwd()
+  return table.concat({
+    "# ✻ Bienvenido a nu",
+    "",
+    string.format("Harness de código sobre el runtime `nu` %d.%d.%d (API %d).",
+      v.major, v.minor, v.patch, v.api),
+    "",
+    "- **Modelo:** `" .. model .. "`",
+    "- **Directorio:** `" .. cwd .. "`",
+    "",
+    "Escribe tu mensaje abajo y pulsa `enter`. Atajos útiles:",
+    "",
+    "- `/help` — lista de comandos · `/model` — cambiar modelo · `/sessions` — reanudar",
+    "- `@` — mencionar un fichero · `shift+enter` — nueva línea · `esc` — interrumpir el turno",
+    "",
+    "> *Empieza pidiendo algo: \"explica este repo\", \"añade un test a X\"…*",
+  }, "\n")
+end
+
+-- Chat:_set_busy(on, label) muestra/oculta la fila de actividad (el spinner) y la
+-- anima mientras un turno está en vuelo (chat.md §2). Cambiar la visibilidad mueve el
+-- layout, así que rehace el layout y repinta. `label` describe la fase ("Pensando…",
+-- "Ejecutando bash…"). Idempotente en lo esencial (start/stop del spinner lo son).
+function Chat:_set_busy(on, label)
+  if not (self.activity and self.app and self.app._alive) then
+    return
+  end
+  if on then
+    self.activity:set_label((label or "Pensando…") .. "  ·  esc para interrumpir")
+    if not self.activity.visible then
+      self.activity:set_visible(true)
+      self.app:relayout()
+    end
+    self.activity:start()
+  else
+    self.activity:stop()
+    if self.activity.visible then
+      self.activity:set_visible(false)
+      self.app:relayout()
+    end
+  end
+  self:_repaint()
+end
+
+-- Chat:_sync_input_height() ajusta el alto de la caja del editor al contenido: crece
+-- al añadir líneas (hasta `_input_max_lines`) y encoge al borrarlas. La caja añade 2
+-- filas de borde. Solo rehace el layout si el alto cambió (evita trabajo por tecla).
+function Chat:_sync_input_height()
+  if not (self.input_box and self.app and self.app._alive) then
+    return
+  end
+  local lines = self.input:content_height() or 1
+  local want = math.max(1, math.min(self._input_max_lines or 6, lines)) + 2
+  if want ~= self.input_box.pref_h then
+    self.input_box.pref_h = want
+    self.app:relayout()
+  end
+  self:_repaint()
 end
 
 -- Chat:_install_keymaps() registra los atajos GLOBALES del chat (chat.md §7):
@@ -632,6 +786,7 @@ function Chat:quit()
   end
   self._closed = true
   self:cancel_turn()
+  if self.activity then self.activity:stop() end
   for _, s in ipairs(self.subs or {}) do
     if s and s.cancel then s:cancel() end
   end
@@ -644,12 +799,22 @@ function Chat:quit()
     if k and k.unmap then k:unmap() end
   end
   self.keymaps = {}
+  -- suelta las suscripciones al foco de las cajas (sin handlers huérfanos, G2).
+  for _, b in ipairs({ self.input_box, self.status_box }) do
+    if b and b.dispose then b:dispose() end
+  end
   if self.app then
     self.app:close()
   end
   if self.session and self.session.close then
     pcall(self.session.close, self.session)
   end
+  -- El chat ES el producto: cerrarlo APAGA el runtime (chat.md §8). Sin esto, salir
+  -- del chat dejaba el binario vivo —y, con el conjunto oficial, el REPL montado
+  -- debajo (G36)—, esa sensación de "salir de una capa para caer en otra". El driver
+  -- de TTY convierte `core:shutdown` en apagado limpio (driver.go §4); es el mismo
+  -- canal que usa el arranque degradado. Idempotente: emitir dos veces no daña.
+  nu.events.emit("core:shutdown")
 end
 
 -- ---------------------------------------------------------------------------

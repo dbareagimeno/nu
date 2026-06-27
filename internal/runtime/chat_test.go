@@ -202,8 +202,11 @@ func TestChatLayout(t *testing.T) {
 	// el transcript es flexible (ocupa el alto sobrante): tiene varias filas.
 	h.expectEval(`return tostring(C.transcript_widget.h > 1)`, "true")
 	h.expectEval(`return tostring(C.transcript_widget.w)`, "80")
-	// el editor multilínea ocupa su banda (pref_h por defecto 3).
-	h.expectEval(`return tostring(C.input.h)`, "3")
+	// el editor va dentro de una CAJA (borde + prompt "› "); la caja ocupa su banda
+	// (3 filas: 1 línea de entrada + 2 de borde) y el editor su interior.
+	h.expectEval(`return tostring(C.input_box ~= nil)`, "true")
+	h.expectEval(`return tostring(C.input_box.h)`, "3")
+	h.expectEval(`return tostring(C.input.h >= 1)`, "true")
 	// el foco arranca en el editor (chat.md §3).
 	h.expectEval(`return tostring(C.app.focused == C.input)`, "true")
 	h.eval(`C:quit()`)
@@ -258,17 +261,17 @@ func TestChatStreamingMarkdown(t *testing.T) {
 	`)
 	h.eval(`SID = C.session.id`)
 
-	// Altura inicial del Block del transcript (vacío o con poco).
+	// Arranca el turno (esto retira la pantalla de bienvenida: el transcript ya tiene
+	// un item de asistente en curso) y mide la altura BASE de la conversación vacía.
 	h.eval(`
+		-- el agente emite con atribución de sesión (G3): payload.session = SID.
+		nu.events.emit("agent:turn.start", { session = SID })
 		local w = C.transcript_widget.w
 		H0 = C.transcript_widget:content_height(w)
 	`)
 
-	// Simulamos el turno: el usuario "envía" (al transcript como user) y llegan
-	// deltas de texto markdown. Cada delta debe hacer crecer el transcript.
+	// Llegan deltas de texto markdown; cada uno debe hacer crecer el transcript.
 	h.eval(`
-		-- el agente emite con atribución de sesión (G3): payload.session = SID.
-		nu.events.emit("agent:turn.start", { session = SID })
 		nu.events.emit("agent:delta", { session = SID, type = "text", text = "# Título\n\n" })
 	`)
 	h.eval(`
@@ -448,12 +451,20 @@ func TestChatStatusline(t *testing.T) {
 		end)
 	`)
 	h.eval(`C:_update_statusline()`)
-	// el segmento de modelo muestra el modelo activo (el label guarda su `.text`).
-	h.expectEval(`return tostring(C.status_left.text ~= "")`, "true")
-	// la statusline izquierda contiene el modelo "test/m".
-	h.expectEval(`return tostring(C.status_left.text:find("test/m", 1, true) ~= nil)`, "true")
+	// la statusline es ahora una BARRA de spans coloreados (richtext): el texto de
+	// cada lado se reconstruye uniendo los `text` de sus spans.
+	h.eval(`
+		function span_text(w)
+			local parts = {}
+			for _, s in ipairs(w.spans or {}) do parts[#parts+1] = s.text end
+			return table.concat(parts)
+		end
+	`)
+	// el segmento de modelo muestra el modelo activo en la izquierda.
+	h.expectEval(`return tostring(span_text(C.status_left) ~= "")`, "true")
+	h.expectEval(`return tostring(span_text(C.status_left):find("test/m", 1, true) ~= nil)`, "true")
 	// la derecha contiene el modo de permisos ("ask" por defecto).
-	h.expectEval(`return tostring(C.status_right.text:find("ask", 1, true) ~= nil)`, "true")
+	h.expectEval(`return tostring(span_text(C.status_right):find("ask", 1, true) ~= nil)`, "true")
 	h.eval(`C:quit()`)
 }
 
@@ -641,7 +652,11 @@ func TestCP11ChatStreamingE2E(t *testing.T) {
 		HFINAL = C.transcript_widget:content_height(C.transcript_widget.w)
 	`)
 	h.expectEval(`return tostring(NONDECR)`, "true")
-	h.expectEval(`return tostring(HFINAL > H0)`, "true")
+	// el transcript final es al menos tan alto como el primer frame de streaming (la
+	// conversación creció de forma monótona hasta el final). Comparar contra el primer
+	// frame de streaming —no contra H0— es independiente de la pantalla de bienvenida,
+	// que ocupa el transcript hasta el primer mensaje.
+	h.expectEval(`return tostring(HFINAL >= HEIGHTS[1])`, "true")
 
 	// El transcript contiene el markdown de AMBAS vueltas grabadas: el texto de la
 	// 1ª (sellado), el bloque de la tool `get_weather` (el agente la ejecutó porque

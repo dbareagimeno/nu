@@ -64,10 +64,13 @@ M.vbox  = layout.vbox
 M.hbox  = layout.hbox
 M.stack = layout.stack
 
--- Widgets hoja.
-M.label = widgets.label
-M.text  = widgets.text
-M.input = widgets.input
+-- Widgets hoja y de decoración.
+M.label    = widgets.label
+M.text     = widgets.text
+M.input    = widgets.input
+M.box      = widgets.box      -- marco (borde + título + padding) alrededor de un hijo
+M.spinner  = widgets.spinner  -- indicador de actividad animado (nu.task.every)
+M.richtext = widgets.richtext -- una línea de varios spans estilizados (line builder)
 
 -- La raíz.
 M.app = app.app

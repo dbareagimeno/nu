@@ -85,24 +85,27 @@ func TestBlitViewportVerticalG28(t *testing.T) {
 	}
 }
 
-// G28 viewport: blit con offset HORIZONTAL negativo y positivo recorta por ambos
-// extremos (el contenido visible es la ventana correcta).
+// G28/G37 viewport: blit con offset HORIZONTAL recorta por ambos extremos con el
+// MISMO signo que el eje vertical (G37): un offset NEGATIVO recorta el borde inicial
+// (scroll), uno POSITIVO desplaza el Block a la derecha (padding/posición). Antes de
+// G37 el eje X tenía el signo invertido respecto a Y y al contrato de api.md §9.1.
 func TestBlitViewportHorizontalG28(t *testing.T) {
 	doc := blockOf("ABCDEFGH")
 
-	// blit(2, 0): empieza en la columna 2 del Block → se ven "CDEFGH...".
+	// blit(-2, 0): el Block se estampa 2 columnas a la izquierda → se ven "CDEFGH..."
+	// (recorta el borde inicial, como el `blit(0,-3)` vertical).
 	g := newGrid(4, 1)
-	g.blitBlock(2, 0, doc)
+	g.blitBlock(-2, 0, doc)
 	if got := gridRow(g, 0); got != "CDEF" {
-		t.Fatalf("G28 blit(+2,0): fila 0 = %q, want %q", got, "CDEF")
+		t.Fatalf("G37 blit(-2,0): fila 0 = %q, want %q", got, "CDEF")
 	}
 
-	// blit(-2, 0): el Block empieza 2 columnas a la derecha; las 2 primeras celdas
-	// quedan en blanco y luego "AB".
+	// blit(+2, 0): el Block se estampa 2 columnas a la derecha; las 2 primeras celdas
+	// quedan en blanco y luego "AB" (padding/posición, coherente con `blit(0,+2)`).
 	g2 := newGrid(4, 1)
-	g2.blitBlock(-2, 0, doc)
+	g2.blitBlock(2, 0, doc)
 	if got := gridRow(g2, 0); got != "  AB" {
-		t.Fatalf("G28 blit(-2,0): fila 0 = %q, want %q", got, "  AB")
+		t.Fatalf("G37 blit(+2,0): fila 0 = %q, want %q", got, "  AB")
 	}
 }
 

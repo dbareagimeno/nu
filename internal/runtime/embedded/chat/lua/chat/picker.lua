@@ -93,23 +93,37 @@ end
 function Picker:compose(w, _h)
   if w <= 0 then return nil end
   local th = resolve_theme(self)
-  local accent = th:style({ fg = "accent", bold = true })
   local dim = th:style({ fg = "dim" })
-  local sel = th:style({ fg = "accent", bold = true })
+  local accent = th:style({ fg = "accent", bold = true })
+  -- fila seleccionada: texto en acento sobre un FONDO de selección (resalte de
+  -- producto, no solo un glifo). El título lo pinta el marco (toolkit.box).
+  local sel = th:style({ fg = "accent", bg = "selection", bold = true })
+  local sel_fill = th:style({ bg = "selection" })
 
   local lines = {}
-  lines[#lines + 1] = { { text = nu.text.truncate("┤ " .. self.title .. " ├", w), style = accent } }
-  lines[#lines + 1] = { { text = nu.text.truncate("> " .. self.query, w) } }
+  -- línea de consulta con un prompt de búsqueda y un contador de resultados.
+  lines[#lines + 1] = {
+    { text = "⌕ ", style = accent },
+    { text = nu.text.truncate(self.query, math.max(0, w - 12)) },
+    { text = string.format("   (%d)", #self.filtered), style = dim },
+  }
   local n = math.min(#self.filtered, self.max_rows)
   for i = 1, n do
-    local marker = (i == self.sel) and "› " or "  "
-    local style = (i == self.sel) and sel or nil
-    lines[#lines + 1] = { { text = nu.text.truncate(marker .. tostring(self.filtered[i]), w), style = style } }
+    if i == self.sel then
+      local txt = nu.text.truncate("› " .. tostring(self.filtered[i]), w)
+      -- rellena la fila seleccionada hasta el ancho para que el fondo sea continuo.
+      local pad = w - nu.text.width(txt)
+      local row = { { text = txt, style = sel } }
+      if pad > 0 then row[#row + 1] = { text = string.rep(" ", pad), style = sel_fill } end
+      lines[#lines + 1] = row
+    else
+      lines[#lines + 1] = { { text = nu.text.truncate("  " .. tostring(self.filtered[i]), w) } }
+    end
   end
   if #self.filtered == 0 then
     lines[#lines + 1] = { { text = "(sin coincidencias)", style = dim } }
   end
-  lines[#lines + 1] = { { text = nu.text.truncate("[enter] elegir   [esc] cancelar", w), style = dim } }
+  lines[#lines + 1] = { { text = nu.text.truncate("↑↓ mover · enter elegir · esc cancelar", w), style = dim } }
   return nu.ui.block(lines)
 end
 

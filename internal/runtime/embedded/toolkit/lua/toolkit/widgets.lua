@@ -135,7 +135,12 @@ function Text:compose(w, _h)
     return nil
   end
   if self.markdown then
-    return nu.text.markdown(txt, { width = w })
+    -- Cableamos la paleta del theme al render de markdown (G22, api.md §10): sin
+    -- `opts.theme` el markdown sale monocromo (solo bold/italic), que era lo que
+    -- hacía que el transcript del chat pareciera "una terminal en blanco". El theme
+    -- resuelve los nombres semánticos a literales una sola vez (cacheado).
+    local th = resolve_theme(self)
+    return nu.text.markdown(txt, { width = w, theme = th:markdown_opts() })
   end
   return nu.text.wrap(txt, w)
 end
@@ -269,6 +274,169 @@ function Input:caret_col()
   return nu.text.width((self.text or ""):sub(1, self.caret))
 end
 
+-- ---------------------------------------------------------------------------
+-- box: un MARCO (borde + título opcional + padding) alrededor de UN hijo.
+-- ---------------------------------------------------------------------------
+--
+-- Es la primitiva de decoración que faltaba (G36): sin un widget de borde, toda la
+-- UI era texto plano apilado contra el margen 0. Con `box` se construyen el input
+-- enmarcado (la firma "╭─ > … ─╮"), las tarjetas de tool y los modales con marco.
+--
+-- MODELO. `box` es un contenedor de UN hijo: COMPONE su propio Block (el marco, de
+-- tamaño w×h) y coloca al hijo DENTRO, con inset = borde (1 celda por lado si hay
+-- borde) + padding. La app pinta el marco (preorden: padre antes que hijo) y luego
+-- blittea al hijo encima del interior, de modo que el borde sobrevive en los cantos.
+-- Los caracteres de caja se estilan con el theme (`border` en reposo, `border_focus`
+-- si el foco está dentro del subárbol del box); el título, con `title_style`.
+
+local box_chars = {
+  rounded = { tl = "╭", tr = "╮", bl = "╰", br = "╯", h = "─", v = "│" },
+  square  = { tl = "┌", tr = "┐", bl = "└", br = "┘", h = "─", v = "│" },
+}
+
+local Box = widget.derive()
+
+-- Box:_focus_inside() -> bool. ¿El foco de la app está en este box o en un
+-- descendiente? Decide el color del borde (realce de foco). Sin app o sin foco, no.
+function Box:_focus_inside()
+  local f = self._app and self._app.focused
+  if not f then return false end
+  local n = f
+  while n ~= nil do
+    if n == self then return true end
+    n = n.parent
+  end
+  return false
+end
+
+-- Box:set_title(s) cambia el título del marco (en el borde superior). Ensucia.
+function Box:set_title(s)
+  self.title = s and tostring(s) or nil
+  self:mark_dirty()
+  return self
+end
+
+-- Box:compose(w, h) -> Block. El MARCO: borde superior (con el título embebido si
+-- lo hay), laterales, e inferior; interior en blanco (el hijo se pinta encima). Con
+-- `border == "none"` no dibuja cantos: solo un relleno de fondo si `bg` está puesto
+-- (un panel sin marco), o nada (padding puro). Los colores salen del theme (G22).
+function Box:compose(w, h)
+  if w <= 0 or h <= 0 then return nil end
+  local th = resolve_theme(self)
+  local ch = self.ch
+  local bordered = self.border ~= "none"
+  local bstyle = th:style({ fg = self:_focus_inside() and self.focus_color or self.border_color })
+  local fill_style = self.bg and th:style({ bg = self.bg }) or nil
+
+  -- fila interior (sin cantos): laterales + relleno, o solo relleno si sin borde.
+  local function blank_row()
+    if bordered then
+      local inner = math.max(0, w - 2)
+      return {
+        { text = ch.v, style = bstyle },
+        { text = string.rep(" ", inner), style = fill_style },
+        { text = ch.v, style = bstyle },
+      }
+    else
+      return { { text = string.rep(" ", w), style = fill_style } }
+    end
+  end
+
+  local rows = {}
+  if not bordered then
+    for _ = 1, h do rows[#rows + 1] = blank_row() end
+    if not fill_style then return nil end -- padding puro: nada que pintar
+    return nu.ui.block(rows)
+  end
+
+  -- borde superior, con el título embebido: "tl─ título ───tr".
+  local top
+  if h >= 1 then
+    local inner = math.max(0, w - 2)
+    if self.title and self.title ~= "" and inner >= 4 then
+      local cap = math.max(0, inner - 3) -- "─ " antes + " " después dejan hueco
+      local title = nu.text.truncate(self.title, cap)
+      local tw = nu.text.width(title)
+      local dashes = math.max(0, inner - 2 - tw - 1) -- "─ " (2) + " " (1) tras título
+      top = {
+        { text = ch.tl, style = bstyle },
+        { text = ch.h .. " ", style = bstyle },
+        { text = title, style = th:style(self.title_style) },
+        { text = " " .. string.rep(ch.h, dashes), style = bstyle },
+        { text = ch.tr, style = bstyle },
+      }
+    else
+      top = {
+        { text = ch.tl .. string.rep(ch.h, inner) .. ch.tr, style = bstyle },
+      }
+    end
+    rows[#rows + 1] = top
+  end
+  for _ = 2, h - 1 do rows[#rows + 1] = blank_row() end
+  if h >= 2 then
+    local inner = math.max(0, w - 2)
+    rows[#rows + 1] = { { text = ch.bl .. string.rep(ch.h, inner) .. ch.br, style = bstyle } }
+  end
+  return nu.ui.block(rows)
+end
+
+-- Box:relayout(x, y, w, h) coloca al ÚNICO hijo dentro del marco, con inset = borde
+-- (1 si bordeado) + padding. Las coordenadas del hijo son relativas al box (la app
+-- las suma con `_abs`). Desciende si el hijo es a su vez un contenedor.
+function Box:relayout(x, y, w, h)
+  self:set_geometry(x, y, w, h)
+  local bw = (self.border ~= "none") and 1 or 0
+  local pt, pr, pb, pl = require("toolkit.layout")._parse_pad(self.pad)
+  local ix = bw + pl
+  local iy = bw + pt
+  local iw = math.max(0, w - 2 * bw - pl - pr)
+  local ih = math.max(0, h - 2 * bw - pt - pb)
+  local child = self.children[1]
+  if child and child.visible then
+    child:set_geometry(ix, iy, iw, ih)
+    if child.relayout then
+      child:relayout(child.x, child.y, child.w, child.h)
+    end
+  end
+end
+
+-- Box:dispose() suelta la suscripción al foco (si la hay). La llama quien creó el
+-- box (p. ej. el chat al salir) para no fugar handlers entre reloads (G2).
+function Box:dispose()
+  if self._focus_sub then
+    self._focus_sub:cancel()
+    self._focus_sub = nil
+  end
+end
+
+-- toolkit.widgets.box{child?, title?, border?, pad?, ...} -> Box. Un marco con UN
+-- hijo. `border`: "rounded" (default) | "square" | "none". `pad`: padding interior
+-- (número/tabla, ver layout). Colores semánticos: `border_color` (default "border"),
+-- `focus_color` (default "border_focus"), `title_style` (default acento+negrita),
+-- `bg` (relleno interior opcional). Si `react_focus ~= false` y hay borde, se
+-- suscribe a `toolkit:focus` para repintar el marco cuando el foco entra/sale.
+function M.box(opts)
+  opts = opts or {}
+  local b = setmetatable(widget.new({ id = opts.id, focusable = false }), Box)
+  b.border = opts.border or "rounded"
+  b.title = opts.title
+  b.pad = opts.pad
+  b.bg = opts.bg
+  b.border_color = opts.border_color or "border"
+  b.focus_color = opts.focus_color or "border_focus"
+  b.title_style = opts.title_style or { fg = "heading", bold = true }
+  b.ch = box_chars[b.border] or box_chars.rounded
+  if opts.child then b:add(opts.child) end
+  -- Realce de foco dinámico: cuando el foco se mueve, repinta el marco (su color de
+  -- borde depende de si el foco está dentro). Solo si bordeado y reactivo.
+  if b.border ~= "none" and opts.react_focus ~= false and nu.events then
+    b._focus_sub = nu.events.on("toolkit:focus", function()
+      b:mark_dirty()
+    end)
+  end
+  return b
+end
+
 -- toolkit.widgets.input{value?, placeholder?, id?} -> Input. Nace FOCUSABLE.
 function M.input(opts)
   opts = opts or {}
@@ -280,6 +448,140 @@ function M.input(opts)
   -- le da flex).
   i.pref_h = opts.pref_h or 1
   return i
+end
+
+-- ---------------------------------------------------------------------------
+-- richtext: una línea de VARIOS spans estilizados (line builder con theme).
+-- ---------------------------------------------------------------------------
+--
+-- `label` pinta una línea con UN solo estilo; muchas UIs necesitan mezclar estilos
+-- en la misma línea (un segmento de statusline coloreado, "nombre" en negrita +
+-- " resto" atenuado, el icono de una tool en color de estado). `richtext` guarda
+-- una lista de segmentos `{text, style=spec_semántico}` y los resuelve contra el
+-- theme al componer (G22). Recorta al ancho. No focusable.
+
+local RichText = widget.derive()
+
+-- richtext:set_spans(list) reemplaza los segmentos. Cada uno: `{text, style?}` donde
+-- `style` es un spec semántico (`{fg=, bold=, ...}`) o nil. Encadenable.
+function RichText:set_spans(list)
+  self.spans = list or {}
+  self:mark_dirty()
+  return self
+end
+
+function RichText:compose(w, _h)
+  if w <= 0 then return nil end
+  local th = resolve_theme(self)
+  local out, used = {}, 0
+  for _, seg in ipairs(self.spans or {}) do
+    local txt = tostring(seg.text or "")
+    if used >= w then break end
+    local avail = w - used
+    txt = nu.text.truncate(txt, avail)
+    local tw = nu.text.width(txt)
+    if tw > 0 then
+      out[#out + 1] = { text = txt, style = th:style(seg.style) }
+      used = used + tw
+    end
+  end
+  -- Alineación: por defecto a la izquierda. Con `align == "right"` se antepone un
+  -- relleno (con `fill_bg` si se dio) que empuja el contenido al borde derecho —lo
+  -- que una statusline necesita para su lado derecho—.
+  if self.align == "right" and used < w then
+    local pad = string.rep(" ", w - used)
+    local fill = self.fill_bg and th:style({ bg = self.fill_bg }) or nil
+    table.insert(out, 1, { text = pad, style = fill })
+  end
+  if #out == 0 then out = { { text = "" } } end
+  return nu.ui.block({ out })
+end
+
+-- toolkit.widgets.richtext{spans?, align?, fill_bg?, id?, pref_h?} -> RichText.
+-- `align`: "left" (default) | "right". `fill_bg`: nombre semántico del relleno de
+-- alineación (para que la barra mantenga su fondo bajo el padding).
+function M.richtext(opts)
+  opts = opts or {}
+  local r = setmetatable(widget.new({ id = opts.id, focusable = false }), RichText)
+  r.spans = opts.spans or {}
+  r.align = opts.align
+  r.fill_bg = opts.fill_bg
+  r.pref_h = opts.pref_h or 1
+  return r
+end
+
+-- ---------------------------------------------------------------------------
+-- spinner: indicador de actividad ANIMADO (frames vía nu.task.every).
+-- ---------------------------------------------------------------------------
+--
+-- Lo que faltaba para que el chat no pareciera "una terminal muerta" entre el envío
+-- y el primer delta: un glifo que gira + una etiqueta ("Pensando… 3s · esc para
+-- interrumpir"). Avanza el frame con `nu.task.every(ms, fn)` (api.md §3, timer
+-- periódico de handler síncrono) y se ensucia para repintar. `start()` arranca el
+-- timer; `stop()` lo detiene (y deja de ocupar sitio si `pref_h` se pone a 0 desde
+-- fuera). Idempotentes. Siempre llamar `stop()` al desmontar (no fuga el timer).
+
+local Spinner = widget.derive()
+local default_frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+
+function Spinner:set_label(s)
+  self.label = s and tostring(s) or ""
+  self:mark_dirty()
+  return self
+end
+
+-- spinner:start() arranca la animación (idempotente). Repinta cada `interval` ms.
+function Spinner:start()
+  if self._timer then return self end
+  self.frame = self.frame or 1
+  self._timer = nu.task.every(self.interval, function()
+    self.frame = (self.frame % #self.frames) + 1
+    self:mark_dirty()
+  end)
+  self:mark_dirty()
+  return self
+end
+
+-- spinner:stop() detiene la animación (idempotente). El widget deja de repintarse.
+function Spinner:stop()
+  if self._timer then
+    self._timer:stop()
+    self._timer = nil
+  end
+  return self
+end
+
+function Spinner:compose(w, _h)
+  if w <= 0 then return nil end
+  local th = resolve_theme(self)
+  local glyph = self.frames[self.frame or 1] or ""
+  local spans = { { text = glyph, style = th:style({ fg = self.color }) } }
+  if self.label and self.label ~= "" then
+    spans[#spans + 1] = { text = " " .. self.label, style = th:style({ fg = "dim" }) }
+  end
+  -- recorta la línea entera al ancho.
+  local line, used = {}, 0
+  for _, s in ipairs(spans) do
+    local t = nu.text.truncate(s.text, math.max(0, w - used))
+    used = used + nu.text.width(t)
+    line[#line + 1] = { text = t, style = s.style }
+  end
+  return nu.ui.block({ line })
+end
+
+-- toolkit.widgets.spinner{label?, frames?, interval?, color?, id?} -> Spinner.
+-- `interval` en ms (default 80). `color` semántico (default "accent"). Nace PARADO;
+-- llama `start()` para animar.
+function M.spinner(opts)
+  opts = opts or {}
+  local s = setmetatable(widget.new({ id = opts.id, focusable = false }), Spinner)
+  s.frames = opts.frames or default_frames
+  s.frame = 1
+  s.interval = math.max(16, tonumber(opts.interval) or 80)
+  s.color = opts.color or "accent"
+  s.label = tostring(opts.label or "")
+  s.pref_h = opts.pref_h or 1
+  return s
 end
 
 return M

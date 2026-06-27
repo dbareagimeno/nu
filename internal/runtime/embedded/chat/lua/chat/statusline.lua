@@ -83,57 +83,83 @@ end
 -- pending_asks, other_activity }.
 -- ---------------------------------------------------------------------------
 
--- M.install_defaults() registra los segmentos por defecto. Idempotente por id.
+-- abbrev_cwd(path) -> string. Acorta una ruta larga para la barra: sustituye el
+-- home por `~` y, si aún es muy larga, conserva solo los dos últimos segmentos
+-- (`…/proyecto/sub`). Así una ruta profunda no desborda el lado derecho.
+local function abbrev_cwd(path)
+  if not path or path == "" then return "" end
+  local home = os and os.getenv and os.getenv("HOME")
+  if home and home ~= "" and path:sub(1, #home) == home then
+    path = "~" .. path:sub(#home + 1)
+  end
+  if nu.text.width(path) <= 28 then return path end
+  local segs = {}
+  for s in path:gmatch("[^/]+") do segs[#segs + 1] = s end
+  if #segs >= 2 then
+    return "…/" .. segs[#segs - 1] .. "/" .. segs[#segs]
+  end
+  return path
+end
+
+-- M.install_defaults() registra los segmentos por defecto. Idempotente por id. Cada
+-- `render(ctx)` devuelve `{ text, style }` (un texto y un nombre semántico de color
+-- del theme, G22) —o "" para no mostrarse—; el chat los pinta como spans coloreados
+-- de la barra (chat.md §6, la "forma rica" que el contrato ya anticipaba).
 function M.install_defaults()
-  -- Modelo activo (izquierda).
+  -- Modelo activo (izquierda) — el acento de la barra.
   M.add({ id = "model", side = "left", priority = 10, render = function(ctx)
-    return ctx.model or "?"
+    return { text = ctx.model or "?", style = { fg = "role_assistant", bold = true } }
   end })
 
-  -- Llenado de contexto en % (chat.md §6: desde Session.usage, aviso cerca del
-  -- umbral). El % se calcula contra el `context` del modelo si se conoce; v1
-  -- muestra los tokens de contexto si no hay denominador.
+  -- Llenado de contexto en % (chat.md §6: desde Session.usage, AVISO cerca del
+  -- umbral). El % se calcula contra el `context` del modelo si se conoce; cerca del
+  -- umbral de compactación (>= 80%) el segmento pasa a color `warn` (lo prometido en
+  -- la cabecera de este módulo, ahora codificado).
   M.add({ id = "context", side = "left", priority = 20, render = function(ctx)
     local u = ctx.usage or {}
     local tokens = u.context_tokens or 0
     if ctx.context_window and ctx.context_window > 0 then
       local pct = math.floor(100 * tokens / ctx.context_window)
-      return string.format("ctx %d%%", pct)
+      local style = (pct >= 80) and { fg = "warn" } or { fg = "dim" }
+      return { text = string.format("ctx %d%%", pct), style = style }
     end
-    return string.format("ctx %d", tokens)
+    return { text = string.format("ctx %d", tokens), style = { fg = "dim" } }
   end })
 
   -- Coste acumulado de la sesión (chat.md §6).
   M.add({ id = "cost", side = "left", priority = 30, render = function(ctx)
     local u = ctx.usage or {}
-    return string.format("$%.4f", u.cost_usd or 0)
+    return { text = string.format("$%.4f", u.cost_usd or 0), style = { fg = "dim" } }
   end })
 
   -- Modo de razonamiento (ADR-016): indicador discreto, solo si está activo.
   M.add({ id = "thinking", side = "left", priority = 25, render = function(ctx)
     local mode = ctx.thinking
     if mode and mode ~= "off" then
-      return "🧠 " .. tostring(mode)
+      return { text = "🧠 " .. tostring(mode), style = { fg = "info" } }
     end
     return ""
   end })
 
-  -- cwd (derecha).
+  -- cwd (derecha), abreviada.
   M.add({ id = "cwd", side = "right", priority = 20, render = function(ctx)
-    return ctx.cwd or ""
+    return { text = abbrev_cwd(ctx.cwd), style = { fg = "secondary" } }
   end })
 
-  -- Modo de permisos (derecha).
+  -- Modo de permisos (derecha): `auto` resalta (verde) porque cambia el riesgo;
+  -- `ask` en atenuado.
   M.add({ id = "perms", side = "right", priority = 10, render = function(ctx)
-    return ctx.perms_mode or "ask"
+    local mode = ctx.perms_mode or "ask"
+    local style = (mode == "auto") and { fg = "success" } or { fg = "dim" }
+    return { text = "⏚ " .. mode, style = style }
   end })
 
   -- Indicador de asks pendientes / actividad de otras sesiones (chat.md §1, G3):
-  -- un contador discreto. Solo aparece si hay algo que señalar.
+  -- un contador discreto. Solo aparece si hay algo que señalar (en color de aviso).
   M.add({ id = "pending", side = "right", priority = 5, render = function(ctx)
     local n = ctx.pending_asks or 0
     if n > 0 then
-      return string.format("⏳ %d perm.", n)
+      return { text = string.format("⏳ %d perm.", n), style = { fg = "warn" } }
     end
     return ""
   end })

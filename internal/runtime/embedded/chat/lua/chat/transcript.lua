@@ -179,30 +179,77 @@ end
 -- literales (G22, chat.md §7). El texto del usuario/asistente va tal cual (el del
 -- asistente YA es markdown — lo genera el modelo). El thinking y los errores van
 -- como cita (atenuada por el theme del markdown).
+-- args_summary(args) -> string. Un resumen COMPACTO de los argumentos de una tool,
+-- para que el bloque diga QUÉ se va a ejecutar (no solo el nombre): `read_file` sin
+-- más no informa; `read_file(path=main.go)` sí. Toma los valores escalares de la
+-- tabla `args` (los más informativos: path, cmd, pattern…) y los une; recorta lo
+-- largo. Sin args, "".
+local function args_summary(args)
+  if type(args) ~= "table" then return "" end
+  -- Prioriza las claves más informativas; si no, toma las primeras escalares.
+  local prefer = { "path", "file", "cmd", "command", "pattern", "query", "url", "name" }
+  local parts = {}
+  local seen = {}
+  local function add(k, v)
+    if seen[k] then return end
+    if type(v) == "string" or type(v) == "number" or type(v) == "boolean" then
+      local s = tostring(v):gsub("%s+", " ")
+      if #s > 48 then s = s:sub(1, 47) .. "…" end
+      parts[#parts + 1] = k .. "=" .. s
+      seen[k] = true
+    end
+  end
+  for _, k in ipairs(prefer) do
+    if args[k] ~= nil then add(k, args[k]) end
+  end
+  if #parts == 0 then
+    for k, v in pairs(args) do
+      add(tostring(k), v)
+      if #parts >= 2 then break end
+    end
+  end
+  return table.concat(parts, " ")
+end
+
 local function render_item(item)
   if item.kind == "user" then
-    return "**Tú:** " .. item.text
+    -- El usuario, destacado: un gutter de acento (negrita) + el texto. El theme del
+    -- markdown pinta el `**…**` con su color `strong` (brillante), separándolo del
+    -- texto del asistente, que va plano.
+    return "**▌ Tú** " .. item.text
   elseif item.kind == "assistant" then
     return item.text
   elseif item.kind == "thinking" then
     -- bloque de razonamiento como cita (atenuado por el theme, chat.md §2).
     local quoted = item.text:gsub("\n", "\n> ")
-    return "> *(razonando)* " .. quoted
+    return "> *razonando…* " .. quoted
   elseif item.kind == "tool" then
-    local head = "`⚙ " .. item.name .. "`"
-    if item.status == "running" then
-      head = head .. " …"
-      -- progreso en vivo (P27): la última línea de progreso, atenuada.
-      if item.progress and item.progress ~= "" then
-        head = head .. " _" .. item.progress:gsub("\n", " ") .. "_"
-      end
-    elseif item.status == "error" then
-      head = head .. " ✗"
-    else
-      head = head .. " ✓"
+    -- Cabecera con nombre Y argumentos (chat.md §2): saber qué se ejecuta es
+    -- funcionalidad, no adorno. El estado se marca con un glifo (⏵ en curso, ✓ ok,
+    -- ✗ error); el theme colorea el code-span de la cabecera.
+    local arg = args_summary(item.args)
+    local label = item.name .. (arg ~= "" and ("  " .. arg) or "")
+    local glyph = (item.status == "running" and "⏵")
+      or (item.status == "error" and "✗") or "✓"
+    local head = "`" .. glyph .. " " .. label .. "`"
+    if item.status == "running" and item.progress and item.progress ~= "" then
+      head = head .. " _" .. item.progress:gsub("\n", " ") .. "_"
     end
     if item.result and item.result ~= "" then
-      head = head .. "\n> " .. item.result:gsub("\n", "\n> ")
+      -- resultado plegado si es largo: hasta 6 líneas, con nota del resto.
+      local lines = {}
+      for ln in (item.result .. "\n"):gmatch("(.-)\n") do lines[#lines + 1] = ln end
+      local shown = lines
+      local extra = 0
+      if #lines > 6 then
+        shown = {}
+        for i = 1, 6 do shown[i] = lines[i] end
+        extra = #lines - 6
+      end
+      head = head .. "\n> " .. table.concat(shown, "\n> ")
+      if extra > 0 then
+        head = head .. "\n> _… " .. extra .. " líneas más_"
+      end
     end
     return head
   elseif item.kind == "error" then

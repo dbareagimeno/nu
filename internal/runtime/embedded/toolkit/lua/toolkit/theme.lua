@@ -118,6 +118,36 @@ function Theme:style(spec)
   return out
 end
 
+-- Theme:markdown_opts() -> tabla. Construye la tabla `theme` que `nu.text.markdown`
+-- acepta (api.md §10): un `Style` con colores ya LITERALES por elemento markdown
+-- (`h1`..`h6`, `code`, `emphasis`, `strong`, `link`, `bullet`, `blockquote`,
+-- `rule`). Es el PUENTE que cablea la paleta semántica del theme al render de
+-- markdown: sin esto el transcript del chat sale monocromo (los widgets de texto lo
+-- pasan en `opts.theme`). Cada elemento se construye con `:style{...}` (resuelve
+-- nombres→literales, G22) usando nombres que el theme garantiza (los de la paleta
+-- por defecto). El resultado se cachea: la paleta no cambia entre llamadas.
+function Theme:markdown_opts()
+  if self._md_opts then
+    return self._md_opts
+  end
+  local s = function(spec) return self:style(spec) end
+  -- Headings: el h1 con acento y negrita; del h2 en adelante, acento sin tanto
+  -- peso (una jerarquía visual suave, no un muro de color).
+  local h1 = s({ fg = "heading", bold = true })
+  local hn = s({ fg = "heading", bold = true })
+  self._md_opts = {
+    h1 = h1, h2 = hn, h3 = hn, h4 = hn, h5 = hn, h6 = hn,
+    code       = s({ fg = "code" }),
+    emphasis   = s({ fg = "fg", italic = true }),
+    strong     = s({ fg = "strong", bold = true }),
+    link       = s({ fg = "link", underline = true }),
+    bullet     = s({ fg = "accent" }),
+    blockquote = s({ fg = "dim", italic = true }),
+    rule       = s({ fg = "border" }),
+  }
+  return self._md_opts
+end
+
 -- Theme:with(overrides) -> Theme. Deriva un theme nuevo con algunos colores
 -- sustituidos/añadidos (el resto se hereda). No muta el original: el theme base
 -- (`default`) es compartido, así que personalizarlo crea una copia. Útil para
@@ -163,21 +193,45 @@ function M.new(opts)
   return setmetatable({ name = opts.name or "theme", colors = norm }, Theme)
 end
 
--- El theme por defecto. Una paleta mínima pero suficiente para el harness: los
--- nombres que chat.md §7 nombra (`accent`, `error`, `dim`) más los básicos de
--- texto/fondo/aviso. Todos resueltos a literales hex (G22). El usuario lo
--- sustituye o deriva con `:with{...}`.
+-- El theme por defecto: una paleta CURADA (no un placeholder), la identidad visual
+-- del harness. Acento cálido (coral, la firma de la familia), texto suave sobre
+-- fondo casi-negro, y nombres semánticos para TODO lo que la UI de producto pinta:
+-- roles (user/assistant), superficies (surface/overlay para tarjetas y modales),
+-- selección/foco, código y enlaces, y los colores de diff. Todos resueltos a
+-- literales hex (G22). El usuario lo sustituye o deriva con `:with{...}`; un theme
+-- alternativo (claro, o de otra marca) es un plugin del toolkit (chat.md §7).
 M.default = M.new({
   name = "default",
   colors = {
-    fg      = "#c0c0c0", -- texto normal
-    bg      = "#000000", -- fondo
-    accent  = "#5fafff", -- realce (selección, foco, enlaces)
-    error   = "#ff5f5f", -- error
-    warn    = "#ffd75f", -- aviso
-    success = "#5fd75f", -- éxito
-    dim     = "#808080", -- atenuado (thinking, metadatos)
-    border  = "#444444", -- bordes/separadores
+    -- Base.
+    fg        = "#d4d4d4", -- texto normal
+    bg        = "#0c0c0c", -- fondo
+    dim       = "#7a7a7a", -- atenuado (thinking, metadatos, hints)
+    secondary = "#a0a0a0", -- texto secundario (menos que fg, más que dim)
+    -- Acentos y estados.
+    accent    = "#e0875f", -- realce/firma (coral cálido): foco, viñetas, títulos
+    error     = "#ff6b6b", -- error
+    warn      = "#e5c07b", -- aviso (umbral de contexto)
+    success   = "#98c379", -- éxito (tool ok)
+    info       = "#61afef", -- informativo (frío)
+    -- Superficies y bordes.
+    bg_surface = "#161616", -- fondo de tarjeta/panel (un peldaño sobre bg)
+    overlay    = "#1c1c1c", -- fondo de modal (sobre el transcript atenuado)
+    border     = "#3a3a3a", -- bordes/separadores en reposo
+    border_focus = "#e0875f", -- borde del widget enfocado (= accent)
+    selection  = "#2d3b4d", -- fondo de la fila seleccionada en un picker
+    -- Roles del transcript.
+    role_user      = "#61afef", -- marcador del usuario (azul frío)
+    role_assistant = "#e0875f", -- marcador del asistente (coral, la firma)
+    -- Markdown y código.
+    heading = "#e0875f", -- encabezados (acento)
+    strong  = "#f0f0f0", -- **negrita** (un punto más brillante que fg)
+    link    = "#61afef", -- enlaces
+    code    = "#e5c07b", -- code inline / spans de código (ámbar)
+    -- Diff (para el render de ediciones de un coding harness).
+    diff_add     = "#98c379", -- líneas añadidas
+    diff_del     = "#ff6b6b", -- líneas borradas
+    diff_context = "#7a7a7a", -- contexto sin cambios
   },
 })
 

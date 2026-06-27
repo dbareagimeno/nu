@@ -88,6 +88,13 @@ local function cur(self)
   return self.lines[self.row] or ""
 end
 
+-- changed(self): avisa al chat de que el CONTENIDO cambió (no solo el caret), para
+-- que recalcule el alto del editor (crece/encoge con las líneas) y repinte. Sin
+-- callback (uso fuera del chat), no hace nada.
+local function changed(self)
+  if self.on_change then self.on_change() end
+end
+
 local function insert_text(self, s)
   -- `s` puede traer varios "\n" (pegado multilínea, chat.md §3): se parte y se
   -- intercala, abriendo líneas nuevas.
@@ -115,6 +122,7 @@ local function insert_text(self, s)
     self.col = #parts[#parts]
   end
   self:mark_dirty()
+  changed(self)
 end
 
 local function newline(self)
@@ -126,6 +134,7 @@ local function newline(self)
   self.row = self.row + 1
   self.col = 0
   self:mark_dirty()
+  changed(self)
 end
 
 local function backspace(self)
@@ -144,6 +153,7 @@ local function backspace(self)
     self.col = merged_col
     self:mark_dirty()
   end
+  changed(self)
 end
 
 -- Input:insert(s) inserta `s` en el caret (público; lo usa el picker de menciones
@@ -248,7 +258,11 @@ function Input:compose(w, _h)
   end
   local focused = (self._app and self._app.focused == self)
 
-  if self:is_empty() and not focused and self.placeholder then
+  -- Placeholder: visible siempre que el editor esté VACÍO (también con foco). Antes
+  -- se ocultaba al enfocar, pero el chat arranca con el foco en el editor, así que la
+  -- pista no se veía nunca; el cursor real (Region:cursor) cae sobre el inicio del
+  -- placeholder atenuado, que es justo lo que se espera de un prompt vacío.
+  if self:is_empty() and self.placeholder then
     local txt = nu.text.truncate(self.placeholder, w)
     return nu.ui.block({ { { text = txt, style = th:style({ fg = "dim" }) } } })
   end
@@ -301,6 +315,7 @@ function M.new(opts)
   i.on_history_prev = opts.on_history_prev
   i.on_history_next = opts.on_history_next
   i.on_mention = opts.on_mention
+  i.on_change = opts.on_change
   if opts.value and opts.value ~= "" then
     i:set_value(opts.value)
   end

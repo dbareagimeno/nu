@@ -28,8 +28,42 @@ local repl = require("repl")
 -- §14), cuando todas las extensiones (incluido el `init.lua` del usuario) ya están
 -- cargadas—. En headless ni se suscribe: el módulo queda accesible por
 -- `require("repl")` para `repl.eval` y scripts, pero no hay UI que montar.
+-- chat_is_active() -> bool. ¿Está el `chat` (la UI oficial del harness) entre los
+-- plugins ACTIVOS? (`nu.plugin.list()`, devuelve `{name, …, enabled}`). DESACOPLA al
+-- repl del chat (G36): el repl no `require`a chat (debe poder activarse SOLO, G21),
+-- pero sí puede mirar el registro del loader para saber si OTRA extensión reclamará la
+-- pantalla.
+local function chat_is_active()
+  if nu.plugin == nil or nu.plugin.list == nil then
+    return false
+  end
+  local ok, list = pcall(nu.plugin.list)
+  if not ok or type(list) ~= "table" then
+    return false
+  end
+  for _, p in ipairs(list) do
+    if p.name == "chat" and p.enabled ~= false then
+      return true
+    end
+  end
+  return false
+end
+
+-- Arranque automático en TTY (G21/G36): solo si hay `nu.ui` Y el chat NO está activo.
+--
+-- POR QUÉ CEDE AL CHAT (G36). El conjunto oficial de producto (ADR-015) activa chat Y
+-- repl; ambos auto-montaban una `toolkit.app` a pantalla completa en `core:ready`, se
+-- solapaban, y al salir del chat quedaba el REPL debajo —esa sensación de "salir de una
+-- capa para caer en otra"—. El repl es la herramienta del autor que NO quiere el harness
+-- (activable SOLO, G21); cuando el harness (chat) está presente, es ESTE quien posee la
+-- pantalla y el repl queda como módulo accesible (`require("repl")`, `repl.eval`) sin
+-- montar UI. Así `nu` con el conjunto oficial abre SOLO el chat; `nu` con solo `repl`
+-- abre el REPL. En headless, ninguno monta UI.
 if nu.has("ui") then
   nu.events.once("core:ready", function()
+    if chat_is_active() then
+      return -- el chat posee la pantalla (G36)
+    end
     -- `repl.start` monta la UI (no suspende, pero la lanzamos protegida por si el
     -- toolkit no estuviera): un fallo se loguea (aún no hay UI donde pintarlo).
     local ok, err = pcall(repl.start)

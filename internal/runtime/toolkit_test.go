@@ -81,12 +81,12 @@ func TestToolkitThemeSemanticoALiteral(t *testing.T) {
 		local tk = require("toolkit")
 		local th = tk.theme.default
 		local lit = th:color("accent")
-		assert(lit == "#5fafff", "accent debía resolver a #5fafff, fue "..tostring(lit))
+		assert(lit == "#e0875f", "accent debía resolver a #e0875f, fue "..tostring(lit))
 		-- es un literal que el core acepta:
 		assert(tk.theme.is_literal_color(lit), "el resuelto debe ser literal")
 		-- un Style con nombre semántico se convierte a uno con fg LITERAL:
 		local st = th:style({ fg = "accent", bold = true })
-		assert(st.fg == "#5fafff", "style.fg debía ser literal")
+		assert(st.fg == "#e0875f", "style.fg debía ser literal")
 		assert(st.bold == true, "atributo bold conservado")
 		-- ese Style YA es aceptable por el core (nu.ui.block no lanza con literales):
 		local blk = nu.ui.block({ { { text = "hola", style = st } } })

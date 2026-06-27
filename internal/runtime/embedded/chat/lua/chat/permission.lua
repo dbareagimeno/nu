@@ -125,7 +125,7 @@ function Dialog:compose(w, _h)
   end
 
   local lines = {}
-  lines[#lines + 1] = line({ { text = nu.text.truncate("┤ Permiso requerido ├", w), style = accent } })
+  -- el título lo pinta el marco (toolkit.box); aquí va el contenido.
   lines[#lines + 1] = line({ { text = nu.text.truncate("Tool: " .. tostring(self.tool), w), style = warn } })
   for _, l in ipairs(split_lines(args_summary(self.args))) do
     lines[#lines + 1] = line({ { text = nu.text.truncate(l, w) } })

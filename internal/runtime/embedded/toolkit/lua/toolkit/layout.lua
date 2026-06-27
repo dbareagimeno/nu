@@ -36,6 +36,30 @@ local widget = require("toolkit.widget")
 
 local M = {}
 
+-- parse_pad(p) -> (top, right, bottom, left). Normaliza la opción `pad` de un
+-- contenedor: un número (uniforme en los cuatro lados), una tabla `{v, h}` (vertical
+-- / horizontal) o `{t, r, b, l}` (CSS-like), o nil (cero). Es azúcar para no calcular
+-- insets a mano en cada UI.
+local function parse_pad(p)
+  if p == nil then
+    return 0, 0, 0, 0
+  end
+  if type(p) == "number" then
+    return p, p, p, p
+  end
+  if type(p) == "table" then
+    if p.t or p.r or p.b or p.l then
+      return p.t or 0, p.r or 0, p.b or 0, p.l or 0
+    end
+    -- {v, h} o {top/bottom, left/right} posicional.
+    local v = p[1] or 0
+    local h = p[2] or v
+    return v, h, v, h
+  end
+  return 0, 0, 0, 0
+end
+M._parse_pad = parse_pad
+
 -- new_container(kind) -> (constructor). Fabrica el constructor de un contenedor de
 -- tipo `kind` ("vbox"/"hbox"/"stack"), todos derivados del Widget base y con su
 -- propio `relayout`. Comparten el grueso (no pintan, recolocan hijos); solo
@@ -91,72 +115,110 @@ local function make_box(kind)
   else
     local horizontal = (kind == "hbox")
 
-    -- vbox/hbox: reparto en un eje (alto en vbox, ancho en hbox). Dos pasadas:
-    --   1. suma el tamaño FIJO de los hijos no-flex y el `flex` total.
-    --   2. reparte el sobrante entre los flexibles, proporcional a su flex; el
-    --      último flexible se queda el remanente entero (evita perder celdas por
-    --      el redondeo de la división). Cada hijo se coloca a continuación del
-    --      anterior; en el eje cruzado ocupa el tamaño completo del contenedor.
+    -- vbox/hbox: reparto en un eje (alto en vbox, ancho en hbox), con padding
+    -- interior, gap entre hijos, justificado en el eje principal y alineación en el
+    -- eje cruzado. Pasadas:
+    --   1. suma el tamaño FIJO de los hijos no-flex, el `flex` total y los gaps.
+    --   2. reparte el sobrante entre los flexibles (el último se queda el remanente,
+    --      evitando perder celdas por redondeo); si NO hay flexibles, `justify`
+    --      coloca el bloque de hijos dentro del hueco (start/center/end/between).
+    --   3. en el eje cruzado, `align` coloca cada hijo (stretch por defecto: llena;
+    --      start/center/end lo respetan si el hijo declara un tamaño cruzado).
     function mt:_distribute(w, h)
-      local main = horizontal and w or h
-      local fixed_total, flex_total = 0, 0
+      local pt, pr, pb, pl = parse_pad(self.pad)
+      local gap = math.max(0, tonumber(self.gap) or 0)
+      local align = self.align or "stretch"     -- eje cruzado
+      local justify = self.justify or "start"    -- eje principal
+
+      -- Áreas interiores (descontando el padding) y orígenes de cada eje.
+      local main = math.max(0, (horizontal and (w - pl - pr) or (h - pt - pb)))
+      local cross = math.max(0, (horizontal and (h - pt - pb) or (w - pl - pr)))
+      local main_origin = horizontal and pl or pt
+      local cross_origin = horizontal and pt or pl
+
       local vis = {}
       for _, c in ipairs(self.children) do
-        if c.visible then
-          vis[#vis + 1] = c
-          local f = tonumber(c.flex) or 0
-          if f > 0 then
-            flex_total = flex_total + f
-          else
-            local size = horizontal and (tonumber(c.w_fixed) or tonumber(c.pref_w) or 0)
-              or (tonumber(c.h_fixed) or tonumber(c.pref_h) or 0)
-            fixed_total = fixed_total + math.max(0, size)
-          end
-        end
+        if c.visible then vis[#vis + 1] = c end
       end
-      -- `slack` es el espacio sobrante a repartir SOLO entre los flexibles (lo que
-      -- queda tras reservar el tamaño fijo de los no-flex). El ÚLTIMO flexible se
-      -- queda el slack que reste tras dar a los anteriores su parte proporcional
-      -- (así no se pierden celdas por el redondeo de la división, SIN robarle el
-      -- hueco a los fijos que vengan después de él).
-      local slack = math.max(0, main - fixed_total)
-      -- ¿cuántos flexibles hay y cuál es el último? (para asignarle el remanente).
-      local flex_count = 0
+      local n = #vis
+      local gaps_total = (n > 1) and gap * (n - 1) or 0
+
+      -- tamaño fijo (eje principal) de un hijo no-flex.
+      local function fixed_main(c)
+        local size = horizontal and (tonumber(c.w_fixed) or tonumber(c.pref_w) or 0)
+          or (tonumber(c.h_fixed) or tonumber(c.pref_h) or 0)
+        return math.max(0, size)
+      end
+      -- tamaño cruzado PREFERIDO de un hijo (para align != stretch); nil = llenar.
+      local function pref_cross(c)
+        local size = horizontal and (tonumber(c.h_fixed) or tonumber(c.pref_h))
+          or (tonumber(c.w_fixed) or tonumber(c.pref_w))
+        return size and math.max(0, size) or nil
+      end
+
+      local fixed_total, flex_total, flex_count = 0, 0, 0
       for _, c in ipairs(vis) do
-        if (tonumber(c.flex) or 0) > 0 then
+        local f = tonumber(c.flex) or 0
+        if f > 0 then
+          flex_total = flex_total + f
           flex_count = flex_count + 1
+        else
+          fixed_total = fixed_total + fixed_main(c)
         end
       end
 
-      local pos = 0
-      local flex_done = 0      -- flexibles ya colocados
-      local slack_used = 0     -- slack ya repartido
+      local slack = math.max(0, main - fixed_total - gaps_total)
+      -- Sin flexibles: el bloque de hijos (fijos + gaps) se justifica en el hueco.
+      local pos = main_origin
+      local extra_gap = 0
+      if flex_count == 0 then
+        local used = fixed_total + gaps_total
+        local free = math.max(0, main - used)
+        if justify == "center" then
+          pos = main_origin + math.floor(free / 2)
+        elseif justify == "end" then
+          pos = main_origin + free
+        elseif justify == "between" and n > 1 then
+          extra_gap = math.floor(free / (n - 1))
+        end
+      end
+
+      local flex_done, slack_used = 0, 0
       for _, c in ipairs(vis) do
         local f = tonumber(c.flex) or 0
         local size
         if f > 0 then
           flex_done = flex_done + 1
           if flex_done == flex_count then
-            -- último flexible: el slack que reste (evita perder celdas por redondeo).
             size = math.max(0, slack - slack_used)
           else
             size = math.floor(slack * f / flex_total)
             slack_used = slack_used + size
           end
         else
-          size = horizontal and math.max(0, tonumber(c.w_fixed) or tonumber(c.pref_w) or 0)
-            or math.max(0, tonumber(c.h_fixed) or tonumber(c.pref_h) or 0)
+          size = fixed_main(c)
         end
-        -- Recorta para no salirse del contenedor (si los fijos sumaban de más).
-        if pos + size > main then
-          size = math.max(0, main - pos)
+
+        -- Eje cruzado: stretch (llena) o un tamaño preferido alineado.
+        local csize, cpos = cross, cross_origin
+        if align ~= "stretch" then
+          local pc = pref_cross(c)
+          if pc then
+            csize = math.min(pc, cross)
+            if align == "center" then
+              cpos = cross_origin + math.floor((cross - csize) / 2)
+            elseif align == "end" then
+              cpos = cross_origin + (cross - csize)
+            end
+          end
         end
+
         if horizontal then
-          c:set_geometry(pos, 0, size, h)
+          c:set_geometry(pos, cpos, size, csize)
         else
-          c:set_geometry(0, pos, w, size)
+          c:set_geometry(cpos, pos, csize, size)
         end
-        pos = pos + size
+        pos = pos + size + gap + extra_gap
       end
     end
   end
@@ -164,8 +226,16 @@ local function make_box(kind)
   -- constructor del contenedor. `opts` se pasa al widget base (id, focusable —un
   -- contenedor normalmente no es focusable—). Empieza sucio (hay que repartir).
   return function(opts)
-    local c = setmetatable(widget.new(opts or {}), mt)
+    opts = opts or {}
+    local c = setmetatable(widget.new(opts), mt)
     c.kind = kind
+    -- Propiedades de layout (las lee `_distribute`): padding interior, gap entre
+    -- hijos, alineación en el eje cruzado y justificado en el principal. Opcionales;
+    -- los defaults reproducen el comportamiento anterior (sin pad/gap, stretch/start).
+    c.pad = opts.pad
+    c.gap = opts.gap
+    c.align = opts.align
+    c.justify = opts.justify
     return c
   end
 end

@@ -126,8 +126,15 @@ func (g *grid) blitBlock(ox, oy int, b *block) {
 		for _, sp := range b.lines[by] {
 			for _, gr := range graphemesOf(sp.text) {
 				gw := grWidth(gr)
-				// Columna de la rejilla tras aplicar el offset horizontal.
-				lx := col - ox
+				// Columna de la rejilla: el origen del Block se ESTAMPA en `ox` (igual
+				// que `oy` lo estampa en su fila, `by = ly - oy` arriba). Un `ox`
+				// negativo recorta el borde inicial (scroll), un positivo desplaza el
+				// Block a la derecha (padding/posición). G37: antes era `col - ox`, lo
+				// que invertía el signo SOLO en X respecto a Y y al contrato de api.md
+				// §9.1 ("un offset negativo recorta el borde inicial" en AMBOS ejes);
+				// nunca se notó porque ningún widget se blitteaba en x>0 hasta el
+				// padding del toolkit (G36).
+				lx := col + ox
 				col += gw
 				if lx < 0 || lx >= g.w {
 					continue
