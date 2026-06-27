@@ -71,32 +71,40 @@ local function args_summary(args)
   return table.concat(lines, "\n")
 end
 
--- on_key(ev) -> boolean (chat.md §5). `a` permite una vez, `d`/`esc` deniegan. Lo
--- consume todo (es un modal: el input no debe pasar al editor de abajo mientras
--- está abierto). Llama `on_respond(granted)` una sola vez.
+-- on_key(ev) -> boolean (chat.md §5). Opciones por tecla (P29):
+--   `a` = permitir una vez · `s` = permitir siempre (sesión) ·
+--   `g` = permitir siempre (global, persiste a agent.toml) · `d`/`n`/`esc` = denegar.
+-- Modal: consume TODO el input (no llega al editor). Llama `on_respond(action)`
+-- una sola vez, con la acción elegida ("once"|"always"|"always_global"|"deny").
 function Dialog:on_key(ev)
   if ev.type ~= "key" then
     return true -- modal: traga el resto del input (paste, mouse) también
   end
   local k = ev.key
   if k == "a" or k == "y" then
-    self:_respond(true)
+    self:_respond("once")
+    return true
+  elseif k == "s" then
+    self:_respond("always")
+    return true
+  elseif k == "g" then
+    self:_respond("always_global")
     return true
   elseif k == "d" or k == "n" or k == "esc" then
-    self:_respond(false)
+    self:_respond("deny")
     return true
   end
   -- otras teclas: el modal las traga (no llegan al editor), sin decidir.
   return true
 end
 
-function Dialog:_respond(granted)
+function Dialog:_respond(action)
   if self._answered then
     return
   end
   self._answered = true
   if self.on_respond then
-    self.on_respond(granted == true)
+    self.on_respond(action)
   end
 end
 
@@ -125,7 +133,8 @@ function Dialog:compose(w, _h)
   if self.suggested then
     lines[#lines + 1] = line({ { text = nu.text.truncate("Patrón sugerido: " .. tostring(self.suggested), w), style = dim } })
   end
-  lines[#lines + 1] = line({ { text = nu.text.truncate("[a] permitir una vez   [d] denegar   [esc] denegar", w), style = dim } })
+  lines[#lines + 1] = line({ { text = nu.text.truncate(
+    "[a] una vez   [s] siempre (sesión)   [g] siempre (global)   [d] denegar", w), style = dim } })
   return nu.ui.block(lines)
 end
 

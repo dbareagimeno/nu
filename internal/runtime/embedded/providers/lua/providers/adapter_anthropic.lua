@@ -109,6 +109,67 @@ local function canon_block_to_wire(block)
   return out
 end
 
+-- Presupuesto por defecto para degradar `mode="adaptive"` a la forma legacy
+-- `budget_tokens` cuando el modelo es de dialecto "budget" (ADR-016). Anthropic
+-- exige `budget_tokens >= 1024` y `< max_tokens`.
+local DEFAULT_THINKING_BUDGET = 4096
+local MIN_THINKING_BUDGET = 1024
+
+-- thinking_to_wire(req, provider, max_tokens) -> tabla|nil. Traduce el `thinking`
+-- canónico (providers.md §2.1, ADR-016) a la forma del wire de Anthropic, según
+-- el DIALECTO del modelo (`provider.model.thinking`, dato del registro; default
+-- "budget"). El adaptador NO hardcodea qué familia usa qué forma (ADR-003/ADR-005):
+-- lee el dato y traduce.
+--   - `mode` ausente con `budget` numérico → "budget" (compat con la firma vieja);
+--     `mode` ausente sin budget, o "off" → nil (no se pide razonamiento).
+--   - dialecto "none" → nil (degradación declarada §3 ob.5: no se simula).
+--   - dialecto "adaptive" → `{type="adaptive"}` (el `budget` se ignora: Opus 4.6+
+--     retiró `budget_tokens`).
+--   - dialecto "budget" → `{type="enabled", budget_tokens=N}` (N del request, o el
+--     default; acotado a [1024, max_tokens) como exige Anthropic).
+local function thinking_to_wire(req, provider, max_tokens)
+  local t = req.thinking
+  if type(t) ~= "table" then
+    return nil
+  end
+  local mode = t.mode
+  if mode == nil then
+    mode = (type(t.budget) == "number") and "budget" or nil
+  end
+  if mode == nil or mode == "off" then
+    return nil
+  end
+
+  local dialect = (provider.model and provider.model.thinking) or "budget"
+  if dialect == "none" then
+    return nil
+  end
+  if dialect == "adaptive" then
+    return { type = "adaptive" }
+  end
+
+  -- dialecto "budget" (extended thinking legacy).
+  local budget = (type(t.budget) == "number") and t.budget or DEFAULT_THINKING_BUDGET
+  if type(max_tokens) == "number" and max_tokens > MIN_THINKING_BUDGET and budget >= max_tokens then
+    budget = max_tokens - 1
+  end
+  if budget < MIN_THINKING_BUDGET then
+    budget = MIN_THINKING_BUDGET
+  end
+  return { type = "enabled", budget_tokens = budget }
+end
+
+-- add_cache_control(t) marca un objeto del wire (una tool, un bloque de
+-- contenido o un bloque de system) como breakpoint de caché de Anthropic
+-- (`cache_control = {type="ephemeral"}`), SIN pisar uno que ya viniera por la
+-- regla meta (round-trip fiel, §2.2): si el modelo canónico ya trajo su
+-- `cache_control`, manda el suyo. Es el mecanismo de P31.
+local function add_cache_control(t)
+  if type(t) == "table" and t.cache_control == nil then
+    t.cache_control = { type = "ephemeral" }
+  end
+end
+
 -- to_wire(req, provider) -> tabla. Cuerpo de la Messages API a partir del
 -- Request canónico (providers.md §2.1). `messages` -> `messages` (rol + bloques
 -- traducidos), `system` -> campo `system` de Anthropic (cadena), `tools` ->
@@ -123,8 +184,10 @@ local function to_wire(req, provider)
   }
 
   -- System prompt al campo `system` de Anthropic (providers.md §2.1 -> dialecto).
+  -- Forma de ARRAY de bloques (no string) para poder colgarle un breakpoint de
+  -- caché (P31): Anthropic acepta `system` como `[{type="text", text, cache_control?}]`.
   if type(req.system) == "string" and req.system ~= "" then
-    body.system = req.system
+    body.system = { { type = "text", text = req.system } }
   end
 
   -- Mensajes: rol + bloques traducidos.
@@ -156,12 +219,35 @@ local function to_wire(req, provider)
     body.temperature = req.temperature
   end
 
-  -- Extended thinking (providers.md §2.1 `thinking = {budget?}`). Anthropic:
-  -- `thinking = {type="enabled", budget_tokens=N}` para modelos que lo aceptan.
-  if type(req.thinking) == "table" then
-    local budget = req.thinking.budget
-    if type(budget) == "number" then
-      body.thinking = { type = "enabled", budget_tokens = budget }
+  -- Razonamiento extendido (providers.md §2.1 `thinking = {mode?, budget?}`,
+  -- ADR-016): traducción POR-MODELO según el dialecto declarado en el registro.
+  -- nil → no se envía `thinking` (request sin razonamiento, lo de siempre).
+  body.thinking = thinking_to_wire(req, provider, body.max_tokens)
+
+  -- Prompt caching automático e invisible (providers.md §3 obligación 6, P31).
+  -- Coloca los breakpoints `cache_control` MECÁNICAMENTE, sin que el modelo
+  -- canónico ni el usuario indiquen nada: el prefijo estable (tools + system +
+  -- el arranque de la conversación) se cachea y abarata los turnos siguientes.
+  -- Anthropic admite hasta 4 breakpoints y cachea el prefijo hasta cada uno;
+  -- por debajo del mínimo de tokens los ignora, así que marcar siempre es seguro.
+  -- Estrategia:
+  --   1. la ÚLTIMA tool (cachea todo el bloque de tools, que va primero);
+  --   2. el system (su bloque de texto);
+  --   3. los DOS últimos mensajes (su último bloque): captura el prefijo creciente
+  --      de la conversación turno a turno (incremental caching).
+  if body.tools and #body.tools > 0 then
+    add_cache_control(body.tools[#body.tools])
+  end
+  if type(body.system) == "table" and #body.system > 0 then
+    add_cache_control(body.system[#body.system])
+  end
+  do
+    local n = #messages
+    for _, mi in ipairs({ n, n - 1 }) do
+      local m = messages[mi]
+      if m and type(m.content) == "table" and #m.content > 0 then
+        add_cache_control(m.content[#m.content])
+      end
     end
   end
 

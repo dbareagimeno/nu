@@ -146,6 +146,13 @@ local function backspace(self)
   end
 end
 
+-- Input:insert(s) inserta `s` en el caret (público; lo usa el picker de menciones
+-- `@` para inyectar la ruta elegida, chat.md §3 / P26). Reusa el helper local.
+function Input:insert(s)
+  insert_text(self, tostring(s or ""))
+  return self
+end
+
 -- on_key(ev) -> boolean (chat.md §3). El contrato de focus (api.md §9.3): la app
 -- llama solo en el editor ENFOCADO. Consume edición/navegación; deja pasar `enter`
 -- (sin mods), `tab`, `esc` para que la app los gestione (enviar / foco / cancelar).
@@ -218,6 +225,12 @@ function Input:on_key(ev)
     return true
   elseif type(k) == "string" and #k == 1 then
     insert_text(self, k)
+    -- Menciones `@`: al teclear `@`, avisa al chat para abrir el picker difuso de
+    -- ficheros (chat.md §3 / P26). El `@` queda insertado; el picker inyecta la
+    -- ruta tras él. Sin callback (uso fuera del chat), es un carácter normal.
+    if k == "@" and self.on_mention then
+      self.on_mention()
+    end
     return true
   end
   -- tab/esc y demás: no las consume el editor (las gestiona la app).
@@ -287,6 +300,7 @@ function M.new(opts)
   i.placeholder = opts.placeholder
   i.on_history_prev = opts.on_history_prev
   i.on_history_next = opts.on_history_next
+  i.on_mention = opts.on_mention
   if opts.value and opts.value ~= "" then
     i:set_value(opts.value)
   end

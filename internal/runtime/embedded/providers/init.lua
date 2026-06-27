@@ -33,3 +33,13 @@ providers.register_adapter("stub", require("providers.adapter_stub"))
 -- stream de Eventos canónico de providers.md §2.3. Reusa el contrato §3 y
 -- `approx_tokens`/EPROVIDER de S36; se registra exactamente igual que el stub.
 providers.register_adapter("anthropic", require("providers.adapter_anthropic"))
+
+-- Adaptadores `openai-compat` y `gemini` (P30): los otros dos dialectos oficiales
+-- embebidos que providers.md §4 promete. `openai-compat` habla la Chat Completions
+-- API (OpenAI y todo el ecosistema compatible: Together, Groq, OpenRouter, vLLM,
+-- Ollama `/v1`...); `gemini` habla la Generative Language API de Google. Mismo
+-- contrato §3, misma forma de registro que el stub y `anthropic`. Con esto un
+-- `providers.toml` con `adapter = "openai-compat"` o `adapter = "gemini"` resuelve
+-- sin escribir un adaptador propio (cierre del disparador de pospuesto.md P30).
+providers.register_adapter("openai-compat", require("providers.adapter_openai_compat"))
+providers.register_adapter("gemini", require("providers.adapter_gemini"))

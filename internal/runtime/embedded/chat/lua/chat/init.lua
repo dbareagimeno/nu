@@ -36,6 +36,7 @@ local transcript_mod = require("chat.transcript")
 local statusline = require("chat.statusline")
 local commands = require("chat.commands")
 local permdialog = require("chat.permission")
+local picker_mod = require("chat.picker")
 
 local M = {}
 
@@ -51,10 +52,11 @@ M.commands = commands
 -- mayoría del input lo enruta el editor multilínea (enter/shift+enter); estos son
 -- los atajos GLOBALES del chat (no dependientes del foco del editor).
 M.keys = {
-  cancel  = "esc",       -- cancela el turno en curso (Session:cancel)
-  quit    = "ctrl+c",    -- cierra el chat
-  submit  = "enter",     -- envía el mensaje (el editor deja pasar enter "pelado")
-  newline = "shift+enter", -- nueva línea (lo consume el editor; alt+enter alterno)
+  cancel   = "esc",       -- cancela el turno en curso (Session:cancel)
+  quit     = "ctrl+c",    -- cierra el chat
+  submit   = "enter",     -- envía el mensaje (el editor deja pasar enter "pelado")
+  newline  = "shift+enter", -- nueva línea (lo consume el editor; alt+enter alterno)
+  complete = "tab",       -- autocompletado de comandos `/` (P29)
 }
 
 -- renderer(tool_name, fn): registra el render del resultado de una tool (chat.md
@@ -170,6 +172,68 @@ function Chat:close_modal(widget)
   self:_repaint()
 end
 
+-- Chat:open_file_picker() abre el picker difuso de ficheros (menciones `@`,
+-- chat.md §3 / P26). Lista el repo con `nu.search.files` (⏸, en una task) y, al
+-- elegir, INYECTA la ruta en el editor —el agente decide leerla, no se incrusta
+-- el contenido—. No abre si ya hay un modal (un picker o un diálogo de permiso).
+function Chat:open_file_picker()
+  if self.current_modal ~= nil or self._picker ~= nil then
+    return
+  end
+  nu.task.spawn(function()
+    local ok, files = pcall(nu.search.files, self.session.cwd or nu.fs.cwd(), { max = 2000 })
+    if not ok or type(files) ~= "table" then files = {} end
+    local pick
+    pick = picker_mod.new({
+      title = "Mencionar fichero (@)",
+      candidates = files,
+      on_select = function(path)
+        self.input:insert(path)
+        self._picker = nil
+        self:close_modal(pick)
+      end,
+      on_cancel = function()
+        self._picker = nil
+        self:close_modal(pick)
+      end,
+    })
+    self._picker = pick
+    self:open_modal(pick)
+  end)
+end
+
+-- Chat:open_command_picker() abre el autocompletado visual de comandos `/`
+-- (chat.md §3 / P29). Candidatos = nombres de comando (commands.list); el prefijo
+-- ya tecleado tras la `/` pre-filtra. Al elegir, deja `"/<name> "` en el editor.
+function Chat:open_command_picker()
+  if self.current_modal ~= nil or self._picker ~= nil then
+    return
+  end
+  local val = self.input:value()
+  local prefix = val:match("^/(%S*)") or ""
+  local names = {}
+  for _, c in ipairs(commands.list()) do
+    names[#names + 1] = c.name
+  end
+  local pick
+  pick = picker_mod.new({
+    title = "Comando (/)",
+    candidates = names,
+    query = prefix,
+    on_select = function(name)
+      self.input:set_value("/" .. name .. " ")
+      self._picker = nil
+      self:close_modal(pick)
+    end,
+    on_cancel = function()
+      self._picker = nil
+      self:close_modal(pick)
+    end,
+  })
+  self._picker = pick
+  self:open_modal(pick)
+end
+
 -- Chat:submit() ENVÍA el contenido del editor (chat.md §3: enter envía). Si el
 -- texto es un comando slash (§4), lo despacha; si no, lo manda al agente
 -- (Session:send) en una task —el turno SUSPENDE y su streaming llega por eventos—.
@@ -240,6 +304,27 @@ function Chat:cancel_turn()
   if self.session.cancel then
     pcall(self.session.cancel, self.session)
   end
+end
+
+-- Chat:switch_session(new_session) cambia la sesión ACTIVA del chat (lo usa
+-- `/fork`, P28: bifurca y continúa en la rama). Suelta las suscripciones `agent:`
+-- de la sesión vieja y re-suscribe a la nueva (su filtro por id, G3), y refresca
+-- el contexto/statusline. NO toca `global_subs` (ui:resize) ni los keymaps.
+function Chat:switch_session(new_session)
+  for _, s in ipairs(self.subs or {}) do
+    if s and s.cancel then s:cancel() end
+  end
+  self.subs = {}
+  self.session = new_session
+  self.perms_mode = (new_session.permissions and new_session.permissions.mode) or self.perms_mode
+  self:_subscribe_agent()
+  local okr, resolved = pcall(providers.resolve, new_session.model)
+  if okr and type(resolved) == "table" and type(resolved.config) == "table"
+      and type(resolved.config.model) == "table" then
+    self.context_window = resolved.config.model.context or self.context_window
+  end
+  self:_update_statusline()
+  self:_repaint()
 end
 
 -- Chat:history_prev()/history_next() recorren el historial de ENTRADA (chat.md §3,
@@ -332,6 +417,23 @@ function Chat:_subscribe_agent()
     self:_repaint()
   end)
 
+  -- agent:tool.progress — progreso EN VIVO de una tool larga (chat.md §2 / P27).
+  subs[#subs + 1] = nu.events.on("agent:tool.progress", function(p)
+    if not mine(p) then return end
+    self.transcript:tool_progress(p.id, p.text)
+    self:_refresh_transcript()
+    self:_repaint()
+  end)
+
+  -- agent:compact — marca de "historia compactada arriba" (chat.md §2 / P27).
+  subs[#subs + 1] = nu.events.on("agent:compact", function(p)
+    if not mine(p) then return end
+    self.transcript:add_compact_marker()
+    self:_refresh_transcript()
+    self:_update_statusline()
+    self:_repaint()
+  end)
+
   -- agent:error — bloque de error (chat.md §2).
   subs[#subs + 1] = nu.events.on("agent:error", function(p)
     if not mine(p) then return end
@@ -382,11 +484,24 @@ function Chat:_show_next_ask()
     tool = p.tool,
     args = p.args,
     suggested = p.suggested,
-    on_respond = function(granted)
-      -- responde al agente (agente.md §5) y pasa al siguiente ask de la cola.
+    on_respond = function(action)
+      -- "permitir siempre" (P29): añade el patrón a la política de la sesión, y
+      -- con la variante global lo persiste a agent.toml (chat.md §5). Ambas tocan
+      -- disco (⏸: store de la sesión, fichero global), así que van en una task; la
+      -- respuesta al agente y la UI siguen síncronas (agente.md §5).
+      local granted = (action ~= "deny")
+      if (action == "always" or action == "always_global") and p.suggested then
+        nu.task.spawn(function()
+          pcall(function() self.session:allow(p.suggested) end)
+          if action == "always_global" then
+            pcall(function() agent.permission.persist_allow(p.suggested) end)
+          end
+        end)
+      end
       agent.permission.respond(p.id, granted)
-      self.transcript:add_system(string.format("permiso para %q: %s",
-        tostring(p.tool), granted and "concedido" or "denegado"))
+      local label = ({ once = "concedido (una vez)", always = "concedido (siempre)",
+        always_global = "concedido (siempre, global)", deny = "denegado" })[action] or "denegado"
+      self.transcript:add_system(string.format("permiso para %q: %s", tostring(p.tool), label))
       self.modal_layer:remove(dialog)
       self.current_modal = nil
       self:_refresh_transcript()
@@ -415,9 +530,10 @@ function Chat:_build_ui(opts)
 
   self.input = chat_input.new({
     id = "input",
-    placeholder = "Escribe un mensaje (enter envía · shift+enter nueva línea · /help)",
+    placeholder = "Escribe un mensaje (enter envía · shift+enter nueva línea · @ ficheros · /help)",
     on_history_prev = function() self:history_prev() end,
     on_history_next = function() self:history_next() end,
+    on_mention = function() self:open_file_picker() end,
   })
   self.input.pref_h = opts.input_height or 3  -- alto inicial del editor (chat.md §3)
 
@@ -461,6 +577,11 @@ function Chat:_install_keymaps()
   local km = self.keymaps
 
   km[#km + 1] = nu.ui.keymap(M.keys.cancel, function()
+    -- con un modal/picker abierto, esc lo maneja el propio modal (deny/cancelar):
+    -- el keymap global se aparta (devuelve false → la app lo enruta al foco).
+    if self.current_modal ~= nil or self._picker ~= nil then
+      return false
+    end
     self:cancel_turn()
     return true
   end)
@@ -472,8 +593,18 @@ function Chat:_install_keymaps()
   -- recoge y envía. (El editor consume shift/alt+enter como nueva línea, así que
   -- este keymap solo dispara con enter sin modificadores.)
   km[#km + 1] = nu.ui.keymap(M.keys.submit, function()
-    if self.current_modal == nil then
+    if self.current_modal == nil and self._picker == nil then
       self:submit()
+      return true
+    end
+    return false
+  end)
+  -- autocompletado de comandos `/` (P29): tab con un `/...` en el editor abre el
+  -- picker de comandos. Sin `/` (o con un modal abierto), el keymap se aparta.
+  km[#km + 1] = nu.ui.keymap(M.keys.complete, function()
+    if self.current_modal == nil and self._picker == nil
+        and self.input:value():sub(1, 1) == "/" then
+      self:open_command_picker()
       return true
     end
     return false
@@ -494,6 +625,10 @@ function Chat:quit()
     if s and s.cancel then s:cancel() end
   end
   self.subs = {}
+  for _, s in ipairs(self.global_subs or {}) do
+    if s and s.cancel then s:cancel() end
+  end
+  self.global_subs = {}
   for _, k in ipairs(self.keymaps or {}) do
     if k and k.unmap then k:unmap() end
   end
@@ -548,6 +683,7 @@ function M.start(opts)
     session       = session,
     transcript    = transcript_mod.new(),
     subs          = {},
+    global_subs   = {},
     keymaps       = {},
     ask_queue     = {},
     current_modal = nil,
@@ -592,8 +728,10 @@ function M.start(opts)
 
   -- ui:resize (api.md §9.1, "tu región, tu ui:resize"): el chat resuelve su layout
   -- de nuevo al cambiar el tamaño del terminal. La app redimensiona su región y
-  -- rehace el layout (S42).
-  self.subs[#self.subs + 1] = nu.events.on("ui:resize", function(p)
+  -- rehace el layout (S42). Va en `global_subs` (NO en `subs`, que son las del
+  -- agente y se re-suscriben al bifurcar, P28): el resize es del chat, no de la sesión.
+  self.global_subs = self.global_subs or {}
+  self.global_subs[#self.global_subs + 1] = nu.events.on("ui:resize", function(p)
     if not self._closed and self.app then
       self.app:resize(p and p.w, p and p.h)
       self:_refresh_transcript()

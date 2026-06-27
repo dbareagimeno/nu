@@ -31,6 +31,10 @@ context    = 200000
 max_output = 32000
 cost       = { input = 5.0, output = 25.0 }   # USD por Mtok (informativo)
 aliases    = ["opus"]
+thinking   = "adaptive"                        # dialecto de razonamiento (ADR-016):
+                                               # "adaptive" (Opus 4.6+), "budget"
+                                               # (extended thinking legacy) o "none".
+                                               # Default "budget" si se omite.
 
 # El caso models.json: endpoint compatible-OpenAI, p. ej. Ollama local.
 [providers.local]
@@ -70,11 +74,13 @@ Request = {
   tools?:      ToolDef[],         -- { name, description, schema (JSON Schema, tabla) }
   max_tokens?: integer,
   temperature?: number,
-  thinking?:   { budget?: integer },
+  thinking?:   { mode?: "off"|"adaptive"|"budget", budget?: integer },
 }
 
 Message = { role: "user"|"assistant", content: Block[] }
 ```
+
+**Razonamiento extendido (`thinking`)** ([ADR-016](adr.md#adr-016--modelo-canónico-de-thinking-con-mode-y-traducción-por-modelo-en-el-adaptador), cierra [G34](problemas.md#g34)): `mode` pide el *modo* de razonamiento —`"adaptive"` (el modelo decide el esfuerzo, lo que esperan los modelos modernos), `"budget"` con `budget = N` (presupuesto de N tokens, extended thinking *legacy*), `"off"`—; `thinking` ausente = sin razonamiento. Por **compatibilidad**, `{ budget = N }` sin `mode` equivale a `mode = "budget"`. Qué forma entiende cada modelo es un **dato del registro**: cada entrada de modelo en `providers.toml` declara `thinking = "adaptive" | "budget" | "none"` (default `"budget"`), que viaja en el `ModelInfo` (§3) y el adaptador lee para **traducir por-modelo** (p. ej. `mode="budget"` sobre un modelo de dialecto `"adaptive"` degrada a `{type="adaptive"}`, porque Opus 4.6+ retiró `budget_tokens`). Pedir razonamiento a un modelo de dialecto `"none"` es una **degradación declarada** (§3 obligación 5): el adaptador no lo simula. Así el adaptador no hardcodea tablas de versiones de modelos (ADR-003/ADR-005).
 
 ### 2.2 Bloques de contenido
 
@@ -153,10 +159,10 @@ Obligaciones del adaptador:
    en Anthropic el adaptador coloca los breakpoints `cache_control`
    mecánicamente (tools + system + últimos mensajes). Casos exóticos
    (p. ej. la caché explícita de Gemini para contextos reutilizados entre
-   sesiones) tienen su válvula en `meta`/`extra`. *(Implementación diferida
-   para `anthropic`: la `0.1.0` reinyecta el `cache_control` que venga en `meta`
-   pero aún no coloca los breakpoints por su cuenta —
-   [pospuesto.md](pospuesto.md) **P31**; afecta al coste, no a la corrección.)*
+   sesiones) tienen su válvula en `meta`/`extra`. *(✅ Implementado para
+   `anthropic`: coloca los breakpoints en la última tool, el system y los dos
+   últimos mensajes, sin pisar el `cache_control` que venga en `meta` —
+   [pospuesto.md](pospuesto.md) **P31**.)*
 
 Esqueleto ilustrativo (no normativo):
 
@@ -187,9 +193,10 @@ return {
 ## 4. Registro y descubrimiento
 
 - Los adaptadores oficiales (`anthropic`, `openai-compat`, `gemini`) van
-  embebidos como parte de la extensión de providers. *(Implementación diferida:
-  la `0.1.0` incluye solo `anthropic`; `openai-compat` y `gemini` esperan el
-  disparador de [pospuesto.md](pospuesto.md) **P30**.)*
+  embebidos como parte de la extensión de providers. *(✅ Los tres están
+  embebidos: [pospuesto.md](pospuesto.md) **P30** resuelto. `openai-compat` sirve
+  a todo el ecosistema Chat Completions —OpenAI, Together, Groq, OpenRouter, vLLM,
+  Ollama `/v1`—; `gemini` a la Generative Language API.)*
 - Un plugin aporta el suyo registrándolo:
   `providers.register_adapter("corp-gateway", adapter)` — o por convención de
   nombre resoluble con `require` desde el TOML (`"mi-plugin/corp-gateway"`).

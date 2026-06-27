@@ -265,12 +265,16 @@ function M.resolve(ref)
   end
 
   -- ModelInfo cocinado para el adaptador: el id tal y como lo espera el provider
-  -- (providers.md §2.1) más los metadatos del modelo.
+  -- (providers.md §2.1) más los metadatos del modelo. `thinking` es el DIALECTO
+  -- de razonamiento del modelo (ADR-016): "adaptive"|"budget"|"none", dato del
+  -- registro que el adaptador lee para traducir el `thinking` canónico por-modelo
+  -- (el adaptador aplica el default "budget" si falta).
   local model_info = {
     id         = entry.model.id,
     context    = entry.model.context,
     max_output = entry.model.max_output,
     cost       = entry.model.cost,
+    thinking   = entry.model.thinking,
   }
 
   local config = {

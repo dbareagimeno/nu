@@ -213,11 +213,9 @@ function M.install_builtins(deps)
       return table.concat(lines, "\n")
     end })
   -- /compact, /fork, /permissions (chat.md §4): delegan en la API del agente
-  -- (Session:compact/fork; política de permisos). Su superficie completa
-  -- (compactación automática, edición de política) excede S43 (agente.md §8 deja
-  -- el disparo de compactación para después); se registran como stubs accionables
-  -- que nombran su estado, para que /help los muestre y el contrato del registro
-  -- quede ejercido. DESVIACIÓN documentada (claude_decisions.md S43).
+  -- (Session:compact/fork, política de permisos). Implementados sobre los métodos
+  -- de control de sesión (P22-P25/P28): /compact compacta, /fork bifurca y sigue
+  -- en la rama, /permissions ve y edita la política.
   M.command({ name = "compact", description = "compacta la conversación (manual)",
     handler = function(_args, ctx)
       if ctx.session.compact then
@@ -226,6 +224,53 @@ function M.install_builtins(deps)
         return "no se pudo compactar: " .. ((type(err) == "table" and err.message) or tostring(err))
       end
       return "la compactación manual aún no está disponible"
+    end })
+
+  -- /fork: bifurca la sesión y CONTINÚA en la rama (chat.md §4, P28). Usa
+  -- Session:fork (P22) y cambia la sesión activa del chat (Chat:switch_session).
+  M.command({ name = "fork", description = "bifurca la conversación y sigue en la rama",
+    handler = function(_args, ctx)
+      if not (ctx.session and ctx.session.fork) then
+        return "el fork de sesión no está disponible"
+      end
+      local ok, child = pcall(ctx.session.fork, ctx.session)
+      if not ok then
+        return "no se pudo bifurcar: " .. ((type(child) == "table" and child.message) or tostring(child))
+      end
+      if ctx.chat and ctx.chat.switch_session then
+        ctx.chat:switch_session(child)
+      end
+      return "sesión bifurcada; continúas en la rama " .. tostring(child.id)
+    end })
+
+  -- /permissions: ve y EDITA la política de permisos de la sesión (chat.md §4/§5,
+  -- P28). Sin args, la muestra. Subcomandos: `allow <patrón>`, `deny <patrón>`,
+  -- `mode ask|auto`. NUNCA persiste al repo (agente.md §11); para persistir global
+  -- usa "permitir siempre (global)" en el diálogo (P29).
+  M.command({ name = "permissions", description = "ve y edita la política de permisos",
+    args = "[allow|deny <patrón> | mode ask|auto]",
+    handler = function(args, ctx)
+      local s = ctx.session
+      local verb, rest = (args or ""):match("^(%S+)%s*(.*)$")
+      if verb == "allow" and rest ~= "" then
+        s:allow(rest); return "allow añadido: " .. rest
+      elseif verb == "deny" and rest ~= "" then
+        s:deny(rest); return "deny añadido: " .. rest
+      elseif verb == "mode" and (rest == "ask" or rest == "auto") then
+        s:set_permission_mode(rest); return "modo de permisos: " .. rest
+      elseif verb ~= nil and verb ~= "" then
+        return "uso: /permissions [allow|deny <patrón> | mode ask|auto]"
+      end
+      -- sin args: muestra la política actual.
+      local v = s:permissions_view()
+      local lines = { "Permisos (modo: " .. tostring(v.mode) .. ")" }
+      lines[#lines + 1] = "  allow:"
+      for _, p in ipairs(v.allow) do lines[#lines + 1] = "    - " .. p end
+      if #v.allow == 0 then lines[#lines + 1] = "    (ninguno)" end
+      lines[#lines + 1] = "  deny:"
+      for _, p in ipairs(v.deny) do lines[#lines + 1] = "    - " .. p end
+      if #v.deny == 0 then lines[#lines + 1] = "    (ninguno)" end
+      return table.concat(lines, "\n")
     end })
 end
 

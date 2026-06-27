@@ -171,13 +171,12 @@ statusline (modelo · % de contexto · coste · cwd · modo de permisos).
   registra los suyos con `chat.command{}`.
 - **Diálogo de permisos:** cuando una tool sensible necesita autorización, el
   chat abre un modal con el comando o la ruta completos y las opciones permitir
-  una vez / denegar.
+  una vez / permitir siempre (sesión o global) / denegar.
 
-> **Nota de estado.** La extensión `chat` es joven (`0.1.0`): algunas
-> capacidades que describe su contrato ([docs/chat.md](docs/chat.md)) todavía
-> están llegando — las menciones `@` con picker de ficheros, los comandos
-> `/fork` y `/permissions`, persistir «permitir siempre» en `agent.toml` y el
-> autocompletado visual de comandos.
+> **Nota de estado.** La extensión `chat` (`0.1.0`) ya cubre las menciones `@`
+> con picker difuso de ficheros, los comandos `/fork` y `/permissions`, persistir
+> «permitir siempre» en `agent.toml` y el autocompletado visual de comandos
+> (ver [docs/pospuesto.md](docs/pospuesto.md) P26–P29).
 
 ### El agente headless (scripts y CI)
 
@@ -277,10 +276,11 @@ context    = 200000
 max_output = 32000
 cost       = { input = 5.0, output = 25.0 }   # USD/Mtok, informativo
 aliases    = ["opus"]
+thinking   = "adaptive"                        # dialecto de razonamiento (ADR-016):
+                                               # "adaptive" (Opus 4.6+), "budget" o "none"
 
-# Un endpoint compatible-OpenAI, p. ej. Ollama local (sin clave). NOTA: el
-# adaptador `openai-compat` lo contempla el contrato pero aún no se incluye en
-# el binario (hoy se envía `anthropic`); este bloque ilustra el formato.
+# Un endpoint compatible-OpenAI, p. ej. Ollama local (sin clave). El adaptador
+# `openai-compat` va embebido (junto a `anthropic` y `gemini`).
 [providers.local]
 adapter  = "openai-compat"
 base_url = "http://localhost:11434/v1"
@@ -291,10 +291,11 @@ context = 32768
 ```
 
 Un modelo se referencia como `"proveedor/id-o-alias"`: `anthropic/opus`,
-`local/qwen3:32b`. El adaptador oficial incluido hoy es `anthropic`; el contrato
-contempla además `openai-compat` y `gemini` ([docs/providers.md](docs/providers.md)
-§3), y cualquier protocolo se cubre con un adaptador en un plugin de terceros. Un
-`providers.toml` **ausente** es válido: da un registro vacío.
+`local/qwen3:32b`. Los tres adaptadores oficiales van embebidos: `anthropic`,
+`openai-compat` (todo el ecosistema Chat Completions: OpenAI, Together, Groq,
+OpenRouter, vLLM, Ollama `/v1`) y `gemini` ([docs/providers.md](docs/providers.md)
+§3); cualquier otro protocolo se cubre con un adaptador en un plugin de terceros.
+Un `providers.toml` **ausente** es válido: da un registro vacío.
 
 ### El agente (`agent.toml`)
 
@@ -369,7 +370,7 @@ producto (lo que activa `--default-config`):
 
 | Extensión | Rol | Contrato |
 |---|---|---|
-| `providers` | Registro de modelos (TOML) y adaptadores de LLM (hoy se incluye `anthropic`; `openai-compat` y `gemini` están contemplados). | [providers.md](docs/providers.md) |
+| `providers` | Registro de modelos (TOML) y adaptadores de LLM (`anthropic`, `openai-compat` y `gemini`, embebidos). | [providers.md](docs/providers.md) |
 | `sessions` | Persistencia de conversaciones: JSONL append-only en `data_dir()/sessions/`. | [sesiones.md](docs/sesiones.md) |
 | `agent` | El motor headless: turno, tools, permisos, hooks, subagentes, compactación. | [agente.md](docs/agente.md) |
 | `chat` | La UI de terminal: transcript, input, comandos slash, statusline. Solo en TTY. | [chat.md](docs/chat.md) |

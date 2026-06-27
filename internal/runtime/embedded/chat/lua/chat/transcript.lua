@@ -126,6 +126,26 @@ function Transcript:add_tool(id, name, args)
   return item
 end
 
+-- tool_progress(id, text) actualiza el PROGRESO en vivo de una tool en curso
+-- (chat.md §2 / P27: evento `agent:tool.progress`). Busca por id; guarda el último
+-- texto de progreso, que el render muestra mientras la tool está "running".
+function Transcript:tool_progress(id, text)
+  for i = #self.items, 1, -1 do
+    local it = self.items[i]
+    if it.kind == "tool" and it.id == id then
+      it.progress = tostring(text or "")
+      return it
+    end
+  end
+end
+
+-- add_compact_marker(summary?) inserta una marca visible de que la historia de
+-- arriba fue compactada (chat.md §2 / P27: marca de `agent:compact`). Es un item
+-- propio que el render pinta como una regla con una nota.
+function Transcript:add_compact_marker()
+  self.items[#self.items + 1] = { kind = "compact" }
+end
+
 -- tool_end(id, is_error, errtext) marca un bloque de tool como terminado (ok o
 -- error). Busca por id. chat.md §2: al terminar, resultado plegado si es largo.
 function Transcript:tool_end(id, is_error, errtext)
@@ -172,6 +192,10 @@ local function render_item(item)
     local head = "`⚙ " .. item.name .. "`"
     if item.status == "running" then
       head = head .. " …"
+      -- progreso en vivo (P27): la última línea de progreso, atenuada.
+      if item.progress and item.progress ~= "" then
+        head = head .. " _" .. item.progress:gsub("\n", " ") .. "_"
+      end
     elseif item.status == "error" then
       head = head .. " ✗"
     else
@@ -185,6 +209,9 @@ local function render_item(item)
     return "> ⚠ " .. item.text:gsub("\n", "\n> ")
   elseif item.kind == "system" then
     return "*" .. item.text .. "*"
+  elseif item.kind == "compact" then
+    -- marca de compactación (P27): una regla con una nota atenuada.
+    return "---\n\n*🗜 Historia compactada arriba*\n\n---"
   end
   return item.text or ""
 end
