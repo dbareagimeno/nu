@@ -172,11 +172,18 @@ local function to_wire(req, provider)
   -- Extended thinking (providers.md §2.1 `thinking = {budget?}`). Anthropic:
   -- `thinking = {type="enabled", budget_tokens=N}` para modelos que lo aceptan.
   --
-  -- ⚠ NOTA P21 ([pospuesto.md](pospuesto.md)): la familia Opus 4.6+ (incl.
-  -- `claude-opus-4-8`) RETIRÓ `budget_tokens` y espera `thinking={type="adaptive"}`;
-  -- un request con `budget_tokens` sobre esos modelos devuelve 400. Arreglarlo
-  -- toca el MODELO CANÓNICO (§2.1) y es una decisión transversal reservada (P21):
-  -- aquí se mantiene la traducción legacy congelada hasta resolverla.
+  -- ⚠ PENDIENTE DE IMPLEMENTAR — ADR-016 / G34 (antes P21). La decisión YA está
+  -- tomada en el contrato (providers.md §2.1): el canónico pasa a
+  -- `thinking={ mode?, budget? }` y el dialecto de cada modelo es un DATO del
+  -- providers.toml (`thinking = "adaptive"|"budget"|"none"`, en `provider.model`),
+  -- que aquí habrá que leer para traducir POR-MODELO: `adaptive` →
+  -- `{type="adaptive"}` (lo que espera Opus 4.6+, que retiró `budget_tokens` y
+  -- 400ea con la forma legacy), `budget` → `{type="enabled", budget_tokens=N}`.
+  -- Mientras esa sesión de construcción no llegue, se mantiene la traducción
+  -- legacy (correcta para los modelos previos; sobre Opus 4.6+ daría 400, pero el
+  -- agente no rellena `thinking` por defecto, así que está latente). Se acepta
+  -- también `mode="budget"` como sinónimo de `budget` para no romper cuando el
+  -- canónico nuevo empiece a usarse.
   if type(req.thinking) == "table" then
     local budget = req.thinking.budget
     if type(budget) == "number" then

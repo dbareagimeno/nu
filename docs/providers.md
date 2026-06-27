@@ -70,11 +70,13 @@ Request = {
   tools?:      ToolDef[],         -- { name, description, schema (JSON Schema, tabla) }
   max_tokens?: integer,
   temperature?: number,
-  thinking?:   { budget?: integer },
+  thinking?:   { mode?: "off"|"adaptive"|"budget", budget?: integer },
 }
 
 Message = { role: "user"|"assistant", content: Block[] }
 ```
+
+**Razonamiento extendido (`thinking`)** ([ADR-016](adr.md#adr-016--modelo-canónico-de-thinking-con-mode-y-traducción-por-modelo-en-el-adaptador), cierra [G34](problemas.md#g34)): `mode` pide el *modo* de razonamiento —`"adaptive"` (el modelo decide el esfuerzo, lo que esperan los modelos modernos), `"budget"` con `budget = N` (presupuesto de N tokens, extended thinking *legacy*), `"off"`—; `thinking` ausente = sin razonamiento. Por **compatibilidad**, `{ budget = N }` sin `mode` equivale a `mode = "budget"`. Qué forma entiende cada modelo es un **dato del registro**: cada entrada de modelo en `providers.toml` declara `thinking = "adaptive" | "budget" | "none"` (default `"budget"`), que viaja en el `ModelInfo` (§3) y el adaptador lee para **traducir por-modelo** (p. ej. `mode="budget"` sobre un modelo de dialecto `"adaptive"` degrada a `{type="adaptive"}`, porque Opus 4.6+ retiró `budget_tokens`). Pedir razonamiento a un modelo de dialecto `"none"` es una **degradación declarada** (§3 obligación 5): el adaptador no lo simula. Así el adaptador no hardcodea tablas de versiones de modelos (ADR-003/ADR-005).
 
 ### 2.2 Bloques de contenido
 

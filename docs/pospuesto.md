@@ -18,9 +18,9 @@ aquí en la firma afectada para que nadie las suponga presentes.
 > Todas se construyeron sobre la API pública congelada, con tests Go que las
 > blindan (`agent_p22_test.go`, `agent_p24_test.go`, `providers_p30_test.go`,
 > `chat_p26_test.go`). Las filas de abajo conservan el rastro del diseño; su
-> *disparador* ya no aplica. **Solo P21 sigue abierta**: es una decisión del
-> modelo canónico (no una construcción), reservada para resolver aparte
-> (ver su fila y la nota al pie).
+> *disparador* ya no aplica.
+>
+> **P21 DECIDIDA** ([ADR-016](adr.md#adr-016--modelo-canónico-de-thinking-con-mode-y-traducción-por-modelo-en-el-adaptador), grieta [G34](problemas.md#g34)): se reabrió y se resolvió por el flujo de diseño (pseudocódigo Ronda 7 → problemas.md → ADR). Sale de pospuestos; queda solo su **implementación** como sesión de construcción. Ver la nota al pie.
 
 | # | Tema | Dónde se pospuso | Por qué | Disparador para reabrir |
 |---|------|------------------|---------|--------------------------|
@@ -44,7 +44,7 @@ aquí en la firma afectada para que nadie las suponga presentes.
 | P18 | Windows nativo (sin WSL2) | [problemas.md](problemas.md) G9 | v1 = Linux/macOS nativos + WSL2 en Windows: el contrato POSIX se cumple íntegro sin especificación condicional | Demanda real de usuarios Windows sin WSL2; implica shell portable, semántica de señales dual y pruebas de terminal nativas |
 | P19 | Listener HTTP mínimo (`listen_once`) para callbacks OAuth | [problemas.md](problemas.md) G13 | Device flow / pegado de código cubren los providers conocidos sin abrir puertos | Un provider real que no ofrezca device flow ni pegado de código |
 | P20 | Rotación/límite del fichero de `nu.log` | [api.md](api.md) §15 / [pseudocodigo.md](pseudocodigo.md) ronda 4 | Un log de texto crece despacio; truncarlo a mano cubre el apuro | Logs reales de varios MB o quejas de espacio en disco |
-| P21 ⏸ | Modelo de `thinking` adaptativo (canónico `thinking={budget}` vs `thinking.adaptive`) | [providers.md](providers.md) §2.1 / revisión de S37 (`claude_decisions.md`) | El modelo canónico congela `thinking?: { budget?: integer }` y el adaptador `anthropic` (`adapter_anthropic.lua`) lo traduce a la forma extended-thinking *legacy* `{type="enabled", budget_tokens=N}`. Pero la familia Opus 4.6+ (incl. `claude-opus-4-8`) espera `thinking: {type:"adaptive"}` y ha **retirado** `budget_tokens`: un request con `thinking.budget` sobre esos modelos devolvería 400 contra la API real. No es un defecto del código —el adaptador cumple fielmente el contrato congelado, y los tests usan SSE grabado, no red—, sino una grieta del **modelo canónico**. Se pospone porque el contrato actual es autoconsistente y cambiar el modelo de thinking toca a la vez §2.1, el adaptador y posiblemente el control de razonamiento del agente: rediseño transversal que no urge sin un consumidor real | Cuando se conecte el adaptador `anthropic` contra la API real con un modelo Opus 4.6+ y un request con `thinking` reciba 400, o cuando se quiera soportar thinking **adaptativo** de primera clase en el modelo canónico (p. ej. `thinking = { mode = "adaptive" \| "off", budget? }` con traducción por-modelo en el adaptador) |
+| P21 → ADR-016 | Modelo de `thinking` adaptativo (canónico `thinking={budget}` vs `thinking.adaptive`) | [providers.md](providers.md) §2.1 / revisión de S37 (`claude_decisions.md`) | El modelo canónico congela `thinking?: { budget?: integer }` y el adaptador `anthropic` (`adapter_anthropic.lua`) lo traduce a la forma extended-thinking *legacy* `{type="enabled", budget_tokens=N}`. Pero la familia Opus 4.6+ (incl. `claude-opus-4-8`) espera `thinking: {type:"adaptive"}` y ha **retirado** `budget_tokens`: un request con `thinking.budget` sobre esos modelos devolvería 400 contra la API real. No es un defecto del código —el adaptador cumple fielmente el contrato congelado, y los tests usan SSE grabado, no red—, sino una grieta del **modelo canónico**. Se pospone porque el contrato actual es autoconsistente y cambiar el modelo de thinking toca a la vez §2.1, el adaptador y posiblemente el control de razonamiento del agente: rediseño transversal que no urge sin un consumidor real | **DECIDIDA (ADR-016, grieta G34); pendiente solo la construcción.** El disparador ya se cumplió (el modelo por defecto es Opus 4.8). Histórico: cuando se conecte el adaptador `anthropic` contra la API real con un modelo Opus 4.6+ y un request con `thinking` reciba 400, o cuando se quiera soportar thinking **adaptativo** de primera clase en el modelo canónico (p. ej. `thinking = { mode = "adaptive" \| "off", budget? }` con traducción por-modelo en el adaptador) |
 | P22 ✅ | Métodos de control de sesión `Session:cancel/fork/compact/clear_queue` | [agente.md](agente.md) §2 | El contrato los lista en la firma de `Session` (v1), pero la extensión `agent` `0.1.0` solo implementó `send/spawn/set_model/close`. El núcleo del turno (anexar, stream, tools, permisos, subagentes) funciona; quedaron fuera el cancelar el turno en vuelo, el `fork` de sesión (el store ya soporta `parent`, sesiones.md §5), la compactación manual y el vaciar la cola de reentrada (P23). No bloquean el flujo headless/CI, donde un turno corre hasta completar | Una UI o script que necesite cancelar un turno largo, bifurcar una sesión o compactar a mano; o antes de congelar el contrato de `agent` |
 | P23 ✅ | Cola de reentrada de `Session:send` (G4) | [agente.md](agente.md) §2 (Reentrada G4) | G4 especifica que un `send` con un turno en vuelo **encola** el mensaje y el loop lo inyecta entre iteraciones (corregir al agente mientras trabaja: "usa pnpm, no npm"). La `0.1.0` ejecuta `send` de forma síncrona, sin cola ni resolución de varios `send` al mismo turno. Es la pieza más arquitectónica del grupo (toca el loop del turno) y se apoya en `Session:cancel` (P22). El flujo de un mensaje por turno funciona; falta la interrupción cooperativa | Uso interactivo real donde corregir al agente a mitad de turno aporte; requiere también P22 |
 | P24 ✅ | Inyección de contenido del repo en el system prompt: índice de skills y `nu.md` (+ puerta TOFU) | [agente.md](agente.md) §6 / §7 / §11.2 | El contrato describe descubrimiento de skills (`config.dir()/skills/` + `<repo>/.nu/skills/`), `agent.skills.list()`, inyección en dos fases (índice en el system prompt + carga bajo demanda vía tool `skill`) y la inyección de `nu.md` del repo como contexto, todo tras la puerta TOFU (§11.2). El ensamblado de la `0.1.0` es base → `opts.system` (comentario en código: "índice de skills, S39 no las carga"): ni skills, ni `nu.md`, ni su TOFU. La regla de permisos deny-only del repo (§11.1) sí está. Sin esto, el agente no ve contexto del proyecto ni skills | Demanda de reutilizar skills del ecosistema o de que el agente lea `nu.md`; o cerrar §7 (qué piezas ensambla el system prompt) de forma definitiva |
@@ -58,41 +58,39 @@ aquí en la firma afectada para que nadie las suponga presentes.
 
 ---
 
-## Nota al pie: P21 — la decisión reservada
+## Nota al pie: P21 — DECIDIDA (ADR-016 / G34)
 
-P21 es la **única** entrada de este lote que NO se implementó, y a propósito:
-no es una construcción sino una **decisión del modelo canónico** (`providers.md`
-§2.1), y cambiar una firma congelada de la "superficie sagrada" se decide
-explícitamente, no por la vía de hecho de un adaptador. Se deja anotada aquí con
-una recomendación concreta para cuando se reabra.
+P21 era la **única** entrada de este lote que no era una construcción sino una
+**decisión del modelo canónico** (`providers.md` §2.1): cambiar una firma del
+contrato se decide explícitamente, no por la vía de hecho de un adaptador. Por
+eso se reservó. Ahora se ha **reabierto y resuelto** por el flujo de diseño del
+proyecto: validada con pseudocódigo ([Ronda 7, escenario 32](pseudocodigo.md)),
+registrada como grieta [G34](problemas.md#g34) y decidida en
+[ADR-016](adr.md#adr-016--modelo-canónico-de-thinking-con-mode-y-traducción-por-modelo-en-el-adaptador).
+Sale de pospuestos; queda solo su construcción.
 
-**El problema (recordatorio).** El canónico congela `thinking?: { budget?: integer }`
-y el adaptador `anthropic` lo traduce a la forma *legacy* `{type="enabled",
-budget_tokens=N}`. La familia Opus 4.6+ (incl. el modelo por defecto del proyecto,
-`claude-opus-4-8`) **retiró `budget_tokens`** y espera `{type:"adaptive"}`: un
-request con `thinking.budget` sobre esos modelos da **400** contra la API real.
-El adaptador (`adapter_anthropic.lua`) lleva ya una nota `⚠ P21` en el punto
-exacto de la traducción.
+**El problema.** El canónico congelaba `thinking?: { budget?: integer }` y el
+adaptador `anthropic` lo traducía a la forma *legacy* `{type="enabled",
+budget_tokens=N}`. La familia Opus 4.6+ (incl. el modelo por defecto,
+`claude-opus-4-8`) **retiró `budget_tokens`** y espera `{type:"adaptive"}`: una
+petición con `thinking.budget` sobre esos modelos da **400**. Era una grieta del
+**modelo canónico** (faltaba expresar el modo adaptativo y el dato de qué forma
+entiende cada modelo), no del adaptador. Estaba **latente** (el agente no rellena
+`req.thinking` por defecto), pero su disparador ya se había cumplido.
 
-**Por qué no la resolví aquí.** Toca a la vez tres piezas (§2.1 del canónico, el
-adaptador, y posiblemente el control de razonamiento del agente) y elige entre
-alternativas reales (¿se reemplaza `budget` o se añade un `mode`? ¿la traducción
-por-modelo vive en el adaptador o en el registro TOML?). Eso es una decisión de
-diseño con su ADR, no algo "inferible".
+**La decisión (ADR-016).** Dos piezas:
 
-**Recomendación para cuando se reabra** (no decidida; a validar con pseudocódigo):
+1. **Modelo canónico, por adición** → `thinking?: { mode?: "off"|"adaptive"|"budget",
+   budget?: integer }`. `thinking` ausente = sin razonamiento; `{budget=N}` sin
+   `mode` = alias compatible de `mode="budget"` (no rompe la firma congelada).
+2. **El dialecto de cada modelo es un DATO** del `providers.toml`
+   (`thinking = "adaptive"|"budget"|"none"`, default `"budget"`), que el adaptador
+   lee para traducir **por-modelo** —`adaptive`→`{type="adaptive"}`,
+   `budget`→`{type="enabled", budget_tokens=N}`, degradando entre ambos según el
+   dialecto—. El adaptador no hardcodea tablas de versiones de modelos
+   (ADR-003/ADR-005); se descartó la heurística por id del modelo.
 
-1. **Modelo canónico** → `thinking?: { mode?: "off" | "adaptive" | "budget", budget?: integer }`.
-   `mode` por defecto `"off"`; `budget` solo aplica con `mode="budget"`. Es
-   crecimiento por adición (no rompe a quien pasa `{budget=N}`: se interpreta
-   como `mode="budget"` por compatibilidad).
-2. **Adaptador `anthropic`** → traducción **por-modelo**: para Opus 4.6+,
-   `adaptive` → `{type:"adaptive"}` y `budget` también degrada a `adaptive`
-   (o se ignora con aviso, ya que `budget_tokens` no existe); para modelos
-   previos, `budget` → `{type:"enabled", budget_tokens=N}`. La tabla de "qué
-   familia usa qué forma" es el dato que la decisión debe fijar (y dónde vive:
-   se sugiere `extra`/ModelInfo del `providers.toml`, no hardcode en el adaptador).
-3. **Disparador inmediato**: el modelo por defecto ya es Opus 4.8, así que el 400
-   aparece en cuanto se conecte el adaptador contra la API real con `thinking`
-   activado. Conviene resolverlo antes de la primera release que hable con la
-   API real de Anthropic con razonamiento.
+**Lo que queda.** Solo la **implementación** (sesión de construcción, por el
+protocolo "el contrato lidera, el código sigue"): el nuevo `to_wire` del adaptador,
+leer `model.thinking` en `resolve`, y mapear la opción de razonamiento del agente
+cuando exista. La nota `⚠` del adaptador apunta ya a ADR-016.
