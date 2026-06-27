@@ -9,7 +9,9 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 32 registradas, resueltas** (G34 añadida 2026-06-27 al validar con pseudocódigo el control de razonamiento; G33 añadida 2026-06-23 al probar el
+**Estado: 33 registradas, resueltas** (G35 añadida 2026-06-27 al usar el binario
+tras el onramp de ADR-015; G34 añadida 2026-06-27 al validar con pseudocódigo el
+control de razonamiento; G33 añadida 2026-06-23 al probar el
 binario con las extensiones oficiales; G32 añadida 2026-06-22 desde la
 construcción de la extensión sesiones). Las dieciséis de las
 rondas 3-4, las seis de la revisión de coherencia de la documentación
@@ -32,7 +34,10 @@ tercera de la construcción y la primera de *usar* el binario terminado: el
 arranque sin TTY no tenía onramp (la pantalla desnuda de G21 es solo-TTY) y
 "el conjunto oficial" estaba sin definir frente a `example` — resuelta con el
 flag `nu --default-config` y ADR-015 (sin tocar la API sagrada: es superficie
-CLI). La lista queda
+CLI). G35 es la **segunda** de *usar* el binario terminado: ese mismo onramp
+activa los siete plugins pero **no deja config de agente** (modelo/provider), así
+que el primer `nu` muere sin modelo y deja la UI atrapada — resuelta con ADR-017
+(plantillas activas en el onramp + degradación con gracia del chat). La lista queda
 como registro del proceso; los problemas nuevos que surjan (spike incluido) se
 añaden aquí con el mismo método.
 
@@ -896,3 +901,19 @@ propio, no con el yield aquí descartado.
 **Impacto.** **Latente** —el agente headless no rellena `req.thinking` en el ensamblado del turno, así que el 400 solo aparece por un hook `request.pre` o una futura feature de control de razonamiento— pero **bloquea la capacidad** de usar razonamiento extendido con los modelos Opus modernos, que para un harness de código es de primera. Barato de cerrar en el contrato ahora; caro después, con thinking cableado y consumidores que presupongan el canónico viejo.
 
 **Opciones.** (a) `mode` en el canónico + dialecto por-modelo como dato del TOML (**la elegida**, ADR-016): traductor puro, crecimiento por adición; (b) heurística por id del modelo en el adaptador (`model:match("opus%-4%-[6-9]")`) — frágil, mete conocimiento de versiones de producto en un traductor, falla con ids renombrados; (c) **reemplazar** `budget` por la forma nueva — rompe la firma congelada y los tests grabados; (d) dejarlo pospuesto — descartado: el disparador (modelo por defecto Opus 4.8) ya está activo.
+
+## G35 · El onramp de ADR-015 activa los plugins pero no deja config de agente: el primer `nu` muere sin modelo y deja la UI atrapada — ADR-015 / `chat.md` §8 / `agente.md` §10 — **RESUELTO**
+
+**Resolución** (registrada en [ADR-017](adr.md#adr-017--el-onramp-deja-config-de-agente-usable-y-el-chat-degrada-con-gracia), que **refina** ADR-015; aplicada en [chat.md](chat.md) §8, [agente.md](agente.md) §10, [providers.md](providers.md) y el binario): dos piezas, ninguna en la API sagrada (es superficie CLI, loader y Lua de extensión; `nu.version.api` no cambia).
+
+1. **Onramp completo: `nu --default-config` deja config de agente USABLE.** El modo persistente, además de escribir `plugins.enabled` en `nu.toml` (G33), escribe **plantillas activas** de `agent.toml` (`model = "anthropic/opus"`, `max_turns`) y `providers.toml` (provider `anthropic` con `base_url`, `api_key_env = "ANTHROPIC_API_KEY"` y el modelo `claude-opus-4-8`/alias `opus`) **solo si no existen** (nunca sobrescribe; atómico, idempotente — reusa `writeAtomic` y el patrón "no pisar TOML existente" de `writeEnabledPlugins`). Default **opinado a Anthropic** (la identidad del producto, un harness estilo claude-code). La clave **nunca** va al fichero (providers.md §1): vive en el entorno (`api_key_env`). El mensaje de éxito deja de ser engañoso ("ya puedes ejecutar el agente: nu -p") y pasa a ser **honesto y accionable**: lista los ficheros escritos y recuerda exportar `ANTHROPIC_API_KEY` (o editar `providers.toml`) antes de arrancar.
+
+2. **Degradación con gracia del chat (robustez, principio 5).** Si `chat.start` no puede construir la sesión inicial (`agent.session` lanza `EINVAL` por modelo ausente, `EPROVIDER` por provider/modelo no resoluble, o `EAGENT`/`EPROVIDER` por TOML roto), el chat **no muere al log**: monta una **UI mínima accionable y salible** —un texto que explica cómo configurar (`agent.toml`, `providers.toml`, la API key) y un keymap de salida (`esc`/`q`/`ctrl+c` → `core:shutdown`)—. Los errores **inesperados** (no de config) se siguen propagando como hoy. Como **red de seguridad** del kernel, el modo interactivo instala además un handler de salida de emergencia al fondo de la pila de input (cualquier app montada lo tapa), de modo que **ninguna** ruta deje la terminal en raw mode sin forma de salir con teclado.
+
+**Por qué plantillas activas y no comentadas.** Con la key en el entorno, `nu` *just works* tras un solo comando (la promesa "batteries-included" de ADR-015, ahora real). Sin la key, `providers.resolve` **no falla** (deja `api_key=nil`): el chat monta igual, la statusline muestra el modelo y el error por clave ausente sale **in-transcript** al primer turno (`agent:error` → `transcript:add_error`, que el chat ya renderiza) — mucho mejor que una pantalla muerta. Plantillas comentadas obligarían a editar TOML antes del primer arranque, justo la fricción que el onramp quería borrar.
+
+**Problema.** Aflora al *usar* el binario terminado (como G33, no en pseudocódigo ni construyendo): tras `nu --default-config`, ejecutar `nu` deja la terminal en blanco. El log lo dice: `ERROR [user] chat: no se pudo arrancar: agent.session requiere model ("proveedor/modelo") en opts o en agent.toml`. Dos capas: (a) el onramp activa los siete plugins pero **no deja `model`/`provider`**, así que `core:ready` → `chat.start` → `agent.session({model=nil})` lanza `EINVAL`; (b) el `pcall` del `init.lua` del chat manda el error a `nu.log.error` (a disco, nunca a pantalla, §15) y **no monta nada**, y como la pantalla desnuda (la única ruta que instala un handler de salida de emergencia) no se toma con plugins activos, el usuario **queda atrapado** —en raw mode `ctrl+c` no genera `SIGINT`—.
+
+**Impacto.** Es la **primera experiencia** de quien sigue el onramp de ADR-015 al pie de la letra: el comando que prometía dejar el harness listo lo deja roto e inservible. Bloquea por completo el arranque interactivo del producto. Barato de cerrar sobre la superficie CLI ya congelada (S45) y la Lua de las extensiones, sin tocar la API sagrada.
+
+**Opciones.** (a) **Onramp completo + degradación con gracia** (la elegida, ADR-017): el onramp deja config usable *y* el chat sobrevive a la falta de config. (b) Solo degradación: el chat monta una UI accionable, pero el primer `nu` sigue sin modelo y exige editar TOML a mano — deshace la ergonomía de ADR-015. (c) Solo onramp: escribir las plantillas, pero el chat seguiría muriendo si el usuario borra/rompe la config — deja el segundo defecto (UI atrapada) sin cerrar. (d) Un **modelo por defecto cableado en el agente** sin `providers.toml`: mete vocabulario de producto (qué modelo, qué endpoint, qué env) en el motor, contra ADR-003/ADR-005; descartada. (e) No hacer nada y documentar "edita `agent.toml`/`providers.toml`": hostil, justo lo que ADR-010/ADR-015 quisieron evitar.

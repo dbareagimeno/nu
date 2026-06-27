@@ -360,9 +360,11 @@ errores por extensión inactiva son accionables (nombran la línea de
 `nu.toml` que lo arregla, como los de permisos en
 [agente.md](agente.md) §5). El onramp sin TTY (CI, Docker, scripts) es el
 flag de CLI `nu --default-config` (ADR-015, G33): escribe ese mismo conjunto
-de producto en `nu.toml` y sale, o —combinado con `-p`/`-e`— lo activa solo
-para ese proceso sin tocar disco. Es superficie CLI del binario, no API
-sagrada: no añade nada a `nu.*` ni mueve `nu.version.api`.
+de producto en `nu.toml` —y plantillas activas de `agent.toml`/`providers.toml`
+si no existen, para que el harness quede usable, ADR-017/G35— y sale, o
+—combinado con `-p`/`-e`— lo activa solo para ese proceso sin tocar disco. Es
+superficie CLI del binario, no API sagrada: no añade nada a `nu.*` ni mueve
+`nu.version.api`.
 
 **Orden de arranque canónico**: core → plugins activados (topológico por
 `requires`) → `init.lua` del usuario → evento `core:ready`. El

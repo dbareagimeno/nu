@@ -214,7 +214,9 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
      de `agent.toml`); `--continue`/`-c` (azúcar de reanudación, abajo);
      `--default-config` (activa el **conjunto oficial de producto** sin TTY —el
      onramp que la pantalla desnuda de G21 no cubría—: solo, escribe
-     `plugins.enabled` en `nu.toml` y sale; con `-p`/`-e`, lo activa solo para ese
+     `plugins.enabled` en `nu.toml` —y plantillas activas de
+     `agent.toml`/`providers.toml` si no existen, para dejar el harness usable,
+     ADR-017/G35— y sale; con `-p`/`-e`, lo activa solo para ese
      proceso sin tocar disco. ADR-015, G33).
    - **Headless / códigos de salida**: `nu -e` y el modo agente corren SIN TTY
      (G20) con códigos de salida coherentes para CI/scripts — **0** éxito;
@@ -231,7 +233,8 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
    - **Arranque** (S33): sin args y con TTY → arranque normal (pantalla de
      runtime desnudo si no hay plugins, G21); sin args y sin TTY → uso (código 2);
      `nu -e`/`-p`/`--continue` → modo headless. `--default-config` solo (sin acción
-     headless) escribe el conjunto de producto en `nu.toml` y sale (G33): el onramp
+     headless) escribe el conjunto de producto en `nu.toml` —más plantillas de
+     `agent.toml`/`providers.toml` si faltan (ADR-017/G35)— y sale (G33): el onramp
      sin TTY que la pantalla desnuda no daba.
    El ejecutor headless de los modos suspendientes (el turno del agente es ⏸) es
    `Runtime.EvalTaskString` (corre un chunk Lua como TASK a término): interfaz Go

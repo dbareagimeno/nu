@@ -302,6 +302,14 @@ permisos globales. La precedencia es la estándar: defaults < global <
 proyecto (`<repo>/.nu/agent.toml`) < sesión (`opts`) — con la excepción de
 seguridad de §11: los permisos del proyecto solo recortan.
 
+El campo `model` (`"proveedor/modelo"`) es **obligatorio** para abrir una sesión:
+`agent.session` falla con `EINVAL` accionable si no está en `opts` ni en
+`agent.toml`. Por eso el onramp `nu --default-config` deja una plantilla **activa**
+de `agent.toml` con un `model` por defecto (`anthropic/opus`) y su `providers.toml`
+emparejado ([ADR-017](adr.md), [G35](problemas.md)): el primer arranque ya trae un
+modelo configurado (solo falta exportar la API key del entorno). Las plantillas se
+escriben únicamente si los ficheros no existen; nunca pisan config del usuario.
+
 ## 11. Modelo de confianza del contenido del repo (G14)
 
 El repo no es el usuario: su config la escribió un tercero. Dos reglas, sin

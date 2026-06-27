@@ -144,6 +144,17 @@ chat.statusline.add{ id, side: "left"|"right", priority, render: fn(ctx) -> Span
   (defaults < global < proyecto), o reanuda una existente
   (`agent.session{ resume = id }`, alimentado por el picker de
   `/sessions`).
+- **Arranque degradado ([ADR-017](adr.md), [G35](problemas.md)).** Si la sesión
+  inicial **no se puede construir por falta o rotura de config** —`agent.session`
+  lanza `EINVAL` (no hay modelo), `EPROVIDER` (modelo/provider no resoluble en
+  `providers.toml`) o `EAGENT`/`EPROVIDER` (TOML mal formado)—, `chat.start`
+  **no muere al log**: monta una **UI mínima accionable y salible** que explica
+  cómo configurar (`agent.toml`, `providers.toml`, la API key del entorno) y deja
+  salir (`esc`/`q`/`ctrl+c` → `core:shutdown`). Un fallo **inesperado** (no de
+  config) se propaga como siempre. El onramp `nu --default-config` deja plantillas
+  activas que evitan este camino en el primer arranque (ADR-017); la falta de
+  **API key** no llega aquí (`providers.resolve` no falla sin ella): el error sale
+  in-transcript como `agent:error` al primer turno.
 - No toca `nu.fs` ni `nu.proc` para lógica de agente: si `chat` necesita
   algo del dominio del agente que la API pública no da, la API pública del
   agente está incompleta — misma regla de siempre.
