@@ -9,13 +9,16 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 38 registradas, 36 resueltas — 2 PENDIENTES (G39-G40)** (G38-G40
+**Estado: 38 registradas, 37 resueltas — 1 PENDIENTE (G40)** (G38-G40
 añadidas 2026-07-02 desde la ronda 8 de pseudocódigo — una malla distribuida de
 agentes sobre git, con specs Role+Job y fork-como-replicación: G38, el slug de
 `sessions/<proyecto>/` sin especificar — **resuelta el mismo día**: el
 algoritmo pasa a ser parte del formato y la extensión expone
 `sessions.slug/dir`; G39, `Session:fork` sin `opts` y con
-`at` sin unidad; G40, denegaciones de permisos no observables como dato;
+`at` sin unidad — **resuelta el mismo día**: `fork(at?, opts?)` y `close()`
+entran en el contrato, la herencia queda especificada y se bendice la copia
+del prefijo (hija autocontenida); G40, denegaciones de permisos no
+observables como dato;
 G36 y G37 añadidas 2026-06-28 al pulir la
 UI/UX de las extensiones oficiales para que parezcan producto: G36, el doble
 auto-montaje de chat+repl; G37, un bug latente del eje X de `blitBlock`; G35 añadida
@@ -961,7 +964,17 @@ Nota para la sesión de construcción: la grieta ya mordía **dentro del repo** 
 
 **Opciones.** (a) Especificar el algoritmo del slug en sesiones.md §2 (determinista, sin estado, documentado como parte del formato); (b) no especificarlo y exponer un helper de la extensión (`agent.sessions.dir(cwd) -> string` o `agent.sessions.path(cwd, id)`), dejando la codificación como detalle interno — pero entonces las herramientas *externas* (fuera de nu) siguen sin poder resolver rutas; (c) ambas: el algoritmo especificado es la verdad para herramientas externas y el helper es la comodidad para plugins.
 
-## G39 · `Session:fork` no re-aloja: sin `opts` (cwd/permisos/modelo) y con `at` sin unidad definida — `agente.md` §2 / `sesiones.md` §5 — **PENDIENTE**
+## G39 · `Session:fork` no re-aloja: sin `opts` (cwd/permisos/modelo) y con `at` sin unidad definida — `agente.md` §2 / `sesiones.md` §5 — **RESUELTO**
+
+**Resolución** (aplicada en [agente.md](agente.md) §2 —firma, párrafo "Fork y cierre" y nota de estado— y [sesiones.md](sesiones.md) §5): la opción (c) con las tres sub-decisiones. Crecimiento por adición: `fork(at?)` sigue válido.
+
+1. **`Session:fork(at?, opts?)`** — el camino directo del re-alojamiento: los `opts` sobreescriben lo heredado con la misma semántica efímera que `resume` (G18: no se persisten, no reescriben historia), y los permisos **solo recortan** (la regla de `spawn`, §9/§11). La variante nace ya en su worktree, sin la ventana intermedia del rodeo (una sesión viva apuntando al cwd equivocado).
+2. **`Session:close()` entra en la firma del contrato.** Existía de facto (implementado, idempotente, suelta el lock de escritor de sesiones.md §6) y lo necesitan otros flujos: el conflicto de locks de §6 y cualquier orquestador que abra N sesiones y deba soltarlas determinísticamente. Regla de la casa: cerrar explícitamente vía `nu.task.cleanup`; el GC como red de seguridad no determinista (mismo patrón que los `Proc` de api.md §6).
+3. **Semánticas clavadas.** `at` indexa el **historial de mensajes vigente** (post-compactación; lo que la implementación ya hacía) — y `meta.parent.entry` queda documentado como enlace **navegacional**, no puntero de replay. La **herencia se especifica completa** ("todos los opts efímeros del padre salvo sobreescritura"), lo que convierte la deriva actual —el fork de la v1 copia una lista parcial que pierde `skills` y `thinking`— en un bug nombrable con contrato que lo respalda. Y se **bendice la desviación de la v1**: el fork **copia el prefijo** al transcript de la hija (sesiones.md §5 pasa de "el replay lee del padre" a la copia) — la hija autocontenida es justo lo que hace viajar los transcripts entre máquinas (ronda 8, escenario 35; P9).
+
+Se descartó (b) a secas (bendecir solo el rodeo fork→close→resume): dos pasos y doble ciclo de lock para lo que conceptualmente es una operación, con el arma cargada de la sesión intermedia mal alojada. `close` se añade igualmente porque es higiene de ciclo de vida que faltaba con independencia del fork.
+
+Nota para la sesión de construcción: implementar el `opts?` de `fork` y la herencia completa (hoy: lista parcial en `agent/init.lua:1139` que omite `skills` y `thinking`); la copia del prefijo y `close` ya cumplen.
 
 **Problema.** Fork-como-replicación —K variantes que comparten el prefijo exacto del transcript (y su caché de prompt) y compiten en un torneo— exige que cada variante corra en su propio worktree (`cwd` distinto: el remedio de G16 para escrituras paralelas) y a veces con permisos recortados o modelo alternativo. Pero `Session:fork(at?) -> Session` no acepta `opts`, y qué hereda la sesión hija del padre no está escrito. El rodeo natural (cerrar el fork y reabrirlo con `agent.session{ resume = id, cwd = ... }`, opts efímeros de G18) *casi* funciona, pero se apoya en `Session:close()`, que la nota de estado de §2 da por implementado y la **firma del contrato omite**. Además `at` no define qué indexa (¿entrada del JSONL, mensaje, turno?) — `meta.parent = {id, entry}` de sesiones.md §5 sugiere entradas, pero la correspondencia es implícita. Aflorada en la ronda 8 ([pseudocodigo.md](pseudocodigo.md), escenarios 34-35).
 

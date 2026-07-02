@@ -31,10 +31,11 @@ agent.session(opts) -> Session
 
 Session:send(content: string|Block[]) ⏸ -> Message  -- ejecuta el turno completo
 Session:cancel()                                     -- cancela el turno en curso
-Session:fork(at?: integer) -> Session                -- sesiones.md §5
+Session:fork(at?: integer, opts?: tabla) -> Session  -- bifurca y re-aloja (G39; sesiones.md §5)
 Session:compact() ⏸                                  -- compactación manual
 Session:set_model(model: string)                     -- cambio en caliente (G19)
 Session:set_thinking(thinking)                        -- razonamiento en caliente (ADR-016)
+Session:close()                                      -- suelta el lock de escritor (G39)
 Session.id / Session.usage -> { context_tokens, cost_usd, turns }
 ```
 
@@ -43,6 +44,8 @@ Session.id / Session.usage -> { context_tokens, cost_usd, turns }
 > **P22**, resuelto). El turno corre en una task **propia de la sesión** (la que
 > `cancel` cancela); `send` espera el resultado por un future, no por la task, así
 > que cancelar el turno no cancela a quien llamó (su `send` devuelve nil).
+> ⏳ Pendiente de construcción (G39): el `opts?` de `fork` y su regla de herencia
+> completa — la v1 hereda una lista parcial que pierde `skills` y `thinking`.
 
 **El turno** (`send`) es el corazón del contrato:
 
@@ -81,6 +84,24 @@ contra el registro de providers, escribe una entrada `event` en el
 transcript ([sesiones.md](sesiones.md) §3) y aplica desde el siguiente
 request; con un turno en vuelo, al ensamblar la siguiente iteración (como
 la cola de G4), nunca a mitad de un stream.
+
+**Fork y cierre (G39)**: `Session:fork(at?, opts?)` bifurca la historia en
+una sesión nueva **autocontenida** — el prefijo se **copia** al transcript
+de la hija y `meta.parent = { id, entry = at }` queda como enlace
+navegacional ([sesiones.md](sesiones.md) §5). `at` indexa el **historial de
+mensajes vigente** (por defecto, el final; tras una compactación, el
+historial vigente arranca en el resumen). La hija **hereda todos los opts
+efímeros del padre** (model, cwd, system, permissions, skills, thinking,
+max_turns, tools...) salvo los que `opts` sobreescriba, con la regla de
+`spawn` (§9, §11): los permisos **solo recortan**, nunca amplían. Los
+`opts` son efímeros como en `resume` (G18): no se persisten ni reescriben
+historia. Es la pieza del *fork-como-replicación* (pseudocódigo, ronda 8):
+K variantes que comparten el prefijo exacto, cada una re-alojada en su
+worktree vía `opts.cwd`. `Session:close()` suelta el lock de escritor
+([sesiones.md](sesiones.md) §6) y marca la sesión cerrada (idempotente;
+los métodos posteriores fallan con error accionable). La regla de la casa:
+quien abre sesiones las cierra (`nu.task.cleanup`); el GC como red de
+seguridad no determinista, igual que los `Proc` de [api.md](api.md) §6.
 
 **Control de razonamiento ([ADR-016](adr.md#adr-016--modelo-canónico-de-thinking-con-mode-y-traducción-por-modelo-en-el-adaptador))**:
 `opts.thinking` (o el default de `agent.toml [thinking]`, §10) fija el modo de

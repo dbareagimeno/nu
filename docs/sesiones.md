@@ -97,9 +97,16 @@ turno simplemente no existe (y la petición se puede relanzar al reanudar).
 
 Rebobinar a un punto anterior y probar otro camino **no muta el fichero**
 (append-only): crea una sesión nueva cuyo `meta.parent` apunta a la sesión
-y entrada de origen. El replay del fork lee del padre hasta ese punto y
-sigue en el hijo. El historial original queda intacto; el árbol de
-variantes es navegable leyendo los `meta`.
+de origen. **El fork copia el prefijo al transcript de la hija (G39)**: la
+sesión hija es **autocontenida** — su replay no sigue la cadena de padres, y
+su fichero viaja solo (lo que hace triviales exportar un fork o moverlo
+entre máquinas: el formato es la API, [P9](pospuesto.md)). El coste de
+duplicar el prefijo es irrelevante frente a esa robustez. `meta.parent =
+{ id, entry }` es **navegacional**, no un puntero de replay: sirve para
+reconstruir el árbol de variantes leyendo los `meta`; `entry` es el índice
+de mensaje del historial vigente del padre en el momento del fork (la
+unidad de `Session:fork(at)`, [agente.md](agente.md) §2). El historial
+original queda intacto.
 
 ## 6. Concurrencia: un escritor por sesión (G5)
 

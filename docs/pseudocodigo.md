@@ -1393,8 +1393,12 @@ Fork-como-replicación exige worktree (cwd) propio por variante — el remedio d
 G16 — y a veces permisos/modelo distintos; `fork(at?)` no acepta opts, no
 documenta qué hereda, y el rodeo (close + `resume` con opts efímeros) se apoya
 en un `close` que la firma del contrato omite. Además `at` no define qué indexa
-(la unidad de `meta.parent.entry` está implícita). Registrada en
-[problemas.md](problemas.md#g39).
+(la unidad de `meta.parent.entry` está implícita). **Resuelto**:
+`fork(at?, opts?)` (opts efímeros, permisos solo recortan) y `close()` entran
+en el contrato ([agente.md](agente.md) §2), `at` indexa el historial de
+mensajes vigente, la herencia queda especificada completa, y se bendice la
+copia del prefijo — la hija autocontenida hace viajar los transcripts
+([sesiones.md](sesiones.md) §5). Detalle en [problemas.md](problemas.md#g39).
 
 **G40 — las denegaciones de permisos no son observables como dato.**
 El deny de política corta antes de los hooks `permission`, `permission.asked`
