@@ -78,12 +78,13 @@ func embeddedNames() ([]string, error) {
 }
 
 // nonProductEmbedded lista las extensiones embebidas que NO son parte del
-// "conjunto oficial de producto" (ADR-015): andamiaje que se distribuye en el
-// binario para probar el mecanismo, no para activarse en la config del usuario.
-// Hoy solo `example` (el stub del gating, S12). Se mantiene como conjunto —no como
-// una sola constante— para que añadir otro andamiaje futuro sea una línea aquí.
+// "conjunto oficial de producto" (ADR-015): lo que se distribuye en el binario
+// pero no se activa con el onramp. `example` es el stub del gating (S12);
+// `mesh` es la malla de agentes (malla.md §1.4): una herramienta de
+// orquestación que el usuario enchufa explícitamente, no el harness por defecto.
 var nonProductEmbedded = map[string]bool{
 	"example": true,
+	"mesh":    true,
 }
 
 // officialProductSet devuelve el **conjunto oficial de producto** (ADR-015, G33):

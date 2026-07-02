@@ -377,6 +377,7 @@ producto (lo que activa `--default-config`):
 | `mcp` | Puente con servidores MCP: registra cada tool remota como una tool del agente. | — |
 | `toolkit` | Toolkit de widgets sobre `nu.ui` (lo que usa el chat para pintar). | — |
 | `repl` | Un REPL de Lua sobre la API pública; activable solo, sin el harness. | — |
+| `mesh` | La malla de agentes: specs Role+Job, claim por CAS de git, runner de jobs, torneo de forks. Fuera del conjunto de producto; se activa explícitamente. | [malla.md](docs/malla.md) |
 
 Las dependencias se resuelven solas (orden topológico): activar `chat` arrastra
 `agent`, `providers`, `sessions` y `toolkit`. La extensión `example` viene

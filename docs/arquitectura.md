@@ -137,14 +137,18 @@ recompilación. El contrato del adaptador y el formato del registro están en
   con TTY — api.md §14 —, el flag `nu --default-config` sin TTY —ADR-015,
   G33—, o `nu.toml` a mano), sin red; sobreescribibles por el usuario
   desde su directorio de config. El **conjunto oficial de producto** son
-  las siete embebidas menos el andamiaje `example` (ADR-015): además del
+  las embebidas menos el andamiaje `example` y la malla `mesh` (ADR-015;
+  [malla.md](malla.md) §1.4): además del
   harness (agente, chat, providers, MCP, toolkit), un **`repl`** —REPL de
   Lua sobre la API pública, activable solo, el punto de partida del autor
   de extensiones que no quiere el harness (G21)—. Con TTY, **una sola UI
   primaria posee la pantalla**: el repl **cede al chat** (solo auto-monta su
   UI si el chat no está activo, vía `nu.plugin.list`), así `nu` con el
   conjunto oficial abre una TUI única y no el chat *y* el REPL solapados
-  ([G36](problemas.md#g36), [ADR-018](adr.md)).
+  ([G36](problemas.md#g36), [ADR-018](adr.md)). La **`mesh`** ([malla.md](malla.md),
+  nacida de la ronda 8 de pseudocódigo) viaja embebida pero se activa
+  explícitamente: es la herramienta de orquestación de mallas de agentes,
+  no el harness por defecto.
 
 ## Persistencia
 
