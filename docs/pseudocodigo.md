@@ -1382,7 +1382,11 @@ solo dato: el patrón denegado en forma estructurada. **[G40]**
 leer sesiones", pero §2 codifica el directorio como "slug del cwd" sin escribir
 el algoritmo: la promesa no se puede ejercer. La ronda lo necesitó tres veces
 (comitear el transcript en la rama, contar entradas para elegir el punto de
-fork, importar una sesión ajena). Registrada en [problemas.md](problemas.md#g38).
+fork, importar una sesión ajena). **Resuelto**: el algoritmo pasa a ser parte
+del formato ([sesiones.md](sesiones.md) §2, congelado tal cual con sus
+propiedades — legible, con pérdida, clave de agrupación y no identidad) y la
+extensión lo expone como `sessions.slug/dir`; detalle y contraindicaciones en
+[problemas.md](problemas.md#g38).
 
 **G39 — `Session:fork` no re-aloja: sin `opts` y con `at` sin unidad definida.**
 Fork-como-replicación exige worktree (cwd) propio por variante — el remedio de

@@ -9,10 +9,12 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 38 registradas, 35 resueltas — 3 PENDIENTES (G38-G40)** (G38-G40
+**Estado: 38 registradas, 36 resueltas — 2 PENDIENTES (G39-G40)** (G38-G40
 añadidas 2026-07-02 desde la ronda 8 de pseudocódigo — una malla distribuida de
 agentes sobre git, con specs Role+Job y fork-como-replicación: G38, el slug de
-`sessions/<proyecto>/` sin especificar; G39, `Session:fork` sin `opts` y con
+`sessions/<proyecto>/` sin especificar — **resuelta el mismo día**: el
+algoritmo pasa a ser parte del formato y la extensión expone
+`sessions.slug/dir`; G39, `Session:fork` sin `opts` y con
 `at` sin unidad; G40, denegaciones de permisos no observables como dato;
 G36 y G37 añadidas 2026-06-28 al pulir la
 UI/UX de las extensiones oficiales para que parezcan producto: G36, el doble
@@ -944,7 +946,14 @@ propio, no con el yield aquí descartado.
 
 **Impacto.** Latente pero real: bloquea cualquier layout con margen/padding/centrado horizontal —es decir, casi toda la UI de producto (cajas, modales centrados, statusline con padding)—. Se descubrió al construir el primer widget de borde. La corrección alinea la implementación con el contrato; no amplía ni cambia la API (`nu.version.api` no se mueve).
 
-## G38 · El slug de proyecto de `sessions/<proyecto>/` no está especificado — `sesiones.md` §2/§7 — **PENDIENTE**
+## G38 · El slug de proyecto de `sessions/<proyecto>/` no está especificado — `sesiones.md` §2/§7 — **RESUELTO**
+
+**Resolución** (aplicada en [sesiones.md](sesiones.md) §2): la opción (c), con el **algoritmo actual congelado tal cual**. Dos piezas:
+
+1. **El slug pasa a ser parte del formato.** §2 especifica la codificación que la implementación ya hacía: todo carácter fuera de `[A-Za-z0-9.-]` → `_`, recorte de `_` en ambos bordes, vacío → `"root"`. Se congela con sus propiedades declaradas honestamente: **legible y con pérdida** — no reversible, colisiones posibles entre `cwd` patológicamente parecidos (`/a/b` y `/a_b`). No es una identidad sino una **clave de agrupación**: la identidad canónica de la sesión viaja dentro del fichero (línea `meta`, con `cwd` e `id`), y desambiguar una colisión es leer `meta`. Se descartó una codificación reversible (percent-encoding): compraría una propiedad que ningún consumidor pidió al precio de la legibilidad y de migrar todos los directorios existentes.
+2. **La extensión expone la codificación como funciones puras**: `sessions.slug(cwd) -> string` y `sessions.dir(cwd) -> string`, junto a `open`/`list` en `require("sessions")`. Mismo reparto que G6/G22: el contrato da la garantía (el algoritmo especificado, para herramientas externas que componen rutas sin nu), la extensión da la comodidad (los plugins no reimplementan).
+
+Nota para la sesión de construcción: la grieta ya mordía **dentro del repo** — tres copias del algoritmo sincronizadas por fe (`slug` en `sessions/init.lua`, `trust_slug` duplicado literal en `agent/init.lua`, y la réplica en Go de `main_test.go` con el comentario "debe coincidir con `slug` de sessions/init.lua"). Al construir: `sessions.slug` queda como única fuente Lua (el agente lo `require`a para las claves de `trust.json`), y la copia del test de Go — inevitable, Go no llama a Lua — pasa a replicar la *especificación*, citándola, no el código.
 
 **Problema.** [sesiones.md](sesiones.md) §1 se documenta como convención pública ("cualquier extensión o herramienta externa puede leer sesiones sin pasar por el agente") y §2 ubica los transcripts en `sessions/<proyecto>/`, con "`<proyecto>` = cwd codificado como slug" — pero el algoritmo cwd→slug no está escrito en ningún documento. La promesa de lectura por terceros no se puede ejercer: quien quiera *localizar* el fichero de una sesión conociendo el `cwd` y el id tiene que adivinar (o ingeniería-inversear) la codificación. Aflorada en la ronda 8 de pseudocódigo ([pseudocodigo.md](pseudocodigo.md), escenarios 33-35), donde una malla distribuida lo necesita tres veces: comitear el transcript dentro de la rama-resultado, leer el transcript para elegir el punto de un `fork(at)`, e importar una sesión ajena copiando el JSONL a su sitio.
 

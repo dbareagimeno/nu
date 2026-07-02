@@ -33,6 +33,20 @@ nu.config.data_dir()/
 
 - Agrupación **por proyecto** (slug del `cwd`): "continuar la última sesión
   de este repo" es un listado de directorio.
+- **El slug es parte del formato (G38).** Como este contrato promete lectura
+  por herramientas externas (§1), la codificación cwd→directorio no puede ser
+  un detalle privado. Algoritmo: todo carácter fuera de `[A-Za-z0-9.-]` se
+  sustituye por `_`; se recortan los `_` de ambos bordes; si queda vacío,
+  `"root"`. Ejemplo: `/home/diego/nu` → `home_diego_nu`. Es deliberadamente
+  **legible y con pérdida**: no es reversible, y dos `cwd` patológicamente
+  parecidos (`/a/b` y `/a_b`) pueden colisionar en el mismo directorio. No es
+  una identidad sino una **clave de agrupación**: la identidad canónica de
+  cada sesión viaja *dentro* del fichero (la línea `meta` lleva `cwd` e `id`)
+  — quien necesite desambiguar una colisión, lee `meta`. Para que ningún
+  plugin reimplemente la codificación, la extensión la expone como funciones
+  puras: `sessions.slug(cwd) -> string` y `sessions.dir(cwd) -> string`
+  (`data_dir()/sessions/<slug>`); las herramientas externas la componen desde
+  esta especificación.
 - Nombre de fichero = id de sesión: timestamp UTC + sufijo aleatorio.
   Ordenación lexicográfica = ordenación temporal.
 - Permisos `0600`: los transcripts contienen código y salidas de comandos.
