@@ -65,7 +65,7 @@ func TestPermissionDeniedHeadless(t *testing.T) {
 	}
 	h.expectEval(`return out.ev_source`, "headless")
 	h.expectEval(`return out.ev_tool`, "touch")
-	h.expectEval(`return out.ev_suggested`, "touch:x.txt") // tool:arg (arg_text)
+	h.expectEval(`return out.ev_suggested`, "touch:x.txt")             // tool:arg (arg_text)
 	h.expectEval(`return tostring(out.ev_session == out.sid)`, "true") // atribución G3
 	h.expectEval(`return out.meta_source`, "headless")
 	h.expectEval(`return out.meta_suggested`, "touch:x.txt")

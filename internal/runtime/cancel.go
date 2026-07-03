@@ -322,7 +322,7 @@ func (s *scheduler) protectedXPCall(L *lua.LState, tramp *lua.LFunction) int {
 	fn := L.CheckFunction(1)
 	errfn := L.CheckFunction(2)
 
-	enterProtected(L)      // G41 (ver protectedPCall)
+	enterProtected(L) // G41 (ver protectedPCall)
 	defer exitProtected(L)
 	top := L.GetTop()
 	L.Push(tramp) // fn corre a través del trampolín de G41
