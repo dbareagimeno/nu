@@ -1,0 +1,6 @@
+# Fuentes de terceros (se clonan en el build; no entran en el repo — CLAUDE.md/licencias)
+lua-5.4.7/
+# Artefactos de build
+*.wasm
+*.tar.gz
+go/bin/
