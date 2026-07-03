@@ -15,8 +15,10 @@ import (
 )
 
 // TestOfficialProductSetExcludeExample blinda la pieza 2 de G33: el conjunto oficial
-// de producto son las embebidas DISPONIBLES menos el andamiaje `example`. Sin él, el
-// flag escribiría el plugin de pruebas en la config del usuario.
+// de producto son las embebidas DISPONIBLES menos `nonProductEmbedded` — el
+// andamiaje `example` y la malla `mesh` (malla.md §1.4: embebida pero de
+// activación explícita). Sin esto, el flag escribiría plugins que el usuario no
+// pidió en su config.
 func TestOfficialProductSetExcludeExample(t *testing.T) {
 	all, err := embeddedNames()
 	if err != nil {
@@ -27,17 +29,19 @@ func TestOfficialProductSetExcludeExample(t *testing.T) {
 		t.Fatalf("officialProductSet: %v", err)
 	}
 
-	// `example` está en el catálogo embebido pero NO en el conjunto de producto.
-	if !contains(all, "example") {
-		t.Fatalf("precondición: `example` debería estar entre las embebidas; got %v", all)
-	}
-	if contains(product, "example") {
-		t.Fatalf("el conjunto de producto NO debe incluir `example`; got %v", product)
+	// Las excluidas están en el catálogo embebido pero NO en el conjunto de producto.
+	for name := range nonProductEmbedded {
+		if !contains(all, name) {
+			t.Fatalf("precondición: %q debería estar entre las embebidas; got %v", name, all)
+		}
+		if contains(product, name) {
+			t.Fatalf("el conjunto de producto NO debe incluir %q; got %v", name, product)
+		}
 	}
 
-	// El conjunto de producto = catálogo - {example}, sin perder ni añadir nada más.
-	if len(product) != len(all)-1 {
-		t.Fatalf("el conjunto de producto debería ser el catálogo menos 1 (example); all=%v product=%v", all, product)
+	// El conjunto de producto = catálogo - nonProductEmbedded, sin perder nada más.
+	if len(product) != len(all)-len(nonProductEmbedded) {
+		t.Fatalf("el conjunto de producto debería ser el catálogo menos las de nonProductEmbedded; all=%v product=%v", all, product)
 	}
 	for _, n := range product {
 		if !contains(all, n) {

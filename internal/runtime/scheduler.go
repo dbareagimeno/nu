@@ -955,27 +955,20 @@ func (s *scheduler) abort(t *task) {
 	panic(abortSignal{t: t})
 }
 
-// abortUpvalueSentinel es el valor (una tabla, no un string) con que forzamos a
-// gopher-lua a cerrar los upvalues abiertos del thread que se aborta. `LState.Error`
-// con un valor **no-string** ejecuta `closeAllUpvalues` antes de panicar (es el mismo
-// cierre que un `error{...}` normal dispara); aprovechamos ese efecto sin depender de
-// API interna. El pánico que `Error` lanza lo capturamos de inmediato (recover) y lo
-// descartamos: el aborto real lo lleva el `abortSignal` que lanzamos justo después.
-var abortUpvalueSentinel = &struct{ tag string }{tag: "nu.abort.close-upvalues"}
-
 // closeOpenUpvalues cierra los upvalues abiertos del thread `co` (los que capturan
 // locales de los frames que el aborto va a desenrollar), de modo que los valores
 // capturados sobrevivan al reseteo del registro que hace el `PCall` al recuperar el
-// pánico (ver `abort`). Lo hace por el único camino público que gopher-lua ofrece
-// para ello: `co.Error(tabla)` —que internamente llama a `closeAllUpvalues`— envuelto
-// en un `recover` que se traga su pánico (no es el aborto; el aborto lo lleva el
-// `panic(abortSignal)` posterior). No toca el registro de tasks ni el token; solo
-// fuerza el cierre de upvalues sobre `co`, que es la goroutine que corre `abort`.
+// pánico (ver `abort`). En un aborto la task ENTERA muere, así que cerrar desde el
+// índice 0 (todos) es lo correcto. Históricamente esto se forzaba con el truco de
+// `co.Error(tabla)` (el camino público que dispara `closeAllUpvalues`), pero ese
+// camino está GATEADO por `hasErrorFunc` — el mismo flag que el blindaje de G41
+// (cancel.go) arma durante un `pcall` envuelto —, y una task abortada dentro de un
+// `pcall` (el cuerpo del turno del agente, sin ir más lejos) lo tenía armado: el
+// cierre se saltaba, el cleanup leía `nil` y el turno moría sin resolver a nadie.
+// Ahora el cierre es DIRECTO (`closeUnwoundUpvalues`, cancel.go), inmune al flag y
+// sin pánico-vehículo que absorber.
 func (s *scheduler) closeOpenUpvalues(co *lua.LState) {
-	defer func() { _ = recover() }() // el pánico de Error es solo el vehículo del cierre; se descarta
-	tbl := co.NewTable()
-	tbl.RawSetString("__nu_abort", lua.LString(abortUpvalueSentinel.tag))
-	co.Error(tbl, 0) // cierra closeAllUpvalues y panica; el recover de arriba lo absorbe
+	closeUnwoundUpvalues(co, 0)
 }
 
 // runCleanups ejecuta la pila LIFO de liberadores registrados con
