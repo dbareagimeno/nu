@@ -60,6 +60,13 @@ type runtimeConfig struct {
 		CAFile string `toml:"ca_file"` // CA corporativa a añadir a la raíz de confianza TLS
 		Proxy  string `toml:"proxy"`   // URL de proxy por defecto (vacío = proxy del entorno)
 	} `toml:"net"`
+	// VM selecciona el motor de la VM (migracion-vm.md M04, DM2): "gopher"
+	// (default) o "wasm" (PUC-Lua sobre wazero). Vacío = gopher. La variable de
+	// entorno NU_VM gana sobre este valor (la vía de los tests). Se retira en M17
+	// cuando wasm sea la única VM.
+	VM struct {
+		Backend string `toml:"backend"`
+	} `toml:"vm"`
 }
 
 // loadNuToml lee y parsea `config.dir()/nu.toml`. Devuelve un `runtimeConfig` cero

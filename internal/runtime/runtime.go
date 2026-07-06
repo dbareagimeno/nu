@@ -90,6 +90,12 @@ type Runtime struct {
 	// el estado principal lo deja en false. Inmutable tras la construcción.
 	isWorker bool
 
+	// vmBackend es el motor de VM de este Runtime (migracion-vm.md M04, DM2):
+	// gopher-lua (actual) o wasm (PUC-Lua sobre wazero). Inmutable tras `New`. En
+	// backend gopher, `L` es el estado real; en wasm, el estado Lua vive en
+	// internal/vmwasm (lo que M05-M13 van portando). Se lee con `VMBackend()`.
+	vmBackend VMBackend
+
 	// ownerStack es la pila de contextos de plugin activos (§14). El tope es el
 	// plugin "en cuyo contexto corre el código" que devuelve `nu.plugin.current`;
 	// vacía = código del usuario/core (`init.lua` del usuario, chunk de `-e`),
@@ -151,6 +157,12 @@ type config struct {
 	// vacía explícita es válida (activa nada); distinta de "no fijada" (usa `nu.toml`).
 	enabledOverride    []string
 	enabledOverrideSet bool
+
+	// vmBackend / vmBackendSet fijan el motor de VM EN MEMORIA (migracion-vm.md M04,
+	// DM2), con la máxima precedencia (por encima de NU_VM y nu.toml): la vía de un
+	// test que quiere forzar un backend concreto sin depender del entorno.
+	vmBackend    VMBackend
+	vmBackendSet bool
 }
 
 // Option ajusta la construcción de un Runtime. El default sirve para producción
@@ -230,6 +242,18 @@ func WithEnabledPlugins(names []string) Option {
 		c.enabledOverrideSet = true
 	}
 }
+
+// WithVMBackend fija el motor de VM del Runtime EN MEMORIA (migracion-vm.md M04,
+// DM2), con precedencia sobre la variable de entorno `NU_VM` y sobre
+// `nu.toml [vm] backend`. Es la vía de los tests que ejercen un backend concreto
+// de forma determinista. Sin esta Option, manda `NU_VM`; sin ella, `nu.toml`; sin
+// nada, gopher (el default seguro hasta la conmutación de M16).
+func WithVMBackend(b VMBackend) Option {
+	return func(c *config) { c.vmBackend = b; c.vmBackendSet = true }
+}
+
+// VMBackend devuelve el motor de VM resuelto para este Runtime (M04, DM2).
+func (rt *Runtime) VMBackend() VMBackend { return rt.vmBackend }
 
 // New construye un Runtime listo para ejecutar Lua: abre solo las librerías
 // permitidas por el baseline (§1.2), recorta `os`, elimina `io`/`dofile`/
@@ -318,6 +342,12 @@ func New(opts ...Option) *Runtime {
 	if cfg.enabledOverrideSet {
 		rt.ldr.enabled = cfg.enabledOverride
 	}
+	// Backend de VM (M04, DM2): precedencia WithVMBackend > NU_VM > nu.toml > gopher.
+	// Hoy `New` construye siempre el estado gopher (arriba); el camino de arranque
+	// wasm paralelo lo cablea M05-M13 conforme la superficie nu.* se porta. Registrar
+	// el backend resuelto ya permite al arnés de tests y al CI ramificar (skip list).
+	rt.vmBackend = resolveVMBackend(&cfg, nuCfg.VM.Backend)
+
 	rt.sched = newScheduler(rt, cfg.sliceBudget)
 	applySandbox(L)
 	registerNu(rt)

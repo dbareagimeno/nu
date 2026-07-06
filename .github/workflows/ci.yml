@@ -191,3 +191,11 @@ jobs:
 
       - name: Tests del backend wasm
         run: go test ./internal/vmwasm/
+
+      - name: Suite DUAL (NU_VM=wasm)
+        # Patrón estrangulador (migracion-vm.md §3): la suite completa corre también
+        # con el backend wasm seleccionado. Hasta que `New` ramifique por backend
+        # (M05+), internal/runtime sigue sobre gopher aunque NU_VM=wasm (el selector
+        # sólo fija el campo); conforme M05-M13 porten módulos, esta corrida ejerce
+        # de verdad el backend nuevo y la lista de skips (skipIfWasm) se recorta.
+        run: NU_VM=wasm go test ./...
