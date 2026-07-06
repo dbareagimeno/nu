@@ -484,10 +484,35 @@ func (rt *Runtime) procSpawn(L *lua.LState) int {
 	if !ok {
 		return 0
 	}
+	p, err := rt.spawnProc(argv, opts)
+	if err != nil {
+		mapProcStartError(L, err)
+		return 0
+	}
+	ud := L.NewUserData()
+	ud.Value = p
+	L.SetMetatable(ud, L.GetTypeMetatable(procTypeName))
+	L.Push(ud)
+	return 1
+}
+
+// spawnProc arranca el subproceso descrito por `argv`/`opts` y monta su handle
+// `luaProc` —pipes, tracking, reaper y finalizer—, **sin tocar la VM**: es el
+// núcleo VM-agnóstico que comparten el backend gopher (`procSpawn`) y el wasm
+// (`registerProcWasm`). Toma aquí la foto del overlay de `nu.sys.setenv` (§7), como
+// el resto de `spawn`, en el estado principal. Devuelve o el handle ya arrancado o
+// el error **crudo** de arranque (`StdinPipe`/`os.Pipe`/`Start`), que cada backend
+// traduce a `ENOENT`/`EACCES`/`EIO` con su propio mapeador (`mapProcStartError` en
+// gopher, `mapProcStartErrorWasm` en wasm). No cambia el comportamiento observable
+// del backend gopher: allí `rt.sys` y `rt.sched` siempre existen, así que las
+// guardas de nil nunca se toman —solo permiten un `rt` mínimo en los tests de wasm—.
+func (rt *Runtime) spawnProc(argv []string, opts procOpts) (*luaProc, error) {
 	// Foto del overlay de `nu.sys.setenv` (S17): el subproceso ve los `setenv`
-	// previos a este `spawn` (§7). `spawn` corre en el estado principal bajo el
-	// token, así que esta lectura no compite con un `setenv` concurrente.
-	opts.envOver = rt.sys.envOverlay()
+	// previos a este `spawn` (§7). Corre en el estado principal, así que esta lectura
+	// no compite con un `setenv` concurrente.
+	if rt.sys != nil {
+		opts.envOver = rt.sys.envOverlay()
+	}
 
 	cmd := newCmd(argv, opts)
 
@@ -501,22 +526,19 @@ func (rt *Runtime) procSpawn(L *lua.LState) int {
 	// vale `StdinPipe` (es de escritura; `close_stdin` lo cierra a mano).
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		mapProcStartError(L, err)
-		return 0
+		return nil, err
 	}
 	rOut, wOut, err := os.Pipe()
 	if err != nil {
 		_ = stdin.Close()
-		mapProcStartError(L, err)
-		return 0
+		return nil, err
 	}
 	rErr, wErr, err := os.Pipe()
 	if err != nil {
 		_ = stdin.Close()
 		_ = rOut.Close()
 		_ = wOut.Close()
-		mapProcStartError(L, err)
-		return 0
+		return nil, err
 	}
 	cmd.Stdout = wOut
 	cmd.Stderr = wErr
@@ -527,8 +549,7 @@ func (rt *Runtime) procSpawn(L *lua.LState) int {
 		_ = wOut.Close()
 		_ = rErr.Close()
 		_ = wErr.Close()
-		mapProcStartError(L, err)
-		return 0
+		return nil, err
 	}
 	// Tras `Start`, el hijo ya tiene su copia de los extremos de escritura; cerramos
 	// los NUESTROS para que, cuando el hijo termine y cierre los suyos, los lectores
@@ -549,8 +570,10 @@ func (rt *Runtime) procSpawn(L *lua.LState) int {
 		ownerName: rt.currentOwner(),
 	}
 
-	rt.sched.trackProc(p)
-	rt.sched.track(p) // registro de handles por dueño (S13): que `reload` lo mate
+	if rt.sched != nil {
+		rt.sched.trackProc(p)
+		rt.sched.track(p) // registro de handles por dueño (S13): que `reload` lo mate
+	}
 
 	// Reaper de fondo: una goroutine que llama a `cmd.Wait` (vía `p.wait`, idempotente
 	// con `waitOnce`) en cuanto el proceso muera. SIN ella, un proceso al que se
@@ -567,11 +590,7 @@ func (rt *Runtime) procSpawn(L *lua.LState) int {
 	// contra una fuga, no la vía de vida del proceso (esa es `cleanup`)—.
 	runtime.SetFinalizer(p, func(p *luaProc) { p.killSignal(syscall.SIGKILL) })
 
-	ud := L.NewUserData()
-	ud.Value = p
-	L.SetMetatable(ud, L.GetTypeMetatable(procTypeName))
-	L.Push(ud)
-	return 1
+	return p, nil
 }
 
 // checkProc recupera el `*luaProc` del userdata `self` del primer argumento de un
@@ -648,13 +667,20 @@ func (rt *Runtime) procCloseStdin(L *lua.LState) int {
 	if p == nil {
 		return 0
 	}
+	p.closeStdin()
+	return 0
+}
+
+// closeStdin cierra el stdin del proceso (idempotente), señalándole EOF. Es la
+// parte VM-agnóstica de `close_stdin` (§6): la comparten el backend gopher
+// (`procCloseStdin`) y el wasm (`registerProcWasm`). Cerrar dos veces es inocuo.
+func (p *luaProc) closeStdin() {
 	p.stdinMu.Lock()
 	defer p.stdinMu.Unlock()
 	if p.stdin != nil && !p.stdinClosed {
 		_ = p.stdin.Close()
 		p.stdinClosed = true
 	}
-	return 0
 }
 
 // procReadLine implementa `Proc:read_line(which) -> string?` ⏸ (§6): lee una línea
