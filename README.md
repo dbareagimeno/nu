@@ -437,7 +437,8 @@ especificación, y el código los implementa. Orden de lectura sugerido:
 [Pseudocódigo de validación](docs/pseudocodigo.md) ·
 [Problemas abiertos](docs/problemas.md) ·
 [Pospuesto](docs/pospuesto.md) ·
-[Plan de implementación](docs/implementacion.md)
+[Plan de implementación](docs/implementacion.md) ·
+[Plan de migración de la VM](docs/migracion-vm.md)
 
 ---
 
