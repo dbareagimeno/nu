@@ -31,6 +31,30 @@ func loaderInst(t *testing.T, mods map[string]string) *Instance {
 	return inst
 }
 
+// M13.0: nu.version.api refleja el nivel que el Runtime inyecta con SetAPIVersion
+// (prep de M13d: el arranque real sobre wasm expone nu.version). En los tests
+// aislados sin fijarlo queda en 0.
+func TestVersionAPI(t *testing.T) {
+	p, err := NewPool()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Close() })
+	p.SetAPIVersion(7)
+	inst, err := p.NewInstance()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = inst.Close() })
+	out, lerr, err := inst.Eval(`return tostring(nu.version.api)`)
+	if err != nil || lerr != "" {
+		t.Fatalf("lerr=%q err=%v", lerr, err)
+	}
+	if out != "7" {
+		t.Fatalf("nu.version.api: got %q want 7", out)
+	}
+}
+
 // M13.1: require resuelve un módulo y devuelve su valor de retorno.
 func TestLoaderRequireBasico(t *testing.T) {
 	inst := loaderInst(t, map[string]string{

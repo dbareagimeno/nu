@@ -46,8 +46,9 @@ type Pool struct {
 	reg      *hostRegistry
 	ui       UIBackend // backend de compositor (M11); nil = headless (G20)
 
-	isWorker bool              // true en el Pool de un worker (M12): preludio sin ui/events/spawn
-	modules  map[string]string // fuentes de módulo por nombre para require (M13, DM5)
+	isWorker   bool              // true en el Pool de un worker (M12): preludio sin ui/events/spawn
+	modules    map[string]string // fuentes de módulo por nombre para require (M13, DM5)
+	apiVersion int               // nivel de nu.version.api que inyecta el preludio (M13, lo fija el Runtime)
 
 	// Registro de workers vivos de este Pool (M12), para _send/_recv/_terminate y
 	// para el apagado ordenado. Sólo lo usa el Pool principal.
@@ -123,6 +124,11 @@ func NewPool() (*Pool, error) {
 	p.registerWorkerHost()     // nu.worker.spawn/_send/_recv/_terminate (M12)
 	return p, nil
 }
+
+// SetAPIVersion fija el nivel de nu.version.api que el preludio expone. Lo llama
+// el Runtime al construir el estado wasm (M13), con su APILevel. Debe llamarse
+// antes de NewInstance (el preludio se arma con él).
+func (p *Pool) SetAPIVersion(v int) { p.apiVersion = v }
 
 // Close libera las instancias del Pool. El runtime wazero es compartido a nivel
 // de proceso y no se cierra aquí (vive lo que el proceso); las instancias se

@@ -18,7 +18,19 @@ Rama de la migración: **`claude/migracion-vm-wasm`**.
 > (compositor.go) a `UIBackend` y el input real del tty a `FeedInput` · **M13d**
 > `Runtime.New` ramifica por backend a wasm, carga las 8 extensiones vía el loader,
 > y la suite pasa con `NU_VM=wasm` (skips → VACÍA). Pendiente arrastrado: watchdog
-> por época (DM4). · Bitácora abajo.
+> por época (DM4).
+>
+> **Hallazgo de M13a (anotado):** un prototipo del arranque headless (`nu -e`)
+> sobre wasm **funciona** manualmente (`NU_VM=wasm nu -e 'return nu.version.api'`
+> → `2`, con `nu.version` inyectado por el preludio), pero enrutar el `EvalString`
+> del backend wasm en la **suite dual** (`NU_VM=wasm go test ./...`) la **cuelga**:
+> el estado wasm principal aún NO tiene watchdog (DM4) ni el catálogo real, así que
+> un test de bucle de CPU (que en gopher aborta el watchdog) gira para siempre. Por
+> eso el arranque del binario sobre wasm es **M13d de pleno derecho** (exige el
+> watchdog y el catálogo antes de enrutar `EvalString`/la suite dual a wasm), no un
+> añadido acotado; el prototipo se revirtió para no desestabilizar CI, dejando
+> preparado `Pool.SetAPIVersion` + `nu.version` en el preludio para cuando llegue.
+> · Bitácora abajo.
 > Censo de la frontera (M01, cerrado): [migracion-vm-censo.md](migracion-vm-censo.md).
 
 ---

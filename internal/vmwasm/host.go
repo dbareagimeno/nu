@@ -148,6 +148,7 @@ func (p *Pool) preludio() string {
 		}
 	}
 	b.WriteString("}\n")
+	fmt.Fprintf(&b, "local __api_version = %d\n", p.apiVersion)
 	b.WriteString(preludioMonta)
 	b.WriteString(preludioSched)
 	b.WriteString(preludioTask)
@@ -328,6 +329,11 @@ end
 
 nu.json = nu.json or {}
 nu.json.NULL = NULL
+
+-- nu.version (api.md §1): el nivel de API lo inyecta el Runtime (APILevel). Crece
+-- solo por adición; romper una firma rompe el mundo. En los tests aislados de
+-- vmwasm queda en 0 (no se fija backend real).
+nu.version = { api = __api_version }
 
 _G.nu = nu
 -- __hcall: el despacho síncrono de métodos de handle (M10). La primitiva
