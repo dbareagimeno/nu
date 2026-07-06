@@ -7,10 +7,10 @@ Rama de la migración: **`claude/migracion-vm-wasm`**.
 
 > **▶ Próxima sesión: `M13b` (en curso)** — catálogo real de primitivas. Ya están
 > probados TODOS los mecanismos del backend (M05-M12), el loader curado (M13a) y
-> **codecs, re, fs, sys, log y text (width/truncate)** del catálogo (ver bitácora
-> M13b). Faltan: text-Blocks (wrap/markdown/highlight/diff, acoplado a M13c) y
-> proc/http/ws/search (⏸ con estado: tablas de procesos/streams/conexiones/greps).
-> El patrón está
+> **codecs, re, fs, sys, log, text (width/truncate) y http.request** del catálogo,
+> más el **despacho de métodos-de-handle ⏸ validado** (desbloquea Proc/Ws/Stream).
+> Faltan: text-Blocks (M13c), http.stream, ws, search y proc (handles con métodos
+> ⏸ — patrón ya validado). El patrón está
 > fijado (ver M13b): el catálogo wasm vive en `internal/runtime` (junto a sus
 > gemelos gopher, reusando las mismas librerías Go), en ficheros con **prefijo**
 > `vmwasm_<módulo>.go` — NUNCA sufijo `_wasm.go` (ver el ⚠️ de abajo).
