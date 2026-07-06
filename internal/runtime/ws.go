@@ -448,6 +448,11 @@ func (w *luaWs) close() {
 		if w.cancel != nil {
 			w.cancel()
 		}
-		w.s.untrackWs(w)
+		// El rastreo del scheduler (para `Runtime.Close` → `stopAllWs`) es del backend
+		// gopher; el backend wasm (M13b) reusa este handle VM-agnóstico con `s == nil`
+		// (su ciclo de vida a nivel de Runtime lo cablea M13d), así que se guarda el nil.
+		if w.s != nil {
+			w.s.untrackWs(w)
+		}
 	})
 }
