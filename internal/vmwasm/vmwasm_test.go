@@ -155,18 +155,25 @@ func TestMultiInstanciaAislada(t *testing.T) {
 	}
 }
 
-// M02.7: el dispatcher pluggable — el default rechaza; uno instalado responde.
-// Es la costura que M05 rellena. Aquí un dispatcher de eco valida el ida y vuelta
-// de bytes por el buffer.
+// M02.7: el dispatcher pluggable — el default rechaza un id inválido; uno
+// instalado responde. Es la costura que M05 rellena. Aquí un dispatcher de eco
+// valida el ida y vuelta de bytes por el buffer.
+//
+// Nota (M10): el dispatcher por defecto ya no es "rechaza todo" (M02) sino el
+// registro real de primitivas (dispatchPrimitive). Se prueba su rechazo con un id
+// FUERA DE RANGO (999): no hay tantas primitivas registradas, así que
+// dispatchPrimitive devuelve error antes de tocar el wire. Un id bajo (0,1) hoy
+// resuelve a una primitiva real (__handle_call*, registerHandleDispatch) y ya no
+// serviría de "rechazo".
 func TestDispatcherCostura(t *testing.T) {
 	inst := newInstance(t)
-	// default: rechaza
-	out, _, err := inst.Eval(`local ok, r = __nu_host(1, "hola"); return tostring(ok)`)
+	// default: rechaza un id fuera de rango
+	out, _, err := inst.Eval(`local ok, r = __nu_host(999, ""); return tostring(ok)`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if out != "false" {
-		t.Fatalf("el dispatcher por defecto debía rechazar; got %q", out)
+		t.Fatalf("el dispatcher por defecto debía rechazar un id fuera de rango; got %q", out)
 	}
 	// eco: id 7 devuelve args en mayúsculas
 	inst.SetDispatcher(func(id int32, args []byte) ([]byte, error) {

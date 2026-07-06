@@ -152,8 +152,13 @@ jobs:
 
       - name: go test -race
         # -shuffle=on baraja el orden de los tests: caza dependencias de orden
-        # ocultas a coste cero.
-        run: go test -race -shuffle=on ./...
+        # ocultas a coste cero. Se EXCLUYE internal/vmwasm: su suite compila N
+        # módulos wazero con el motor JIT (páginas ejecutables mmap), y bajo la
+        # instrumentación de -race el mmap ejecutable agota la memoria del runner
+        # (OOM, no una carrera). El backend wasm tiene su propio job (vmblob) que
+        # corre su suite completa sin -race y sus tests de concurrencia CON -race
+        # dirigido. Se une a la suite normal cuando wasm sea la única VM (M17).
+        run: go test -race -shuffle=on $(go list ./... | grep -v /internal/vmwasm)
 
   # Blob de la VM wasm (migracion-vm.md M02, DM1): reconstruye nu.wasm desde las
   # fuentes pineadas de Lua + el shim, y verifica que el artefacto comiteado no ha
@@ -189,8 +194,13 @@ jobs:
             exit 1
           }
 
-      - name: Tests del backend wasm
+      - name: Tests del backend wasm (suite completa)
         run: go test ./internal/vmwasm/
+
+      - name: Tests de concurrencia del backend wasm (-race dirigido)
+        # El driver del scheduler (goroutines de fondo) es lo que -race audita; se
+        # corre sobre los tests que lo ejercen, sin OOM (subconjunto acotado).
+        run: go test -race -run 'TestSched|TestPrim|TestTask|TestTrampolinMultiInstancia' ./internal/vmwasm/
 
       - name: Suite DUAL (NU_VM=wasm)
         # Patrón estrangulador (migracion-vm.md §3): la suite completa corre también

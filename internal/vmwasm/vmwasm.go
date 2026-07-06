@@ -46,34 +46,59 @@ type Pool struct {
 	reg      *hostRegistry
 }
 
-// NewPool prepara el runtime wazero, registra el módulo host "nu" (el trampolín
-// y el dispatch) y compila el blob. El módulo host se registra una vez; las
-// funciones enrutan a la Instance correcta por el valor del contexto (cada
-// instancia llama a sus exports con su propio ctx).
-func NewPool() (*Pool, error) {
-	ctx := context.Background()
-	rt := wazero.NewRuntime(ctx)
-	wasi_snapshot_preview1.MustInstantiate(ctx, rt)
+// El runtime wazero y el módulo compilado se COMPARTEN a nivel de proceso: el
+// blob nu.wasm se compila con el JIT UNA sola vez (páginas ejecutables mmap
+// caras), no por Pool. Es lo que el doc del Pool promete ("compila una vez") y
+// lo que evita el OOM de crear N runtimes JIT (p. ej. en la suite de tests).
+// Distintos Pools comparten runtime+módulo pero tienen su propio registro de
+// primitivas; las funciones host enrutan a la Instance correcta por el ctx, y de
+// ahí a su Pool y su registro. El motor COMPILADOR es obligatorio: el trampolín
+// (M03) depende de Snapshot/Restore, que el intérprete NO reproduce igual
+// (hallazgo M10) — un dato de contención más para el veto de M15.
+var (
+	sharedOnce     sync.Once
+	sharedRT       wazero.Runtime
+	sharedCompiled wazero.CompiledModule
+	sharedErr      error
+)
 
-	if _, err := rt.NewHostModuleBuilder("nu").
-		NewFunctionBuilder().WithFunc(hostTry).Export("host_try").
-		NewFunctionBuilder().WithFunc(hostThrow).Export("host_throw").
-		NewFunctionBuilder().WithFunc(hostDispatch).Export("host_dispatch").
-		Instantiate(ctx); err != nil {
-		_ = rt.Close(ctx)
-		return nil, fmt.Errorf("vmwasm: registrar módulo host: %w", err)
-	}
-
-	compiled, err := rt.CompileModule(ctx, nuWasm)
-	if err != nil {
-		_ = rt.Close(ctx)
-		return nil, fmt.Errorf("vmwasm: compilar nu.wasm: %w", err)
-	}
-	return &Pool{rt: rt, compiled: compiled, reg: newHostRegistry()}, nil
+func sharedRuntime() (wazero.Runtime, wazero.CompiledModule, error) {
+	sharedOnce.Do(func() {
+		ctx := context.Background()
+		sharedRT = wazero.NewRuntime(ctx)
+		wasi_snapshot_preview1.MustInstantiate(ctx, sharedRT)
+		if _, err := sharedRT.NewHostModuleBuilder("nu").
+			NewFunctionBuilder().WithFunc(hostTry).Export("host_try").
+			NewFunctionBuilder().WithFunc(hostThrow).Export("host_throw").
+			NewFunctionBuilder().WithFunc(hostDispatch).Export("host_dispatch").
+			Instantiate(ctx); err != nil {
+			sharedErr = fmt.Errorf("vmwasm: registrar módulo host: %w", err)
+			return
+		}
+		sharedCompiled, sharedErr = sharedRT.CompileModule(ctx, nuWasm)
+		if sharedErr != nil {
+			sharedErr = fmt.Errorf("vmwasm: compilar nu.wasm: %w", sharedErr)
+		}
+	})
+	return sharedRT, sharedCompiled, sharedErr
 }
 
-// Close libera el runtime y todas sus instancias.
-func (p *Pool) Close() error { return p.rt.Close(context.Background()) }
+// NewPool prepara un Pool con su registro de primitivas propio, sobre el runtime
+// wazero compartido del proceso.
+func NewPool() (*Pool, error) {
+	rt, compiled, err := sharedRuntime()
+	if err != nil {
+		return nil, err
+	}
+	p := &Pool{rt: rt, compiled: compiled, reg: newHostRegistry()}
+	p.registerHandleDispatch() // primitivas genéricas de despacho de métodos (M10)
+	return p, nil
+}
+
+// Close libera las instancias del Pool. El runtime wazero es compartido a nivel
+// de proceso y no se cierra aquí (vive lo que el proceso); las instancias se
+// cierran individualmente con Instance.Close.
+func (p *Pool) Close() error { return nil }
 
 // instanceKey identifica a la Instance en el contexto para que las funciones
 // host (compartidas por el módulo) enruten al estado correcto.
@@ -106,6 +131,7 @@ type Instance struct {
 	coResumeFn  api.Function
 	resultLen   api.Function
 	schedStepFn api.Function // nu_sched_step, perezoso (M06)
+	handles     *handleTable // tabla de objetos vivos tras los handles (M10, C5)
 
 	mu sync.Mutex // sólo protege contra reentrada accidental en tests, no concurrencia real
 }
@@ -115,7 +141,7 @@ type Instance struct {
 // libs del baseline. El dispatcher arranca en el que rechaza todo; SetDispatcher
 // lo sustituye (M05).
 func (p *Pool) NewInstance() (*Instance, error) {
-	inst := &Instance{pool: p}
+	inst := &Instance{pool: p, handles: newHandleTable()}
 	// ctx con el snapshotter (lo exige el trampolín) y la propia instancia.
 	base := experimental.WithSnapshotter(context.Background())
 	inst.ctx = context.WithValue(base, instanceKey{}, inst)

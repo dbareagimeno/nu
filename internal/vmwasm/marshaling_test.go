@@ -80,6 +80,35 @@ func TestWireBytesNoUTF8(t *testing.T) {
 	}
 }
 
+// M05.2b: bytes corruptos con un recuento gigante NO revientan la memoria. Un
+// u32 de recuento arbitrario (p. ej. de un dispatcher que pasó basura o de un
+// frame truncado) pediría `make([]any, ~1e9)` → OOM. `count()` lo acota contra
+// los bytes restantes y devuelve error. Blinda el arreglo del OOM de M10 (la
+// costura del dispatcher pasaba bytes crudos a Decode).
+func TestWireRecuentoCorrupto(t *testing.T) {
+	// "hola": el primer u32 LE es ~1.6e9, muy por encima de los 0 bytes que quedan.
+	if _, err := Decode([]byte("hola")); err == nil {
+		t.Fatal("Decode aceptó un recuento gigante en vez de rechazarlo (riesgo de OOM)")
+	}
+	// un array anidado con recuento imposible dentro de una lista válida.
+	corrupto := []byte{
+		1, 0, 0, 0, // lista de 1 valor
+		wArray,                 // el valor es un array...
+		0xff, 0xff, 0xff, 0xff, // ...de 4294967295 elementos: imposible
+	}
+	if _, err := Decode(corrupto); err == nil {
+		t.Fatal("Decode aceptó un array con recuento imposible (riesgo de OOM)")
+	}
+	// un buffer válido de verdad NO se rechaza por la guardia (no hay falso positivo).
+	enc, err := Encode([]any{[]any{int64(1), int64(2), int64(3)}, map[string]any{"k": "v"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Decode(enc); err != nil {
+		t.Fatalf("la guardia rechazó datos válidos (falso positivo): %v", err)
+	}
+}
+
 // M05.3: round-trip Go→Lua→Go a través de una primitiva `echo` registrada, que
 // devuelve sus args tal cual. Verifica el marshaling REAL cruzando la frontera
 // wasm en ambos sentidos.

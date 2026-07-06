@@ -41,7 +41,8 @@ type hostRegistry struct {
 	fns        []HostFn // indexado por id
 	names      []string // id→nombre (para diagnósticos y el preludio)
 	byName     map[string]int32
-	suspending []bool // id→¿suspende? (M09): su thunk cede al scheduler
+	suspending []bool                  // id→¿suspende? (M09): su thunk cede al scheduler
+	methods    map[string]HandleMethod // "Tipo.metodo" → método de handle (M10, C5)
 }
 
 func newHostRegistry() *hostRegistry {
@@ -165,6 +166,16 @@ local W_STR, W_ARRAY, W_MAP, W_HANDLE, W_NULL = 5, 6, 7, 8, 9
 -- NULL: sentinel único (nu.json.NULL, G11). Una tabla vacía por identidad.
 local NULL = setmetatable({}, { __tostring = function() return "null" end })
 
+-- Metatable de los handles opacos (C5, M10). h:metodo(...) despacha a la host
+-- function genérica __hcall (síncrona), que resuelve el tipo del handle en Go y
+-- llama al método registrado. Los métodos suspendentes (Proc:wait) se cablean en
+-- M13 con un despacho a __hcall_s según una tabla de "suspende".
+local __handle_mt = {
+  __index = function(self, method)
+    return function(_, ...) return _G.__hcall(self.__id, method, ...) end
+  end,
+}
+
 -- __enc(v, out): serializa v al array de trozos "out".
 local function __enc(v, out)
   local t = type(v)
@@ -179,6 +190,9 @@ local function __enc(v, out)
     end
   elseif t == "string" then
     out[#out+1] = string.char(W_STR) .. string.pack("<I4", #v) .. v
+  elseif t == "table" and getmetatable(v) == __handle_mt then
+    -- un handle opaco (C5): cruza como su índice, no como tabla.
+    out[#out+1] = string.char(W_HANDLE) .. string.pack("<I4", v.__id)
   elseif t == "table" then
     -- ¿secuencia (array) o mapa? Heurística: #v cubre 1..n contiguos.
     local n = #v
@@ -216,7 +230,10 @@ local function __dec(s, pos)
     local n = string.unpack("<I4", s, pos); pos = pos + 4
     return string.sub(s, pos, pos + n - 1), pos + n
   elseif tag == W_HANDLE then
-    local h = string.unpack("<I4", s, pos); return { __handle = h }, pos + 4
+    local h = string.unpack("<I4", s, pos)
+    -- Un handle opaco (C5): una tabla con su índice y una metatable que despacha
+    -- métodos (h:metodo(...)) a la host function genérica __hcall (M10).
+    return setmetatable({ __id = h }, __handle_mt), pos + 4
   elseif tag == W_ARRAY then
     local n = string.unpack("<I4", s, pos); pos = pos + 4
     local t = {}
@@ -302,6 +319,11 @@ nu.json = nu.json or {}
 nu.json.NULL = NULL
 
 _G.nu = nu
+-- __hcall: el despacho síncrono de métodos de handle (M10). La primitiva
+-- "__handle_call" la registra registerHandleDispatch; aquí se cablea al global
+-- que la metatable de handles usa.
+_G.__hcall = nu.__handle_call
+_G.__hcall_s = nu.__handle_call_s
 -- exporta el codec para los tests de la frontera (no forma parte de nu.*).
 _G.__wire = { enc_list = __enc_list, dec_list = __dec_list, NULL = NULL }
 `

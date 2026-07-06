@@ -153,6 +153,24 @@ func (d *decoder) u32() (uint32, error) {
 	return x, nil
 }
 
+// count lee un u32 destinado a dimensionar un `make` (nº de elementos de un
+// array/map o de la lista raíz) y lo VALIDA contra el buffer restante antes de
+// devolverlo. Cada elemento cuesta al menos un byte en el wire, así que un
+// recuento mayor que los bytes que quedan es imposible: son bytes corruptos
+// (p. ej. un dispatcher que pasó basura, o un frame truncado). Rechazarlo aquí
+// evita `make([]any, nºgigante)` → OOM. Sin esta guardia, un u32 arbitrario se
+// convierte en una petición de memoria de hasta 4 GiB.
+func (d *decoder) count() (uint32, error) {
+	n, err := d.u32()
+	if err != nil {
+		return 0, err
+	}
+	if int64(n) > int64(len(d.b)-d.pos) {
+		return 0, fmt.Errorf("vmwasm/wire: recuento %d excede los %d bytes restantes (datos corruptos)", n, len(d.b)-d.pos)
+	}
+	return n, nil
+}
+
 func (d *decoder) u64() (uint64, error) {
 	if d.pos+8 > len(d.b) {
 		return 0, fmt.Errorf("vmwasm/wire: u64 truncado")
@@ -197,7 +215,7 @@ func (d *decoder) value() (any, error) {
 		x, err := d.u32()
 		return Handle(x), err
 	case wArray:
-		n, err := d.u32()
+		n, err := d.count()
 		if err != nil {
 			return nil, err
 		}
@@ -209,7 +227,7 @@ func (d *decoder) value() (any, error) {
 		}
 		return arr, nil
 	case wMap:
-		n, err := d.u32()
+		n, err := d.count()
 		if err != nil {
 			return nil, err
 		}
@@ -236,7 +254,7 @@ func (d *decoder) value() (any, error) {
 // Decode deserializa una lista de valores (u32 count + valores).
 func Decode(b []byte) ([]any, error) {
 	d := &decoder{b: b}
-	n, err := d.u32()
+	n, err := d.count()
 	if err != nil {
 		return nil, err
 	}
