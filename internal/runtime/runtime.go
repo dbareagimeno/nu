@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/dbareagimeno/nu/internal/vmwasm"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -95,6 +96,24 @@ type Runtime struct {
 	// backend gopher, `L` es el estado real; en wasm, el estado Lua vive en
 	// internal/vmwasm (lo que M05-M13 van portando). Se lee con `VMBackend()`.
 	vmBackend VMBackend
+
+	// wasmPool / wasm son el estado del backend wasm (migracion-vm.md M13d): el
+	// Pool que compila el catálogo de primitivas nu.* portadas y la Instance —el
+	// estado Lua aislado— sobre la que corren `EvalString`/`EvalTaskString` cuando
+	// `vmBackend == VMWasm`. Ambos son nil en backend gopher (nunca se construyen).
+	// Los construye `buildWasmState`, que `New` invoca sólo si el backend resuelto
+	// es wasm; `Close` los libera. **Transición del estrangulador:** el `rt` gopher
+	// (L, sched, fs, http, sys, ui, log) se construye igual —el catálogo wasm reusa
+	// ese estado de sesión (rt.fs/rt.http/...)—; lo que ramifica por backend es dónde
+	// corre el chunk (aquí, o en `L`).
+	wasmPool *vmwasm.Pool
+	wasm     *vmwasm.Instance
+	// wasmErr guarda un fallo de construcción del estado wasm (`buildWasmState`).
+	// La firma de `New` es sagrada (no devuelve error), así que un fallo del backend
+	// wasm no puede propagarse ahí: se aparca aquí y lo devuelven `EvalString`/
+	// `EvalTaskString` al primer intento de evaluar (como el `configErr` aplazado a
+	// `Boot`). En backend gopher siempre es nil.
+	wasmErr error
 
 	// ownerStack es la pila de contextos de plugin activos (§14). El tope es el
 	// plugin "en cuyo contexto corre el código" que devuelve `nu.plugin.current`;
@@ -351,7 +370,68 @@ func New(opts ...Option) *Runtime {
 	rt.sched = newScheduler(rt, cfg.sliceBudget)
 	applySandbox(L)
 	registerNu(rt)
+
+	// Arranque del backend wasm (M13d): sólo si el backend resuelto es wasm. El `rt`
+	// gopher de arriba se deja intacto (transición del estrangulador): el catálogo
+	// wasm reusa su estado de sesión (rt.fs/rt.http/rt.sys/rt.ui/rt.log/rt.sched), y
+	// lo que ramifica por backend es dónde corre el chunk (EvalString/EvalTaskString).
+	// Un fallo se aparca en rt.wasmErr (la firma de New no devuelve error).
+	if rt.vmBackend == VMWasm {
+		rt.buildWasmState()
+	}
 	return rt
+}
+
+// buildWasmState construye el estado del backend wasm (M13d): un Pool con el
+// CATÁLOGO COMPLETO ya portado (registerWasmCatalog) y una Instance —el estado
+// Lua aislado— lista para evaluar. Se llama desde `New` sólo cuando el backend
+// resuelto es `VMWasm`, DESPUÉS de armar el `rt` gopher (patrón estrangulador: el
+// catálogo reusa rt.fs/rt.http/rt.sys/rt.ui/rt.log/rt.sched, que `New` ya construyó).
+// Un fallo aquí NO rompe la firma de `New` (que no devuelve error): se guarda en
+// `rt.wasmErr` y lo propagan `EvalString`/`EvalTaskString` al primer eval. El
+// watchdog por época (DM4) y la carga de las 8 extensiones oficiales (M13d-ext) son
+// sesiones aparte: aquí sólo se cablea el arranque y el catálogo síncrono/⏸.
+func (rt *Runtime) buildWasmState() {
+	p, err := vmwasm.NewPool()
+	if err != nil {
+		rt.wasmErr = err
+		return
+	}
+	// El nivel de nu.version.api que el preludio inyecta (api.md §2): el mismo que
+	// el estado gopher (APILevel). Debe fijarse antes de NewInstance.
+	p.SetAPIVersion(APILevel)
+	rt.registerWasmCatalog(p)
+	inst, err := p.NewInstance()
+	if err != nil {
+		p.StopWorkers()
+		_ = p.Close()
+		rt.wasmErr = err
+		return
+	}
+	rt.wasmPool = p
+	rt.wasm = inst
+}
+
+// registerWasmCatalog cuelga en `p` el catálogo completo de primitivas nu.* ya
+// portado a wasm (migracion-vm.md M13b/M13c), agrupado aquí para no ensuciar `New`.
+// Cada `registerXWasm` es la contraparte del `registerX` gopher y reusa las mismas
+// implementaciones Go VM-agnósticas del kernel; el estado de sesión que necesitan
+// (rt.fs/rt.http/rt.sys/rt.log/rt.ui) llega por `rt`. `registerHTTPWasm` incluye
+// `http.stream` y `registerTextWasm` incluye los Blocks de nu.text (se registran
+// desde dentro). `registerUIWasm` instala el compositor SÓLO si hay UI concedida
+// (`rt.ui != nil`, gating headless G20); en headless no registra nada.
+func (rt *Runtime) registerWasmCatalog(p *vmwasm.Pool) {
+	registerCodecsWasm(p)     // nu.json/toml/yaml (§12)
+	registerReWasm(p)         // nu.re (§10)
+	registerFsWasm(p, rt)     // nu.fs (§5)
+	registerSysWasm(p, rt)    // nu.sys (§7)
+	registerLogWasm(p, rt)    // nu.log (§15)
+	registerTextWasm(p, rt)   // nu.text width/truncate + wrap/markdown/highlight/diff (§10)
+	registerHTTPWasm(p, rt)   // nu.http.request + nu.http.stream (§8)
+	registerWsWasm(p, rt)     // nu.ws (§11)
+	registerSearchWasm(p, rt) // nu.search (§11)
+	registerProcWasm(p, rt)   // nu.proc (§6)
+	registerUIWasm(p, rt)     // nu.ui (§9) — sólo si rt.ui != nil (G20)
 }
 
 // currentOwner devuelve el nombre del plugin en cuyo contexto corre el código
@@ -470,6 +550,16 @@ func (rt *Runtime) Close() {
 	// principal cierra su log; el worker lo deja intacto al apagarse.
 	if rt.log != nil && !rt.isWorker {
 		_ = rt.log.close()
+	}
+	// Estado del backend wasm (M13d), si se construyó: cierra la Instance (su memoria
+	// muere con el módulo) y el Pool (para sus workers y libera). El runtime wazero es
+	// compartido a nivel de proceso: `Pool.Close` no lo cierra (vive lo que el proceso).
+	if rt.wasm != nil {
+		_ = rt.wasm.Close()
+	}
+	if rt.wasmPool != nil {
+		rt.wasmPool.StopWorkers()
+		_ = rt.wasmPool.Close()
 	}
 	rt.L.Close()
 }
