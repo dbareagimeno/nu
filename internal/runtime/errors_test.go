@@ -17,6 +17,16 @@ import (
 // forma de "forzar un EINVAL" (criterio de hecho de S02) sin que el runtime de
 // producción tenga aún ninguna primitiva que falle.
 func registerFail(h *harness) {
+	if h.isWasm() {
+		// Equivalente wasm expresado en Lua: lanza la MISMA tabla estructurada
+		// {code, message, detail?}. `detail` sólo aparece si se pasó (nil si no),
+		// idéntico a raiseError con lua.LNil. No necesita una LGFunction: el error
+		// estructurado es un valor Lua puro.
+		h.defWasmGlobal(`function fail(code, msg, detail)
+  error({ code = code, message = msg, detail = detail })
+end`)
+		return
+	}
 	h.register("fail", func(L *lua.LState) int {
 		code := L.CheckString(1)
 		msg := L.OptString(2, "")

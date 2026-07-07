@@ -117,7 +117,40 @@ func newBarePool() (*Pool, error) {
 	p := &Pool{rt: rt, compiled: compiled, reg: newHostRegistry(), workers: make(map[int64]*worker), modules: make(map[string]string)}
 	p.registerLoader()   // require curado (M13): presente en todo Pool, también en workers
 	p.registerWatchdog() // __reset_budget del watchdog (DM4): presente en todo Pool
+	p.registerGlobals()  // __pending_gname/gval de SetGlobalString (M13d)
 	return p, nil
+}
+
+// registerGlobals expone las dos getters síncronas que SetGlobalString usa para
+// pasar un global Lua desde Go sin interpolar código: __pending_gname devuelve el
+// nombre y __pending_gval el valor de la ranura de un solo hueco de la Instance. La
+// Eval de SetGlobalString hace `_G[nu.__pending_gname()] = nu.__pending_gval()`.
+func (p *Pool) registerGlobals() {
+	p.Register("__pending_gname", func(inst *Instance, _ []any) ([]any, error) {
+		return []any{inst.pendingGName}, nil
+	})
+	p.Register("__pending_gval", func(inst *Instance, _ []any) ([]any, error) {
+		return []any{inst.pendingGVal}, nil
+	})
+}
+
+// SetGlobalString fija el global Lua `name` al string `value` en el estado principal
+// de la Instance, SIN interpolar `value` (ni `name`) en código Lua —lo que abriría
+// una inyección con un valor que llevara comillas o saltos—. Es la contraparte wasm
+// de rt.L.SetGlobal(name, LString(value)) del backend gopher: la usa el binario para
+// pasar sus args CLI al driver Lua y el arnés de tests para inyectar constantes.
+func (inst *Instance) SetGlobalString(name, value string) error {
+	inst.mu.Lock()
+	inst.pendingGName, inst.pendingGVal = name, value
+	inst.mu.Unlock()
+	_, lerr, err := inst.Eval("_G[nu.__pending_gname()] = nu.__pending_gval()")
+	if err != nil {
+		return err
+	}
+	if lerr != "" {
+		return fmt.Errorf("vmwasm: SetGlobalString(%q): %s", name, lerr)
+	}
+	return nil
 }
 
 // NewPool prepara el Pool PRINCIPAL: despacho de handles (M10) y el host de
@@ -202,6 +235,15 @@ type Instance struct {
 	dispatchHandle Handle           // handle en despacho síncrono (M11: self-free)
 	pendingInput   []map[string]any // cola de eventos de input crudos (M11, FeedInput)
 	workerChans    *workerChannels  // canales con el padre, si esta Instance es un worker (M12)
+
+	// pendingGName/pendingGVal es la ranura de un solo hueco por la que SetGlobalString
+	// (M13d) pasa un global Lua desde Go SIN interpolar código: se fija bajo mu y una
+	// Eval lo aplica con `_G[nu.__pending_gname()] = nu.__pending_gval()`. Es la vía
+	// por la que el BINARIO pasa sus args CLI al driver Lua sobre wasm (paridad con
+	// rt.L.SetGlobal en gopher). Single-goroutine (ADR-004): sin carrera entre el set y
+	// la Eval que lo lee (mismo patrón que pendingInput/FeedInput).
+	pendingGName string
+	pendingGVal  string
 
 	// Watchdog por slice (DM4). `sliceBudget` (copiado del Pool en NewInstance) es
 	// el presupuesto; `taskDeadline` lo fija `__reset_budget` ANTES de reanudar cada

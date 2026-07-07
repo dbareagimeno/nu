@@ -328,6 +328,12 @@ for name, id in pairs(__catalogo) do
     -- primitiva ⏸ (M09): cede al scheduler; el driver Go la cumple en una
     -- goroutine de fondo y reanuda con el resultado.
     t[parts[#parts]] = function(...)
+      -- Una primitiva ⏸ fuera de una task (chunk principal de EvalString) no tiene a
+      -- quién ceder: es EINVAL (§1.3), no un "yield from outside a coroutine" crudo.
+      -- __current es nil fuera de toda task.
+      if __current == nil then
+        error({ code = "EINVAL", message = "esta primitiva sólo puede llamarse dentro de una task (⏸)" })
+      end
       local r = coroutine.yield({ op = "hostcall", id = myid, args = { ... } })
       if r.ok == false then error(r.err) end
       return table.unpack(r.values, 1, r.n or #r.values)

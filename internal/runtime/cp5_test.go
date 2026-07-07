@@ -146,6 +146,15 @@ func TestCP5BackpressureEIO(t *testing.T) {
 // que `withURL`/`URL()`, pero permite varias URLs en el mismo runtime).
 func setURLGlobal(h *harness, name, s string) {
 	h.t.Helper()
+	if h.isWasm() {
+		// El valor cruza sin interpolar (SetStringGlobal); el accesor `name()` se
+		// define con el nombre (identificador controlado del test). Paridad con la
+		// función gopher que devuelve `s`.
+		valName := "__" + name + "_val"
+		h.rt.SetStringGlobal(valName, s)
+		h.defWasmGlobal("function " + name + "() return " + valName + " end")
+		return
+	}
 	h.rt.L.SetGlobal(name, h.rt.L.NewFunction(func(L *lua.LState) int {
 		L.Push(lua.LString(s))
 		return 1

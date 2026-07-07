@@ -383,6 +383,16 @@ func wasmChunkError(msg string) error {
 // ningún nombre de producto; el contrato del nombre del global lo fija el CLI con
 // su driver. Toma el token para tocar el estado Lua de forma segura.
 func (rt *Runtime) SetStringGlobal(name, value string) {
+	// Ramificación del estrangulador (migracion-vm.md M13d): sobre wasm el global vive
+	// en el estado Lua de la Instance, no en `L`. SetGlobalString lo fija sin interpolar
+	// (ranura de un hueco + Eval), la paridad wasm de rt.L.SetGlobal. Un fallo del motor
+	// wasm es best-effort aquí (la firma no devuelve error, como la de gopher).
+	if rt.vmBackend == VMWasm {
+		if rt.wasm != nil {
+			_ = rt.wasm.SetGlobalString(name, value)
+		}
+		return
+	}
 	rt.sched.acquire()
 	defer rt.sched.release()
 	rt.L.SetGlobal(name, lua.LString(value))

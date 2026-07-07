@@ -26,6 +26,13 @@ import (
 // para que los snippets construyan la petición sin interpolar Go en el código Lua.
 func withURL(h *harness, url string) {
 	h.t.Helper()
+	if h.isWasm() {
+		// El valor cruza sin interpolar (SetStringGlobal); URL() lo devuelve. Paridad
+		// con la función gopher que devuelve `url`.
+		h.rt.SetStringGlobal("__url_val", url)
+		h.defWasmGlobal("function URL() return __url_val end")
+		return
+	}
 	h.rt.L.SetGlobal("URL", h.rt.L.NewFunction(func(L *lua.LState) int {
 		L.Push(lua.LString(url))
 		return 1
@@ -294,10 +301,15 @@ func TestHTTPRequestTLSCAFile(t *testing.T) {
 
 	h := newHarness(t)
 	withURL(h, srv.URL)
-	h.rt.L.SetGlobal("CA", h.rt.L.NewFunction(func(L *lua.LState) int {
-		L.Push(lua.LString(caPath))
-		return 1
-	}))
+	if h.isWasm() {
+		h.rt.SetStringGlobal("__ca_val", caPath)
+		h.defWasmGlobal("function CA() return __ca_val end")
+	} else {
+		h.rt.L.SetGlobal("CA", h.rt.L.NewFunction(func(L *lua.LState) int {
+			L.Push(lua.LString(caPath))
+			return 1
+		}))
+	}
 	h.eval(`
 		ok, body = nil, nil
 		nu.task.spawn(function()

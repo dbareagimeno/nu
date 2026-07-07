@@ -154,6 +154,13 @@ func TestCopyFileMissingSource(t *testing.T) {
 // para que los snippets compongan rutas dentro de él sin tocar el disco real.
 func withFsDir(h *harness) string {
 	dir := h.t.TempDir()
+	if h.isWasm() {
+		// El path cruza sin interpolar (SetStringGlobal); BASE() lo devuelve. Paridad
+		// con la función gopher que devuelve `dir`.
+		h.rt.SetStringGlobal("__base_val", dir)
+		h.defWasmGlobal("function BASE() return __base_val end")
+		return dir
+	}
 	h.register("BASE", func(L *lua.LState) int {
 		L.Push(lua.LString(dir))
 		return 1
