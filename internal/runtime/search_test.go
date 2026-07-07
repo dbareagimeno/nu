@@ -8,17 +8,13 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	lua "github.com/yuin/gopher-lua"
 )
 
 // setRoot registra un global Lua `ROOT` con la ruta `root`, para que los snippets
 // la usen al construir rutas de búsqueda (mismo idioma que `BASE` en fs_test).
+// Usa `regStringFn` (dual gopher/wasm): en wasm inyecta el valor sin interpolar.
 func setRoot(h *harness, root string) {
-	h.register("rootPath", func(L *lua.LState) int {
-		L.Push(lua.LString(root))
-		return 1
-	})
+	h.regStringFn("rootPath", root)
 	h.eval(`ROOT = rootPath()`)
 }
 

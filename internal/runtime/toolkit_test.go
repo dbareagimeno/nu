@@ -27,9 +27,9 @@ package runtime
 // toolkit (árbol/dirty/focus) se inspecciona desde Lua sobre sus propias tablas.
 
 import (
+	"strconv"
+	"strings"
 	"testing"
-
-	lua "github.com/yuin/gopher-lua"
 )
 
 // bootToolkit arranca un Runtime con la extensión `toolkit` activada por nu.toml,
@@ -119,18 +119,24 @@ func TestToolkitThemeSemanticoALiteral(t *testing.T) {
 func TestToolkitArbolYDirty(t *testing.T) {
 	h := bootToolkit(t, 40, 10)
 
-	// Contador Go de composiciones por etiqueta, observable desde Lua con
-	// `compose_mark(tag)`.
-	composes := map[string]int{}
-	h.rt.L.SetGlobal("compose_mark", h.rt.L.NewFunction(func(L *lua.LState) int {
-		composes[L.CheckString(1)]++
-		return 0
-	}))
+	// Contador de composiciones por etiqueta acumulado EN LUA (dual gopher/wasm): en vez
+	// de un callback Go, un global `COMPOSES` que el wrapper de `compose` incrementa y que
+	// el test lee con `h.eval` (idioma wasm-only del arnés).
+	composes := func(tag string) int {
+		s := strings.TrimSpace(h.eval(`return tostring(COMPOSES["` + tag + `"] or 0)`)[0])
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			t.Fatalf("contador de composiciones %q no numérico: %q (%v)", tag, s, err)
+		}
+		return n
+	}
 
 	// Montamos un vbox con dos labels. Envolvemos su `compose` para que avise al
-	// contador (sin tocar el toolkit: lo hacemos desde el test, decorando el
+	// contador Lua (sin tocar el toolkit: lo hacemos desde el test, decorando el
 	// método de la instancia). Tras el primer paint, ambos se compusieron una vez.
 	h.eval(`
+		COMPOSES = {}
+		local function compose_mark(tag) COMPOSES[tag] = (COMPOSES[tag] or 0) + 1 end
 		local tk = require("toolkit")
 		local root = tk.vbox{}
 		A = tk.label{ text = "A" }
@@ -151,26 +157,26 @@ func TestToolkitArbolYDirty(t *testing.T) {
 	`)
 
 	// Primer pintado: cada label compuso al menos una vez.
-	if composes["A"] == 0 || composes["B"] == 0 {
-		t.Fatalf("tras montar, ambos labels debían componerse: %v", composes)
+	if composes("A") == 0 || composes("B") == 0 {
+		t.Fatalf("tras montar, ambos labels debían componerse: A=%d B=%d", composes("A"), composes("B"))
 	}
-	a0, b0 := composes["A"], composes["B"]
+	a0, b0 := composes("A"), composes("B")
 
 	// Cambiar SOLO A: recompone A, NO B (B reusa su caché).
 	h.eval(`A:set_text("A2"); APP:paint()`)
-	if composes["A"] <= a0 {
-		t.Fatalf("cambiar A debía recomponer A: antes=%d ahora=%d", a0, composes["A"])
+	if composes("A") <= a0 {
+		t.Fatalf("cambiar A debía recomponer A: antes=%d ahora=%d", a0, composes("A"))
 	}
-	if composes["B"] != b0 {
-		t.Fatalf("cambiar A NO debía recomponer B (dirty tracking): B antes=%d ahora=%d", b0, composes["B"])
+	if composes("B") != b0 {
+		t.Fatalf("cambiar A NO debía recomponer B (dirty tracking): B antes=%d ahora=%d", b0, composes("B"))
 	}
 
 	// Un paint sin cambios no recompone NADA (todo el árbol está limpio).
-	a1, b1 := composes["A"], composes["B"]
+	a1, b1 := composes("A"), composes("B")
 	h.eval(`APP:paint()`)
-	if composes["A"] != a1 || composes["B"] != b1 {
+	if composes("A") != a1 || composes("B") != b1 {
 		t.Fatalf("paint sin cambios no debía recomponer nada: A %d->%d, B %d->%d",
-			a1, composes["A"], b1, composes["B"])
+			a1, composes("A"), b1, composes("B"))
 	}
 }
 

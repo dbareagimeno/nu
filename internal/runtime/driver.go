@@ -87,6 +87,16 @@ func (d *ttyDriver) installShutdownHandler() {
 	s := d.rt.sched
 	s.acquire()
 	defer s.release()
+	// Sobre wasm el bus de eventos vive en la Instance (M13d): un `core:shutdown`
+	// emitido por la UI Lua (una app que mapea su tecla de salida) NO llega al bus
+	// gopher, así que el handler Go de abajo no lo oiría. Se suscribe un handler Lua que
+	// enciende un flag global; el bucle lo sondea tras cada lote de input (`pollWasmQuit`).
+	// El handler gopher de abajo se mantiene además: cubre el `core:shutdown` emitido
+	// Go-side (las señales de terminación, TestDriverShutdownFromBus).
+	if d.rt.vmBackend == VMWasm && d.rt.wasm != nil {
+		_, _, _ = d.rt.wasm.Eval("_G.__driver_quit = false\n" +
+			`nu.events.on("core:shutdown", function() _G.__driver_quit = true end)`)
+	}
 	if s.events == nil {
 		return
 	}
@@ -96,6 +106,19 @@ func (d *ttyDriver) installShutdownHandler() {
 	})
 	sub := &subscriber{fn: fn, live: true, name: "core:shutdown", ownerName: ownerUser}
 	s.events.subs["core:shutdown"] = append(s.events.subs["core:shutdown"], sub)
+}
+
+// pollWasmQuit sondea el flag `__driver_quit` que el handler Lua de `core:shutdown`
+// enciende en el bus wasm (installShutdownHandler): si está activo, pide el apagado. Es
+// la contraparte del handler Go del bus gopher, para el `core:shutdown` que emite la UI
+// Lua sobre wasm. No-op fuera de wasm. Presupone el token (lo llama `feed`).
+func (d *ttyDriver) pollWasmQuit() {
+	if d.rt.vmBackend != VMWasm || d.rt.wasm == nil {
+		return
+	}
+	if out, _, err := d.rt.wasm.Eval("return tostring(__driver_quit)"); err == nil && out == "true" {
+		d.requestQuit()
+	}
 }
 
 // attachOutput conecta el compositor al terminal: fija `rt.ui.out` (el destino del
@@ -195,10 +218,70 @@ func (d *ttyDriver) feed(pending *[]byte, flush bool) {
 			d.rt.emitUIFocus(ev.text == "in")
 			continue
 		}
+		if d.rt.vmBackend == VMWasm {
+			// Sobre wasm la pila de input y el despacho de secuencias viven en el
+			// preludio Lua (vmwasm/ui.go, M11): el `rt.ui.input` de gopher está vacío.
+			// Se inyecta el evento crudo por `FeedInput`, que lo despacha por
+			// `__ui_dispatch_input` (la misma vía que M13 cablea al TTY real).
+			if d.rt.wasm != nil {
+				_, _ = d.rt.wasm.FeedInput(inputEventToWasm(ev))
+			}
+			continue
+		}
 		d.rt.ui.input.feedInput(ev)
 	}
+	// Sobre wasm, un handler Lua pudo pedir el apagado (`core:shutdown`) al despachar
+	// estas teclas: se sondea el flag ahora (el bus gopher no lo vería, M13d).
+	d.pollWasmQuit()
 	// Pinta ya el resultado de estas teclas (el painter periódico cubre el resto).
 	d.rt.flushFrame()
+}
+
+// inputEventToWasm traduce un `inputEvent` (tty.go) al mapa crudo que el preludio de
+// input wasm espera (`{type, key?, mods?, x?, y?, text?, path?}`, vmwasm/ui.go). Es el
+// espejo VM-agnóstico de `inputState.eventTable` de gopher: mismos campos, mismos
+// nombres, para que un keymap Lua reaccione idéntico en ambos backends. Los mods van
+// como submapa de flags activos (`{ctrl?, alt?, shift?, meta?}`), como `modsTable`.
+func inputEventToWasm(ev inputEvent) map[string]any {
+	m := map[string]any{"type": ev.typ}
+	switch ev.typ {
+	case "key":
+		m["key"] = ev.key
+		m["mods"] = modsWasm(ev.mods)
+	case "mouse":
+		if ev.hasX {
+			m["x"] = int64(ev.x)
+			m["y"] = int64(ev.y)
+		}
+		m["mods"] = modsWasm(ev.mods)
+	case "paste":
+		// G30: un paste de imagen entrega `path` (la ruta ya volcada); uno de texto, `text`.
+		if ev.path != "" {
+			m["path"] = ev.path
+		} else {
+			m["text"] = ev.text
+		}
+	}
+	return m
+}
+
+// modsWasm construye el submapa `mods` de un evento wasm: solo los flags activos, para
+// que `ev.mods.ctrl` sea `true`/nil (espejo de `modsTable` de gopher).
+func modsWasm(m modSet) map[string]any {
+	out := map[string]any{}
+	if m.ctrl {
+		out["ctrl"] = true
+	}
+	if m.alt {
+		out["alt"] = true
+	}
+	if m.shift {
+		out["shift"] = true
+	}
+	if m.meta {
+		out["meta"] = true
+	}
+	return out
 }
 
 // alt-screen y modos del terminal que el driver activa al entrar y restaura al salir.
@@ -293,7 +376,17 @@ func (rt *Runtime) PrepareBareScreen() {
 	s := rt.sched
 	s.acquire()
 	defer s.release()
-	if rt.ui == nil || rt.ui.input == nil {
+	if rt.ui == nil {
+		return
+	}
+	if rt.vmBackend == VMWasm {
+		// Sobre wasm la pila de input vive en el preludio (M13d): el handler de salida se
+		// instala como un `on_input` Lua. Sobre la pila vacía de la pantalla desnuda queda
+		// arriba (nada de producto que le gane).
+		rt.installKernelExitWasm()
+		return
+	}
+	if rt.ui.input == nil {
 		return
 	}
 	// Handler de salida del kernel ARRIBA de la pila (la pantalla desnuda no monta UI
@@ -315,11 +408,43 @@ func (rt *Runtime) InstallEmergencyExit() {
 	s := rt.sched
 	s.acquire()
 	defer s.release()
-	if rt.ui == nil || rt.ui.input == nil {
+	if rt.ui == nil {
+		return
+	}
+	if rt.vmBackend == VMWasm {
+		// Sobre wasm la pila de input vive en el preludio (M13d): la red de emergencia se
+		// instala como un `on_input` Lua. Como el despacho va de arriba abajo y `on_input`
+		// apila, instalarla ANTES de `Boot` (pila vacía) la deja al fondo, bajo cualquier
+		// handler que una app apile después —la misma semántica que `pushBottom` en gopher.
+		rt.installKernelExitWasm()
+		return
+	}
+	if rt.ui.input == nil {
 		return
 	}
 	h := &inputHandler{in: rt.ui.input, raw: rt.newKernelExitHandler(), ownerName: ownerUser, live: true}
 	rt.ui.input.pushBottom(h)
+}
+
+// installKernelExitWasm instala en el preludio de input wasm el handler de SALIDA del
+// kernel (q/esc/ctrl+c → `core:shutdown`), espejo de `newKernelExitHandler` para el
+// backend wasm, donde la pila de input y su despacho viven en la Instance (M13d). La
+// POSICIÓN en la pila la fija el orden de instalación (on_input apila; el despacho va de
+// arriba abajo): quien lo llame antes de `Boot` lo deja al fondo (red de emergencia);
+// sobre una pila vacía (pantalla desnuda) queda arriba. Presupone el token tomado.
+func (rt *Runtime) installKernelExitWasm() {
+	if rt.wasm == nil {
+		return
+	}
+	_, _, _ = rt.wasm.Eval(`nu.ui.on_input(function(ev)
+  if ev == nil or ev.type ~= "key" then return false end
+  local ctrl = ev.mods and ev.mods.ctrl
+  if ev.key == "q" or ev.key == "esc" or (ev.key == "c" and ctrl) then
+    nu.events.emit("core:shutdown")
+    return true
+  end
+  return false
+end)`)
 }
 
 // newKernelExitHandler fabrica la `*lua.LFunction` del handler de SALIDA del kernel: una

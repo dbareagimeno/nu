@@ -22,12 +22,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	lua "github.com/yuin/gopher-lua"
+	"github.com/dbareagimeno/nu/internal/vmwasm"
 )
 
 // ---------------------------------------------------------------------------
@@ -373,29 +374,43 @@ func TestMCPToolServerError(t *testing.T) {
 }
 
 // TestMCPProcessLifecycle (ciclo de vida): el proceso del servidor se LANZA, vive
-// mientras la conexión existe, y se MATA limpiamente al cerrar. El pid del
-// subproceso se publica al lado Go con un helper (`__mcp_pid`, reusa `procPidFromUD`
-// de proc_test) y se comprueba con `pidAlive` que muere tras `close()`.
+// mientras la conexión existe, y se MATA limpiamente al cerrar. Para OBSERVAR el pid del
+// subproceso (no es API §6) se registra un helper de test según el backend: en gopher un
+// global Go que lee el userdata `Proc` (procPidFromUD de proc_test); en wasm, donde el
+// handle vive en la Instance, un método de handle `_mcp_pid` sobre el tipo "Proc" que lee
+// el pid del `*luaProc` (mismo patrón que `_pid` en vmwasm_proc_test). El pid se guarda en
+// un global Lua (`LIFE_PID`) que el test lee tras el turno —dual, sin canal Go— y se
+// comprueba con `waitDead` que el proceso muere tras `close()`.
 func TestMCPProcessLifecycle(t *testing.T) {
 	bin := buildMCPServer(t)
-	pidCh := make(chan int, 1)
-	// Helpers Go registrados ANTES de Boot (evita la carrera con el scheduler).
+	// Helper de observación del pid registrado ANTES de Boot (evita la carrera con el
+	// scheduler / el auto-connect de mcp). Ramifica por backend.
 	h, _ := bootMCPWith(t, func(rt *Runtime) {
-		rt.L.SetGlobal("__publish_pid", rt.L.NewFunction(func(L *lua.LState) int {
-			pidCh <- int(L.CheckNumber(1))
-			return 0
-		}))
+		if rt.vmBackend == VMWasm {
+			rt.wasmPool.RegisterHandleMethod("Proc", "_mcp_pid",
+				func(inst *vmwasm.Instance, val any, args []any) ([]any, error) {
+					return []any{int64(val.(*luaProc).cmd.Process.Pid)}, nil
+				})
+			return
+		}
 		rt.L.SetGlobal("__mcp_pid", rt.L.NewFunction(procPidFromUD))
 	})
 
+	// La expresión que obtiene el pid desde `conn.proc` depende del backend: en gopher el
+	// global Go toma el userdata; en wasm se invoca el método de handle por `__hcall`.
+	pidExpr := `__mcp_pid(conn.proc)`
+	if h.isWasm() {
+		pidExpr = `__hcall(conn.proc.__id, "_mcp_pid")`
+	}
+
 	h.eval(`
-		out, errc, ALIVE_BEFORE = nil, nil, nil
+		out, errc, ALIVE_BEFORE, LIFE_PID = nil, nil, nil, nil
 		nu.task.spawn(function()
 			local ok, e = pcall(function()
 				local mcp = require("mcp")
 				local conn = mcp.connect{ name = "life", command = { "` + bin + `" } }
-				__publish_pid(__mcp_pid(conn.proc))
-				ALIVE_BEFORE = nu.proc.alive(__mcp_pid(conn.proc))
+				LIFE_PID = ` + pidExpr + `
+				ALIVE_BEFORE = nu.proc.alive(LIFE_PID)
 				conn:close()
 			end)
 			if not ok then errc = (type(e) == "table" and (e.message or e.code)) or tostring(e) end
@@ -405,7 +420,11 @@ func TestMCPProcessLifecycle(t *testing.T) {
 	h.expectEval(`return tostring(errc)`, "nil")
 	h.expectEval(`return tostring(ALIVE_BEFORE)`, "true")
 
-	pid := <-pidCh
+	pidStr := strings.TrimSpace(h.eval(`return tostring(LIFE_PID)`)[0])
+	pid, err := strconv.Atoi(pidStr)
+	if err != nil {
+		t.Fatalf("ciclo de vida: pid del subproceso MCP no numérico: %q (%v)", pidStr, err)
+	}
 	// Tras close, el proceso debe morir (vida por cleanup/kill, api.md §6).
 	if !waitDead(pid, 5*time.Second) {
 		t.Fatalf("ciclo de vida: el servidor MCP (pid %d) debería estar muerto tras close()", pid)
