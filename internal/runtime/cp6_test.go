@@ -4,8 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	lua "github.com/yuin/gopher-lua"
 )
 
 // CP-6 · "Render y búsqueda a escala de repo, en headless" (checkpoint de
@@ -54,7 +52,7 @@ func TestCP6RenderYBusqueda(t *testing.T) {
 
 	// (a) markdown del README → Block con dimensiones.
 	mdSrc := mustRead(t, filepath.Join(root, "README.md"))
-	h.register("MD", func(L *lua.LState) int { L.Push(lua.LString(mdSrc)); return 1 })
+	h.regStringFn("MD", mdSrc)
 	h.eval(`
 		MDB = nu.text.markdown(MD(), { width = 40 })
 		MD_W, MD_H = MDB.width, MDB.height
@@ -63,7 +61,7 @@ func TestCP6RenderYBusqueda(t *testing.T) {
 
 	// (b) highlight de main.go → Block con varios spans (height = nº de líneas).
 	goSrc := mustRead(t, filepath.Join(root, "main.go"))
-	h.register("GOSRC", func(L *lua.LState) int { L.Push(lua.LString(goSrc)); return 1 })
+	h.regStringFn("GOSRC", goSrc)
 	h.eval(`
 		HLB = nu.text.highlight(GOSRC(), "go")
 		HL_H = HLB.height
@@ -72,9 +70,9 @@ func TestCP6RenderYBusqueda(t *testing.T) {
 	h.expectEval(`return tostring(HL_H)`, "7")
 
 	// (c) diff de dos versiones del fichero → hunks + Block.
-	h.register("OLD", func(L *lua.LState) int { L.Push(lua.LString(goSrc)); return 1 })
+	h.regStringFn("OLD", goSrc)
 	newGo := goSrc + "\n// una línea nueva al final\n"
-	h.register("NEW", func(L *lua.LState) int { L.Push(lua.LString(newGo)); return 1 })
+	h.regStringFn("NEW", newGo)
 	h.eval(`
 		local d = nu.text.diff(OLD(), NEW(), { render = true })
 		DIFF_HUNKS = #d.hunks

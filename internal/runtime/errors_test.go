@@ -110,6 +110,12 @@ func TestReservedCodesNotSwallowedNorRewritten(t *testing.T) {
 // Go→Lua→Go: tras EvalString, el *StructuredError conserva la tabla `detail`.
 func TestStructuredErrorRoundTripDetail(t *testing.T) {
 	h := newHarness(t)
+	// StructuredError.Detail es un lua.LValue (tipo GOPHER): el error de un chunk wasm
+	// no nace en un LState gopher, así que su detail no puede materializarse como
+	// *lua.LTable en la frontera de EvalString (el code/message SÍ cruzan fiel, que es
+	// la garantía funcional; el detail sigue accesible como tabla DENTRO de Lua vía
+	// pcall). Comprobar el tipo gopher del detail sólo tiene sentido en el backend gopher.
+	h.skipIfWasm("StructuredError.Detail como *lua.LTable es un artefacto del LState gopher")
 	registerFail(h)
 
 	se := h.evalErr(`fail("ENOENT", "no está", { path = "/x", retries = 3 })`)

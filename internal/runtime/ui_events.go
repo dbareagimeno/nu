@@ -22,20 +22,49 @@ package runtime
 
 import lua "github.com/yuin/gopher-lua"
 
-// emitUIEvent emite un evento `ui:*` por el bus con su payload (una tabla Lua ya
-// construida sobre `host`, o nil para un evento sin datos). Es el punto único por el
-// que pasan todos los `ui:*`: presupone el token tomado y que el bus existe
-// (`registerEvents` corre siempre en `New`). En headless, donde `nu.ui` no se
-// registra, estos eventos no se emiten (nadie llama a las vías de abajo), pero el bus
-// sigue ahí —`ui:` es del core, no de `nu.ui`—.
-func (rt *Runtime) emitUIEvent(name string, payload lua.LValue) {
+// emitUIEvent emite un evento `ui:*` por el bus con su payload (un mapa de datos, o
+// nil para un evento sin datos). Es el punto único por el que pasan todos los `ui:*`:
+// presupone el token tomado y que el bus existe (`registerEvents` corre siempre en
+// `New`). Ramifica por backend (migracion-vm.md M13d): sobre wasm el bus vive en la
+// Instance (EmitEvent lo emite sin interpolar); sobre gopher se arma la tabla Lua
+// sobre `host` y se emite por rt.sched. En headless, donde `nu.ui` no se registra,
+// nadie llama a las vías de abajo, pero el bus sigue ahí —`ui:` es del core—.
+func (rt *Runtime) emitUIEvent(name string, payload map[string]any) {
+	if rt.vmBackend == VMWasm {
+		if rt.wasm != nil {
+			_ = rt.wasm.EmitEvent(name, payload)
+		}
+		return
+	}
 	if rt.sched == nil || rt.sched.events == nil {
 		return
 	}
+	rt.sched.emit(rt.L, name, uiPayloadToLua(rt.L, payload))
+}
+
+// uiPayloadToLua convierte el mapa de payload de un evento ui:* a un valor Lua sobre
+// `L` (gopher). Sólo maneja los tipos que estos eventos usan: número (w/h) y booleano
+// (focused). Un payload nil da `lua.LNil` (eventos sin datos, ui:suspend/resume).
+func uiPayloadToLua(L *lua.LState, payload map[string]any) lua.LValue {
 	if payload == nil {
-		payload = lua.LNil
+		return lua.LNil
 	}
-	rt.sched.emit(rt.L, name, payload)
+	t := L.NewTable()
+	for k, v := range payload {
+		switch x := v.(type) {
+		case int:
+			t.RawSetString(k, lua.LNumber(x))
+		case int64:
+			t.RawSetString(k, lua.LNumber(x))
+		case float64:
+			t.RawSetString(k, lua.LNumber(x))
+		case bool:
+			t.RawSetString(k, lua.LBool(x))
+		case string:
+			t.RawSetString(k, lua.LString(x))
+		}
+	}
+	return t
 }
 
 // resizeUI aplica un cambio de tamaño de la pantalla y emite `ui:resize` (§9.1: "el
@@ -54,10 +83,7 @@ func (rt *Runtime) resizeUI(w, h int) {
 		return // sin cambio real: no emitir un ui:resize espurio
 	}
 	rt.ui.comp.resize(w, h)
-	t := rt.L.NewTable()
-	t.RawSetString("w", lua.LNumber(w))
-	t.RawSetString("h", lua.LNumber(h))
-	rt.emitUIEvent("ui:resize", t)
+	rt.emitUIEvent("ui:resize", map[string]any{"w": int64(w), "h": int64(h)})
 }
 
 // emitUIFocus emite `ui:focus` cuando el terminal gana o pierde el foco (§4). El
@@ -69,9 +95,7 @@ func (rt *Runtime) emitUIFocus(focused bool) {
 	if rt.ui == nil {
 		return
 	}
-	t := rt.L.NewTable()
-	t.RawSetString("focused", lua.LBool(focused))
-	rt.emitUIEvent("ui:focus", t)
+	rt.emitUIEvent("ui:focus", map[string]any{"focused": focused})
 }
 
 // emitUISuspend emite `ui:suspend` cuando el proceso se va a suspender (`SIGTSTP`,
@@ -82,7 +106,7 @@ func (rt *Runtime) emitUISuspend() {
 	if rt.ui == nil {
 		return
 	}
-	rt.emitUIEvent("ui:suspend", lua.LNil)
+	rt.emitUIEvent("ui:suspend", nil)
 }
 
 // emitUIResume emite `ui:resume` al reanudar el proceso tras una suspensión (`fg`): la
@@ -93,5 +117,5 @@ func (rt *Runtime) emitUIResume() {
 	if rt.ui == nil {
 		return
 	}
-	rt.emitUIEvent("ui:resume", lua.LNil)
+	rt.emitUIEvent("ui:resume", nil)
 }

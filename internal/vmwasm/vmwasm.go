@@ -53,8 +53,8 @@ type Pool struct {
 	verMajor      int               // nu.version.major/minor/patch (api.md §1); los fija el Runtime
 	verMinor      int
 	verPatch      int
-	extraPreludio []string          // snippets Lua que aporta el catálogo (M13b: wrappers finos)
-	sliceBudget   time.Duration     // presupuesto por slice del watchdog (DM4); ≤0 lo desactiva (workers, G15)
+	extraPreludio []string      // snippets Lua que aporta el catálogo (M13b: wrappers finos)
+	sliceBudget   time.Duration // presupuesto por slice del watchdog (DM4); ≤0 lo desactiva (workers, G15)
 
 	// Registro de workers vivos de este Pool (M12), para _send/_recv/_terminate y
 	// para el apagado ordenado. Sólo lo usa el Pool principal.
@@ -132,6 +132,31 @@ func (p *Pool) registerGlobals() {
 	p.Register("__pending_gval", func(inst *Instance, _ []any) ([]any, error) {
 		return []any{inst.pendingGVal}, nil
 	})
+	p.Register("__pending_ename", func(inst *Instance, _ []any) ([]any, error) {
+		return []any{inst.pendingEName}, nil
+	})
+	p.Register("__pending_epayload", func(inst *Instance, _ []any) ([]any, error) {
+		return []any{inst.pendingEPayload}, nil
+	})
+}
+
+// EmitEvent emite `name` con `payload` en el bus nu.events del estado principal, sin
+// interpolar (ranura de un hueco + getters + una Eval). Es la vía por la que los
+// eventos ui:* del core (que el driver de TTY observa: resize, focus, suspend/resume)
+// llegan al bus wasm, paridad con rt.sched.emit del backend gopher. `payload` puede
+// ser nil (evento sin datos). No suspende: emit es síncrono (G10).
+func (inst *Instance) EmitEvent(name string, payload map[string]any) error {
+	inst.mu.Lock()
+	inst.pendingEName, inst.pendingEPayload = name, payload
+	inst.mu.Unlock()
+	_, lerr, err := inst.Eval("nu.events.emit(nu.__pending_ename(), nu.__pending_epayload())")
+	if err != nil {
+		return err
+	}
+	if lerr != "" {
+		return fmt.Errorf("vmwasm: EmitEvent(%q): %s", name, lerr)
+	}
+	return nil
 }
 
 // SetGlobalString fija el global Lua `name` al string `value` en el estado principal
@@ -244,6 +269,13 @@ type Instance struct {
 	// la Eval que lo lee (mismo patrón que pendingInput/FeedInput).
 	pendingGName string
 	pendingGVal  string
+
+	// pendingEName/pendingEPayload es la ranura por la que EmitEvent inyecta un evento
+	// del core (ui:resize, ui:focus…) en el bus wasm desde Go, sin interpolar: se fija
+	// bajo mu y una Eval hace `nu.events.emit(nu.__pending_ename(), nu.__pending_epayload())`.
+	// Es la paridad wasm de rt.sched.emit para los eventos ui:* que nacen en el driver.
+	pendingEName    string
+	pendingEPayload map[string]any
 
 	// Watchdog por slice (DM4). `sliceBudget` (copiado del Pool en NewInstance) es
 	// el presupuesto; `taskDeadline` lo fija `__reset_budget` ANTES de reanudar cada

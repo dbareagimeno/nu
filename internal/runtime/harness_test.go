@@ -111,6 +111,25 @@ func (h *harness) defWasmGlobal(code string) {
 	}
 }
 
+// regStringFn instala una "constante" Lua `name()` que devuelve el string `value`,
+// en AMBOS backends: en gopher como una LGFunction; en wasm inyectando el valor sin
+// interpolar (SetStringGlobal) y definiendo el accesor. Es el idioma de withURL/BASE
+// generalizado, para tests que pasan varios blobs de texto (fuentes, markdown) a los
+// snippets.
+func (h *harness) regStringFn(name, value string) {
+	h.t.Helper()
+	if h.isWasm() {
+		valName := "__" + name + "_val"
+		h.rt.SetStringGlobal(valName, value)
+		h.defWasmGlobal("function " + name + "() return " + valName + " end")
+		return
+	}
+	h.rt.L.SetGlobal(name, h.rt.L.NewFunction(func(L *lua.LState) int {
+		L.Push(lua.LString(value))
+		return 1
+	}))
+}
+
 // skipIfWasm salta el test cuando corre sobre wasm, con `reason` documentando por
 // qué el caso es irreduciblemente específico de gopher (típicamente: usa una
 // primitiva de andamiaje Go que bloquea en un canal o toca el LState, sin
