@@ -91,6 +91,38 @@ func (h *harness) register(name string, fn lua.LGFunction) {
 	h.rt.L.SetGlobal(name, h.rt.L.NewFunction(fn))
 }
 
+// isWasm indica si el runtime bajo prueba corre sobre el backend wasm (NU_VM=wasm).
+// La suite es DUAL: los mismos tests corren en gopher y en wasm. Un puñado de
+// helpers de andamiaje (register de primitivas Go arbitrarias) sólo existen en
+// gopher; `isWasm` deja a un test proveer su equivalente wasm o saltarse el caso.
+func (h *harness) isWasm() bool { return h.rt.vmBackend == VMWasm }
+
+// defWasmGlobal define un global Lua evaluando `code` en el ESTADO PRINCIPAL del
+// backend wasm. Es la vía por la que un test inyecta una primitiva de andamiaje
+// EXPRESABLE EN LUA (p. ej. un echo que suspende con nu.task.sleep) sobre wasm,
+// donde no hay un registro de LGFunction como en gopher. Falla la prueba si el
+// snippet de definición no evalúa limpio.
+func (h *harness) defWasmGlobal(code string) {
+	h.t.Helper()
+	if _, luaErr, goErr := h.rt.wasm.Eval(code); goErr != nil {
+		h.t.Fatalf("defWasmGlobal: fallo del motor wasm: %v\n%s", goErr, code)
+	} else if luaErr != "" {
+		h.t.Fatalf("defWasmGlobal: error Lua: %s\n%s", luaErr, code)
+	}
+}
+
+// skipIfWasm salta el test cuando corre sobre wasm, con `reason` documentando por
+// qué el caso es irreduciblemente específico de gopher (típicamente: usa una
+// primitiva de andamiaje Go que bloquea en un canal o toca el LState, sin
+// equivalente expresable en Lua; la propiedad de fondo ya se cubre en wasm por
+// otra vía). Mantiene la suite dual verde sin perder cobertura real.
+func (h *harness) skipIfWasm(reason string) {
+	h.t.Helper()
+	if h.isWasm() {
+		h.t.Skipf("no aplica en el backend wasm: %s", reason)
+	}
+}
+
 // eval corre `code` exigiendo que termine sin error y devuelve sus valores de
 // retorno como strings. Falla la prueba si el snippet lanza: es el camino para
 // snippets que se autovalidan con `assert(...)` y devuelven, p. ej., `true`.

@@ -223,6 +223,10 @@ func waitDead(pid int, d time.Duration) bool {
 // que el test lee DESPUÉS para comprobar que el proceso ya está muerto.
 func TestSpawnKilledByCleanupOnCancel(t *testing.T) {
 	h := newHarness(t)
+	// Usa andamiaje Go irreducible a Lua: un __publish_pid que bloquea en un canal
+	// y procPidFromUD (userdata de nu.proc). La propiedad —un cleanup mata el
+	// subproceso al cancelar la task— se apoya en nu.proc real; se valida en gopher.
+	h.skipIfWasm("__publish_pid bloquea en un canal Go y usa el userdata de nu.proc")
 
 	pidCh := make(chan int, 1)
 	h.register("__publish_pid", func(L *lua.LState) int {

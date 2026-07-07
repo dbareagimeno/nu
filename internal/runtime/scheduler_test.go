@@ -20,6 +20,21 @@ import (
 // interno que suspende la task y la reanuda con el valor que acarrea una
 // goroutine de fondo.
 func withEcho(h *harness) {
+	if h.isWasm() {
+		// Equivalente wasm de suspendEcho, expresado en Lua: suspende de verdad con
+		// nu.task.sleep(0) (una ida y vuelta real por el driver Go) y devuelve su
+		// argumento. Mismas validaciones que la versión gopher: sólo dentro de una
+		// task (⏸) y sólo string/number. __current es el id de la task en curso
+		// (nil fuera de toda task), la señal que usa el propio scheduler.
+		h.defWasmGlobal(`function suspend_echo(x)
+  if __current == nil then error({ code = "EINVAL", message = "suspend_echo solo puede llamarse dentro de una task" }) end
+  local t = type(x)
+  if t ~= "string" and t ~= "number" then error({ code = "EINVAL", message = "suspend_echo espera string o number" }) end
+  nu.task.sleep(0)
+  return x
+end`)
+		return
+	}
 	h.register("suspend_echo", h.rt.sched.suspendEcho)
 }
 
@@ -213,6 +228,11 @@ func TestSpawnArgsPassed(t *testing.T) {
 // depender del orden de arranque de las goroutines.
 func TestLoopNotBlockedBySuspension(t *testing.T) {
 	h := newHarness(t)
+	// gate_wait bloquea en un canal Go dentro del token (usa s.sched.suspend con un
+	// LState): andamiaje irreducible a Lua. La propiedad —una suspensión no bloquea
+	// el loop, otra task avanza mientras— se cubre en wasm por TestManyConcurrent-
+	// Suspensions y por el contador en paralelo de CP5 (camino de red).
+	h.skipIfWasm("gate_wait/gate_fire bloquean en un canal Go; sin equivalente Lua")
 
 	// Compuerta: gate_wait (⏸) bloquea fuera del token hasta que gate_fire la
 	// cierra. gate_fire es síncrona (corre bajo el token, en la task B).

@@ -175,10 +175,18 @@ func TestCancelNotCapturableByXpcall(t *testing.T) {
 // inmunidad es exclusiva del aborto, no un `pcall` mutilado.
 func TestNormalErrorsStillCapturableByPcall(t *testing.T) {
 	h := newHarness(t)
-	h.register("boom_einval", func(L *lua.LState) int {
-		raiseError(L, CodeEINVAL, "kaboom", lua.LNil)
-		return 0
-	})
+	if h.isWasm() {
+		// Equivalente wasm de la primitiva de andamiaje: un error estructurado del
+		// core lanzado desde Lua (mismo code/message), expresable sin registrar una
+		// LGFunction. La propiedad bajo prueba —un error estructurado es capturable
+		// por pcall con code intacto— no depende de si el error nace en Go o en Lua.
+		h.defWasmGlobal(`function boom_einval() error({ code = "EINVAL", message = "kaboom" }) end`)
+	} else {
+		h.register("boom_einval", func(L *lua.LState) int {
+			raiseError(L, CodeEINVAL, "kaboom", lua.LNil)
+			return 0
+		})
+	}
 
 	h.eval(`
 		out = {}
