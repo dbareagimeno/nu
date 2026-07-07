@@ -57,6 +57,21 @@ func (inst *Instance) RunTasks(ctx context.Context) error {
 	ch := make(chan asyncResult, 64)
 	outstanding := 0
 	var inject []any // resultados a inyectar en el próximo step
+	// Una petición en vuelo por task suspendida (una corrutina cede una sola vez);
+	// su cancel permite abortarla cuando la task se cancela, sin esperar su
+	// duración (§1.3). Clave: el id de la task (int64 en el wire).
+	reqCancels := make(map[int64]context.CancelFunc)
+
+	noteResult := func(r asyncResult) {
+		outstanding--
+		if id, ok := taskID(r.id); ok {
+			if cancel, ok := reqCancels[id]; ok {
+				cancel()
+				delete(reqCancels, id)
+			}
+		}
+		inject = append(inject, resultMap(r))
+	}
 
 	for {
 		injWire, err := Encode([]any{inject})
@@ -65,19 +80,33 @@ func (inst *Instance) RunTasks(ctx context.Context) error {
 		}
 		inject = nil
 
-		pendingWire, err := inst.schedStep(injWire)
+		stepWire, err := inst.schedStep(injWire)
 		if err != nil {
 			return err
 		}
-		pending, err := decodePending(pendingWire)
+		pending, aborted, err := decodeStep(stepWire)
 		if err != nil {
 			return err
 		}
 
-		// Despacha cada petición de trabajo externo en una goroutine de fondo.
+		// Cancela la petición en vuelo de cada task abortada este paso. La goroutine
+		// de fondo tomará su rama ctx.Done() y devolverá de inmediato (su resultado se
+		// ignora: la task ya está done), liberando `outstanding` sin la espera completa.
+		for _, id := range aborted {
+			if cancel, ok := reqCancels[id]; ok {
+				cancel()
+			}
+		}
+
+		// Despacha cada petición de trabajo externo en una goroutine de fondo, con su
+		// propio contexto cancelable anclado al id de la task.
 		for _, p := range pending {
+			reqCtx, cancel := context.WithCancel(ctx)
+			if id, ok := taskID(p.id); ok {
+				reqCancels[id] = cancel
+			}
 			outstanding++
-			go inst.performRequest(ctx, p, ch)
+			go inst.performRequest(reqCtx, p, ch)
 		}
 
 		if outstanding == 0 {
@@ -87,20 +116,31 @@ func (inst *Instance) RunTasks(ctx context.Context) error {
 		// Espera al menos un resultado, y drena los que ya estén listos.
 		select {
 		case r := <-ch:
-			outstanding--
-			inject = append(inject, resultMap(r))
+			noteResult(r)
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 		for draining := true; draining; {
 			select {
 			case r := <-ch:
-				outstanding--
-				inject = append(inject, resultMap(r))
+				noteResult(r)
 			default:
 				draining = false
 			}
 		}
+	}
+}
+
+// taskID normaliza el id de task del wire (int64, o float64 si cruzó como número
+// no entero) a int64 para usarlo como clave del mapa de cancelaciones.
+func taskID(v any) (int64, bool) {
+	switch n := v.(type) {
+	case int64:
+		return n, true
+	case float64:
+		return int64(n), true
+	default:
+		return 0, false
 	}
 }
 
@@ -111,31 +151,43 @@ type pendingReq struct {
 	request map[string]any
 }
 
-// decodePending interpreta el wire que __sched_step devolvió: un único array de
-// { id, request } donde request es { op, ... }.
-func decodePending(wire []byte) ([]pendingReq, error) {
+// decodeStep interpreta el wire que __sched_step devolvió: DOS valores. El primero
+// es el array de peticiones { id, request } (request = { op, ... }); el segundo, el
+// array de ids de tasks abortadas este paso (sus peticiones en vuelo hay que
+// cancelarlas). El segundo valor puede faltar (compat: pasos que no lo emitan).
+func decodeStep(wire []byte) ([]pendingReq, []int64, error) {
 	vals, err := Decode(wire)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if len(vals) == 0 || vals[0] == nil {
-		return nil, nil
-	}
-	arr, ok := vals[0].([]any)
-	if !ok {
-		return nil, fmt.Errorf("vmwasm: sched pending no es array: %T", vals[0])
-	}
-	reqs := make([]pendingReq, 0, len(arr))
-	for _, item := range arr {
-		m, ok := item.(map[string]any)
+	var reqs []pendingReq
+	if len(vals) >= 1 && vals[0] != nil {
+		arr, ok := vals[0].([]any)
 		if !ok {
-			return nil, fmt.Errorf("vmwasm: sched item no es map: %T", item)
+			return nil, nil, fmt.Errorf("vmwasm: sched pending no es array: %T", vals[0])
 		}
-		req, _ := m["request"].(map[string]any)
-		op, _ := req["op"].(string)
-		reqs = append(reqs, pendingReq{id: m["id"], op: op, request: req})
+		reqs = make([]pendingReq, 0, len(arr))
+		for _, item := range arr {
+			m, ok := item.(map[string]any)
+			if !ok {
+				return nil, nil, fmt.Errorf("vmwasm: sched item no es map: %T", item)
+			}
+			req, _ := m["request"].(map[string]any)
+			op, _ := req["op"].(string)
+			reqs = append(reqs, pendingReq{id: m["id"], op: op, request: req})
+		}
 	}
-	return reqs, nil
+	var aborted []int64
+	if len(vals) >= 2 && vals[1] != nil {
+		if arr, ok := vals[1].([]any); ok {
+			for _, item := range arr {
+				if id, ok := taskID(item); ok {
+					aborted = append(aborted, id)
+				}
+			}
+		}
+	}
+	return reqs, aborted, nil
 }
 
 // performRequest cumple una petición de trabajo externo y manda el resultado por

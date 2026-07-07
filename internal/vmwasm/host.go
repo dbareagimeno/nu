@@ -372,6 +372,7 @@ local __ready = {}      -- lista de { id, arg, iserr } a reanudar en el próximo
 local __next_id = 1
 local __futures = {}    -- fid -> { resolved, value, waiters } (nu.task.future)
 local __next_fid = 1
+__aborted = {}          -- ids abortados en el paso actual; __sched_step lo resetea
 
 nu.task = nu.task or {}
 
@@ -379,7 +380,33 @@ local function __enqueue(id, arg, iserr)
   __ready[#__ready+1] = { id = id, arg = arg, iserr = iserr }
 end
 
--- nu.task.spawn(fn, ...) -> id. Crea una corrutina y la encola lista.
+-- Task handle (api.md §3): nu.task.spawn devuelve un Task, no un id crudo. Es
+-- una tabla con __task_id y una metatable que despacha :await() / :cancel().
+-- El id numérico sigue siendo la clave interna en __tasks; el handle lo envuelve
+-- para dar la superficie de métodos del contrato (paridad con el backend gopher,
+-- que devuelve un userdata con __index await/cancel). __task_id_of normaliza un
+-- argumento que puede ser un handle o —uso interno— un id crudo.
+local function __task_id_of(x)
+  if type(x) == "table" and type(x.__task_id) == "number" then return x.__task_id end
+  if type(x) == "number" then return x end
+  return nil
+end
+local __task_mt = {
+  __index = {
+    await = function(self)
+      local id = __task_id_of(self)
+      if id == nil then error({ code = "EINVAL", message = "Task:await: el receptor no es una Task" }) end
+      return nu.task.await(id)
+    end,
+    cancel = function(self)
+      local id = __task_id_of(self)
+      if id == nil then error({ code = "EINVAL", message = "Task:cancel: el receptor no es una Task" }) end
+      nu.task.cancel(id)
+    end,
+  },
+}
+
+-- nu.task.spawn(fn, ...) -> Task. Crea una corrutina y la encola lista.
 function nu.task.spawn(fn, ...)
   local packed = table.pack(...)
   local id = __next_id; __next_id = __next_id + 1
@@ -394,7 +421,7 @@ function nu.task.spawn(fn, ...)
   end)
   __tasks[id] = { co = co, done = false, awaiters = {} }
   __enqueue(id, nil, false)
-  return id
+  return setmetatable({ __task_id = id }, __task_mt)
 end
 
 -- nu.task.sleep(ms). Cede una petición de sleep; el driver Go la cumple y
@@ -407,13 +434,25 @@ end
 -- (o relanza su error); si no, cede una petición de await que el scheduler
 -- resuelve cuando la task termine.
 function nu.task.await(id)
-  local t = __tasks[id]
-  if not t then error("nu.task.await: id de task desconocido") end
+  id = __task_id_of(id)
+  local t = id and __tasks[id]
+  if not t then error({ code = "EINVAL", message = "nu.task.await: no es una Task" }) end
+  if id == __current then
+    error({ code = "EINVAL", message = "nu.task.await: una task no puede esperarse a sí misma" })
+  end
   if t.done then
-    if t.ok then return t.result else error(t.result) end
+    if not t.ok then error(t.result) end
+    if t.results then return table.unpack(t.results, 1, t.nresults) end
+    return
+  end
+  -- Va a SUSPENDER: fuera de una task (chunk principal de EvalString) no hay a quién
+  -- ceder, así que es EINVAL (§1.3), no un "yield from outside a coroutine" crudo.
+  if __current == nil then
+    error({ code = "EINVAL", message = "nu.task.await: debe llamarse dentro de una task (⏸)" })
   end
   local r = coroutine.yield({ op = "await", id = id })
-  if r.ok then return r.result else error(r.result) end
+  if not r.ok then error(r.result) end
+  if r.results then return table.unpack(r.results, 1, r.nresults) end
 end
 
 -- la task cuyo código corre AHORA (para nu.task.cleanup, que se llama desde
@@ -427,10 +466,31 @@ local function __finish(t)
   if t.finished then return end
   t.finished = true
   if t.cleanups then
-    for i = #t.cleanups, 1, -1 do pcall(t.cleanups[i]) end
+    for i = #t.cleanups, 1, -1 do
+      local cok, cerr = pcall(t.cleanups[i])
+      -- pcall por frontera (ADR-008): un cleanup que lanza no impide que corran los
+      -- demás ni tumba el proceso; queda en el log (best-effort, como gopher).
+      if not cok and nu.log and nu.log.error then
+        local msg = type(cerr) == "table" and (cerr.message or cerr.code) or tostring(cerr)
+        nu.log.error("un liberador de nu.task.cleanup lanzó: " .. tostring(msg))
+      end
+    end
   end
   for _, aw in ipairs(t.awaiters) do
-    __enqueue(aw, { ok = t.ok, result = t.result }, false)
+    __enqueue(aw, { ok = t.ok, result = t.result, results = t.results, nresults = t.nresults }, false)
+  end
+  -- Error fire-and-forget (best-effort, api.md §1.4): si la task lanzó y nadie la
+  -- espera, déjalo en el log. Se EXCLUYEN los abortos (cancelación/watchdog): no son
+  -- errores de la task sino desenlaces de §1.3, sin errValue en gopher. Tampoco se
+  -- loguea cuando el HOST consume el desenlace (EvalTaskString envuelve el código en
+  -- un pcall, así que su task nunca entra por aquí con error).
+  if not t.ok and not t.cancelled and #t.awaiters == 0 and t.result ~= nil then
+    local e = t.result
+    local code = type(e) == "table" and e.code or nil
+    if code ~= "ECANCELED" and code ~= "EBUDGET" and nu.log and nu.log.error then
+      local s = code and (tostring(code) .. ": " .. tostring(e.message or "")) or tostring(e)
+      nu.log.error("una task terminó con error y nadie hizo await: " .. s)
+    end
   end
 end
 
@@ -443,6 +503,12 @@ local function __resume(id, arg, iserr, pending)
   -- código de la task, así que ningún pcall de usuario lo captura.
   if t.cancelled then
     t.done = true; t.ok = false; t.result = { code = "ECANCELED", message = "task cancelada" }
+    -- La task pudo quedar SUSPENDIDA con una petición en vuelo en Go (un sleep, un
+    -- hostcall). Al abortarla aquí, esa goroutine de fondo seguiría contando en el
+    -- outstanding del driver y RunTasks esperaría su duración completa (un sleep de
+    -- 10s colgaría el bucle). Anotamos su id en __aborted para que el paso se lo diga
+    -- a Go y cancele la petición (§1.3: la cancelación surte efecto en el acto).
+    __aborted[#__aborted+1] = id
     __finish(t)
     return
   end
@@ -450,17 +516,26 @@ local function __resume(id, arg, iserr, pending)
   -- Watchdog (DM4): reinicia el deadline del slice que va a correr; el count-hook
   -- de esta corrutina (armado en spawn) lo comparará cada WD_COUNT instrucciones.
   nu.__reset_budget()
-  local ok, yielded
+  -- table.pack para preservar TODOS los valores de retorno de la task: await -> any
+  -- no se limita a uno (§3). Al SUSPENDER, la corrutina cede un único valor (la tabla
+  -- op=...), que es resumed[2]; al TERMINAR (dead) puede devolver varios.
+  local resumed
   if iserr then
-    ok, yielded = coroutine.resume(t.co, { __err = true, msg = arg })
+    resumed = table.pack(coroutine.resume(t.co, { __err = true, msg = arg }))
   else
-    ok, yielded = coroutine.resume(t.co, arg)
+    resumed = table.pack(coroutine.resume(t.co, arg))
   end
+  local ok = resumed[1]
+  local yielded = resumed[2]
   __current = prev
   if not ok then
     t.done = true; t.ok = false; t.result = yielded; __finish(t)
   elseif coroutine.status(t.co) == "dead" then
-    t.done = true; t.ok = true; t.result = yielded; __finish(t)
+    t.done = true; t.ok = true; t.result = yielded
+    t.nresults = resumed.n - 1
+    t.results = {}
+    for i = 2, resumed.n do t.results[i - 1] = resumed[i] end
+    __finish(t)
   elseif yielded == nil then
     -- Aborto por WATCHDOG (DM4, §1.3): el count-hook cedió al rebasar el
     -- presupuesto del slice. Un yield del hook NO lleva valor (Lua 5.4 restaura el
@@ -475,7 +550,7 @@ local function __resume(id, arg, iserr, pending)
   elseif yielded.op == "await" then
     local target = __tasks[yielded.id]
     if target and target.done then
-      __enqueue(id, { ok = target.ok, result = target.result }, false)
+      __enqueue(id, { ok = target.ok, result = target.result, results = target.results, nresults = target.nresults }, false)
     elseif target then
       target.awaiters[#target.awaiters+1] = id
     else
@@ -505,6 +580,7 @@ function __sched_step(injected)
       __enqueue(item.id, item.result, item.iserr == true)
     end
   end
+  __aborted = {}            -- ids de tasks abortadas este paso (peticiones a cancelar en Go)
   local pending = {}
   local guard = 0
   while #__ready > 0 do
@@ -513,7 +589,10 @@ function __sched_step(injected)
     local r = table.remove(__ready, 1)
     __resume(r.id, r.arg, r.iserr, pending)
   end
-  return __wire.enc_list(pending)
+  -- El paso devuelve DOS listas: las nuevas peticiones y los ids abortados. Go
+  -- cancela la petición en vuelo de cada id abortado (si la hubiera) para no
+  -- esperar su duración completa tras una cancelación.
+  return __wire.enc_list(pending, __aborted)
 end
 `
 
@@ -521,39 +600,64 @@ end
 // M06: future (rendez-vous), all (alineado con inputs, G27), race, cleanup (LIFO),
 // cancel (cooperativo, §1.3) y defer. Semántica de api.md §3.
 const preludioTask = `
--- nu.task.future() -> { set, await } (§3). Rendez-vous de un solo uso: una task
--- espera un valor que otra producirá, sin polling.
-function nu.task.future()
-  local fid = __next_fid; __next_fid = __next_fid + 1
-  __futures[fid] = { resolved = false, waiters = {} }
-  return {
-    set = function(v)
-      local f = __futures[fid]
+-- Future handle (api.md §3): un rendez-vous de un solo uso con métodos :set(v) y
+-- :await(). Como Task, es una tabla con __future_id y una metatable que despacha
+-- por __index, validando que el receptor es un Future (paridad con el userdata del
+-- backend gopher; Future:set sobre otro handle → EINVAL). La CONVENCIÓN es de dos
+-- puntos (self), como todas las extensiones oficiales (agent/mcp/mesh) la usan.
+local function __future_of(self)
+  local fid = type(self) == "table" and self.__future_id
+  return fid and __futures[fid], fid
+end
+local __future_mt = {
+  __index = {
+    set = function(self, v)
+      local f = __future_of(self)
+      if not f then error({ code = "EINVAL", message = "Future:set: el receptor no es un Future" }) end
       if f.resolved then error({ code = "EINVAL", message = "future ya resuelto" }) end
       f.resolved = true; f.value = v
       for _, taskid in ipairs(f.waiters) do __enqueue(taskid, v, false) end
       f.waiters = {}
     end,
-    await = function()
-      local f = __futures[fid]
+    await = function(self)
+      local f, fid = __future_of(self)
+      if not f then error({ code = "EINVAL", message = "Future:await: el receptor no es un Future" }) end
+      -- Future:await es ⏸: fuera de una task es EINVAL AUNQUE ya esté resuelto (el
+      -- contrato prohíbe llamar una suspendiente fuera de task, sin importar si en
+      -- este caso concreto no llegaría a suspender). __current es nil fuera de task.
+      if __current == nil then
+        error({ code = "EINVAL", message = "Future:await: debe llamarse dentro de una task (⏸)" })
+      end
       if f.resolved then return f.value end
       return coroutine.yield({ op = "future", fid = fid })
     end,
-  }
+  },
+}
+
+-- nu.task.future() -> Future (§3). Rendez-vous de un solo uso: una task espera un
+-- valor que otra producirá, sin polling.
+function nu.task.future()
+  local fid = __next_fid; __next_fid = __next_fid + 1
+  __futures[fid] = { resolved = false, waiters = {} }
+  return setmetatable({ __future_id = fid }, __future_mt)
 end
 
 -- nu.task.cleanup(fn) (§3). Registra un liberador en la pila LIFO de la task
 -- actual; corre al terminar (éxito/error/aborto). El "defer" de esta casa.
 function nu.task.cleanup(fn)
-  local t = __tasks[__current]
-  if t then t.cleanups = t.cleanups or {}; t.cleanups[#t.cleanups+1] = fn end
+  local t = __current and __tasks[__current]
+  if not t then
+    error({ code = "EINVAL", message = "nu.task.cleanup: debe llamarse dentro de una task" })
+  end
+  t.cleanups = t.cleanups or {}; t.cleanups[#t.cleanups+1] = fn
 end
 
 -- nu.task.cancel(id) (§3, Task:cancel). Cancelación cooperativa: aborta la task
 -- en su siguiente punto de suspensión (no capturable); corren sus cleanups. Si
 -- está suspendida, se encola para que el scheduler la finalice.
 function nu.task.cancel(id)
-  local t = __tasks[id]
+  id = __task_id_of(id)
+  local t = id and __tasks[id]
   if t and not t.done then
     t.cancelled = true
     __enqueue(id, nil, false)  -- fuerza un paso que la finalice (§1.3)
@@ -561,30 +665,81 @@ function nu.task.cancel(id)
 end
 
 -- nu.task.all(fns) -> resultados (§3, G27). Espera a todas; resultados ALINEADOS
--- con los inputs (out[i] es el de fns[i]), no en orden de terminación. Si una
--- lanza, su error se relanza (fail-fast a través del await).
+-- con los inputs (out[i] es el de fns[i]), no en orden de terminación. FAIL-FAST:
+-- si una lanza, se CANCELA al resto (abortan en su próximo ⏸) y se relanza ese
+-- error. Cada elemento corre envuelto en una task cuyo pcall reporta su desenlace a
+-- un future de coordinación; así se detecta el PRIMER fallo en cuanto ocurre (no en
+-- orden de array), condición para cancelar a las demás cuanto antes.
 function nu.task.all(fns)
-  local ids = {}
-  for i = 1, #fns do ids[i] = nu.task.spawn(fns[i]) end
+  if __current == nil then
+    error({ code = "EINVAL", message = "nu.task.all: debe llamarse dentro de una task (⏸)" })
+  end
+  local n = #fns
+  if n == 0 then
+    error({ code = "EINVAL", message = "nu.task.all: la lista de tareas está vacía" })
+  end
   local out = {}
-  for i = 1, #ids do out[i] = nu.task.await(ids[i]) end
+  local remaining = n
+  local first_err = nil       -- { err = <valor> } una vez que alguna lanza
+  local resolved = false
+  local coord = nu.task.future()
+  local tasks = {}
+  local function report(ok, r, idx)
+    if ok then out[idx] = r
+    elseif first_err == nil then first_err = { err = r } end
+    remaining = remaining - 1
+    if not resolved and (first_err ~= nil or remaining == 0) then
+      resolved = true; coord:set(true)
+    end
+  end
+  for i = 1, n do
+    local e, idx = fns[i], i
+    if type(e) == "function" then
+      tasks[i] = nu.task.spawn(function() local ok, r = pcall(e); report(ok, r, idx) end)
+    elseif __task_id_of(e) ~= nil then
+      tasks[i] = nu.task.spawn(function()
+        local ok, r = pcall(function() return nu.task.await(e) end); report(ok, r, idx)
+      end)
+    else
+      error({ code = "EINVAL", message = "nu.task.all: el elemento " .. i .. " no es una Task ni una función" })
+    end
+  end
+  coord:await()
+  if first_err ~= nil then
+    for _, tk in ipairs(tasks) do nu.task.cancel(tk) end
+    error(first_err.err)
+  end
   return out
 end
 
--- nu.task.race(fns) -> (winner_index, result) (§3). La primera en terminar gana.
+-- nu.task.race(fns) -> (winner_index, result) (§3). La primera en terminar gana
+-- (incluido terminar por error: se relanza su error). Se CANCELA a las perdedoras.
 function nu.task.race(fns)
-  local f = nu.task.future()
+  if __current == nil then
+    error({ code = "EINVAL", message = "nu.task.race: debe llamarse dentro de una task (⏸)" })
+  end
+  local n = #fns
+  if n == 0 then
+    error({ code = "EINVAL", message = "nu.task.race: la lista de tareas está vacía" })
+  end
+  local coord = nu.task.future()
   local settled = false
-  for i = 1, #fns do
-    local idx, fn = i, fns[i]
-    nu.task.spawn(function()
+  local winner = nil          -- { idx, ok, r } del primero en terminar
+  local tasks = {}
+  for i = 1, n do
+    local fn, idx = fns[i], i
+    if type(fn) ~= "function" then
+      error({ code = "EINVAL", message = "nu.task.race: el elemento " .. i .. " no es una función" })
+    end
+    tasks[i] = nu.task.spawn(function()
       local ok, r = pcall(fn)
-      if not settled then settled = true; f.set({ idx, ok, r }) end
+      if not settled then settled = true; winner = { idx = idx, ok = ok, r = r }; coord:set(true) end
     end)
   end
-  local res = f.await()
-  if not res[2] then error(res[3]) end
-  return res[1], res[3]
+  coord:await()
+  for _, tk in ipairs(tasks) do nu.task.cancel(tk) end   -- la ganadora ya terminó (no-op)
+  if not winner.ok then error(winner.r) end
+  return winner.idx, winner.r
 end
 
 -- nu.task.defer(fn) (§3). Ejecuta fn en el siguiente tick (como una task que no

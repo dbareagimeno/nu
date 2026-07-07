@@ -11,11 +11,11 @@ func TestTaskFuture(t *testing.T) {
 		out = "no"
 		local f = nu.task.future()
 		nu.task.spawn(function()
-			out = f.await()
+			out = f:await()
 		end)
 		nu.task.spawn(function()
 			nu.task.sleep(5)
-			f.set("valor")
+			f:set("valor")
 		end)`)
 	if out != "valor" {
 		t.Fatalf("got %q", out)
