@@ -1,0 +1,12 @@
+# Se aplica al contexto de build (context: .. en docker-compose.yml) para
+# este Dockerfile en concreto: <dockerfile>.dockerignore junto al Dockerfile,
+# soportado por BuildKit independientemente de dónde esté el contexto.
+
+.git
+dist
+nu
+nu-docker
+internal/vmwasm/wasi-sdk-*
+internal/vmwasm/lua-5.4.7
+.claude/settings.local.json
+.DS_Store
