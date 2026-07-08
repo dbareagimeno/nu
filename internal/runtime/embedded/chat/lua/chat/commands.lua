@@ -226,6 +226,24 @@ function M.install_builtins(deps)
       return "la compactación manual aún no está disponible"
     end })
 
+  -- /retry: re-ejecuta el último turno tras un error (chat.md §4, G43). Delega en
+  -- Session:retry (agente.md §2), que re-ejecuta sobre el historial vigente SIN
+  -- anexar mensaje nuevo — el camino de la acción de reintento tras un `agent:error`
+  -- retryable. El turno se pinta solo por los eventos `agent:*` (turn.start/delta/
+  -- message); aquí solo capturamos el fallo del propio retry (EINVAL: turno en
+  -- vuelo, sesión cerrada, historial vacío) para no reventar el input.
+  M.command({ name = "retry", description = "reintenta el último turno fallido",
+    handler = function(_args, ctx)
+      if not (ctx.session and ctx.session.retry) then
+        return "el reintento no está disponible"
+      end
+      local ok, err = pcall(ctx.session.retry, ctx.session)
+      if not ok then
+        return "no se pudo reintentar: " .. ((type(err) == "table" and err.message) or tostring(err))
+      end
+      return nil
+    end })
+
   -- /fork: bifurca la sesión y CONTINÚA en la rama (chat.md §4, P28). Usa
   -- Session:fork (P22) y cambia la sesión activa del chat (Chat:switch_session).
   M.command({ name = "fork", description = "bifurca la conversación y sigue en la rama",
