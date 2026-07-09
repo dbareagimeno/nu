@@ -16,6 +16,7 @@ mutation testing como juez mecánico.
 | Quiero torturar una zona de la API antes de congelar un diseño | `/ronda` |
 | Voy a cerrar una sesión 🔒 o un diff que toca API/contratos | `/mutacion` + `/juicio` (en ese orden, y siempre antes de bitácora/puntero) |
 | Cerré una fase (checkpoint 🔎) o toca endurecimiento periódico | `/mutacion` sobre los paquetes 🔒 + `/juicio` si algo cambió + `auditor-docs` global |
+| Toca la pasada periódica de salud (semanal/quincenal, o hace mucho de la última) | `/salud` (fuzzing con corpus acumulativo, estrés `-race`, govulncheck, rotación de mutación) |
 
 ## Los cuatro flujos y cómo se encadenan
 
@@ -51,6 +52,14 @@ flowchart TD
 **W4 · Endurecimiento de fase** (sin skill propia): checkpoint 🔎 del plan →
 `/mutacion` sobre los paquetes 🔒 de la fase → los LIVED alimentan a
 `juez-tests` → tests nuevos → `auditor-docs` en pasada global.
+
+**W5 · Salud del repo** (`/salud`, periódico): la capa mecánica — fuzzing de
+las dianas de `internal/runtime/fuzz_test.go` (corpus acumulativo), estrés del
+race detector (`-count=10 -shuffle=on`), `govulncheck` pineado y una rotación
+de `/mutacion`. Detectores que no alucinan, para lo que cambia aunque el
+código no cambie; cierra con fila en `skills/salud/bitacora.md`. En su primer
+uso cazó un bug real en 🔒 S22 (palabra de anchura 0 borrada por `wrapText`) y
+3 CVEs de la stdlib alcanzables.
 
 ## Quién invoca a quién
 

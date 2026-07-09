@@ -1,0 +1,10 @@
+# Bitácora de salud
+
+Append-only: una fila por pasada de `/salud`, la más reciente abajo. Registra
+qué corrió, qué encontró y qué se hizo — es lo que permite rotar la mutación,
+no re-diagnosticar mutantes equivalentes conocidos y vigilar si el fuzzing
+sigue encontrando corpus nuevo.
+
+| Fecha | Qué corrió | Hallazgos | Acción |
+|---|---|---|---|
+| 2026-07-10 | Estreno de la capa. Fuzzing: 6 dianas nuevas (`fuzz_test.go`), humo 10s/diana + 60s en wrap. Race: `-count=1` (humo). govulncheck v1.1.4. Mutación: `diff.go` (piloto de la skill /mutacion, 95 mutantes). | **2 bugs reales en 🔒 S22** (misma familia: `curW==0`/`curW>0` como centinela de vacío borra una palabra de anchura 0 en `wrapParagraph` y pega un cluster ancho al ZWJ huérfano en `splitWide`; corpus `FuzzWrapText/*` committeado). **3 CVEs stdlib alcanzables**: GO-2026-5856 (crypto/tls, fix go1.26.5), GO-2026-5039 (net/textproto, fix go1.26.4), GO-2026-5037 (crypto/x509, fix go1.26.4) — toolchain local go1.26.3. Mutación diff.go: 90/95 KILLED; LIVED: 216/239 equivalentes de borde, 146 (desempate LCS) y 361 (`rangeStr` no aseverado en render) = huecos de suite pendientes. Observación menor sin arreglar: `wrapSpans` (markdown.go:577) comparte el patrón centinela pero solo pierde el espacio reinsertado tras un token de anchura 0 (cosmético, render visual). | Bugs S22 arreglados con casos nombrados en `TestWrapText` + corpus de regresión. CVEs: **pendiente subir toolchain a go1.26.5** (decisión del usuario). Huecos de diff.go: pendientes de test (candidata a próxima sesión). Próxima rotación de mutación: NO diff.go (p. ej. sse.go/text.go). |
