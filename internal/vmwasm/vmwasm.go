@@ -336,7 +336,13 @@ type Instance struct {
 	sliceBudget  time.Duration
 	taskDeadline time.Time
 
-	mu sync.Mutex // sólo protege contra reentrada accidental en tests, no concurrencia real
+	// mu serializa TODA entrada a la VM en producción: los Call del bucle de
+	// RunTasks (schedStep), los Eval de EmitEvent que llegan desde goroutines de
+	// fondo (watchers de fs, señales), FeedInput del driver de TTY y el acceso del
+	// pintor al compositor vía WithLock. Es el sustituto wasm del token del
+	// scheduler (ADR-004): quitarlo, o añadir un camino de entrada que no lo tome,
+	// reintroduce un data race sobre la memoria del módulo.
+	mu sync.Mutex
 
 	// slotMu serializa el par "fijar la ranura + Eval" de SetGlobalString/EmitEvent:
 	// como ambos sueltan `mu` entre el set y la Eval (la Eval la re-toma), dos

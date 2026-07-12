@@ -205,6 +205,44 @@ func TestWorkerCapsGranularidades(t *testing.T) {
 	}
 }
 
+// TestWorkerSinPlugin blinda que `plugin.*` NO cruza a los workers ni siquiera
+// sin caps (api.md §13/§16: es solo estado principal). Antes se filtraba, y con
+// él un `plugin.reload` cuyo HostFn cierra sobre el runtime principal: ejecutarlo
+// desde la goroutine del worker re-entraba la VM principal en paralelo.
+func TestWorkerSinPlugin(t *testing.T) {
+	p, err := NewPool()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simula las primitivas que registerPluginWasm cuelga en el Pool principal.
+	p.Register("plugin.current", func(inst *Instance, a []any) ([]any, error) { return []any{"x"}, nil })
+	p.Register("plugin.list", func(inst *Instance, a []any) ([]any, error) { return []any{[]any{}}, nil })
+	p.RegisterSuspending("plugin.reload", func(inst *Instance, a []any) ([]any, error) { return nil, nil })
+	inst, err := p.NewInstance()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { p.StopWorkers(); _ = inst.Close(); _ = p.Close() })
+
+	setup := `
+		out = ""
+		local w = nu.worker.spawn([[
+			nu.worker.parent.send({
+				plugin = (nu.plugin ~= nil),
+			})
+		]])
+		nu.task.spawn(function()
+			out = w:recv()
+		end)`
+	if _, lerr, err := inst.Eval(setup); err != nil || lerr != "" {
+		t.Fatalf("setup: lerr=%q err=%v", lerr, err)
+	}
+	if err := inst.RunTasks(context.Background()); err != nil {
+		t.Fatalf("RunTasks: %v", err)
+	}
+	checkCaps(t, inst, "plugin=false")
+}
+
 // checkCaps evalúa `want` (pares "k=bool") contra la tabla `out` del estado.
 func checkCaps(t *testing.T, inst *Instance, want string) {
 	t.Helper()

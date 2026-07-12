@@ -185,14 +185,19 @@ func (inst *Instance) spawnWorker(source string, caps map[string]bool, capsGiven
 // módulo entero ("fs") o la función exacta ("fs.read"), deny-by-default.
 func workerGrants(name string, caps map[string]bool, capsGiven bool) bool {
 	if hasPrefix(name, "ui.") || hasPrefix(name, "worker.") || hasPrefix(name, "loader.") ||
+		hasPrefix(name, "plugin.") ||
 		name == "__handle_call" || name == "__handle_call_s" || name == "__reset_budget" ||
 		name == "__pending_gname" || name == "__pending_gval" ||
 		name == "__pending_ename" || name == "__pending_epayload" {
-		// ui/worker no cruzan; loader._source, __reset_budget (watchdog, DM4) y
-		// __pending_gname/gval (SetGlobalString, M13d) ya los registra el propio Pool
-		// del worker (registerLoader/registerWatchdog/registerGlobals en newBarePool);
-		// las primitivas de despacho de handles las re-registra registerHandleDispatch.
-		// Copiarlas aquí sería una doble-registración (panic).
+		// ui/worker no cruzan; plugin.* es SOLO estado principal (api.md §13/§16: el
+		// worker no tiene ciclo de vida de plugins) y, peor, sus HostFns cierran
+		// sobre el runtime PRINCIPAL: un plugin.reload desde la goroutine del worker
+		// re-entraría la VM principal en paralelo con su bucle. loader._source,
+		// __reset_budget (watchdog, DM4) y __pending_gname/gval (SetGlobalString,
+		// M13d) ya los registra el propio Pool del worker (registerLoader/
+		// registerWatchdog/registerGlobals en newBarePool); las primitivas de
+		// despacho de handles las re-registra registerHandleDispatch. Copiarlas aquí
+		// sería una doble-registración (panic).
 		return false
 	}
 	if !capsGiven {
