@@ -75,10 +75,12 @@ jobs:
         # `version: "2"`). La v6 instalaba la v1, que rechazaba ese esquema.
         uses: golangci/golangci-lint-action@v7
         with:
-          # `only-new-issues` marca solo los hallazgos en líneas tocadas por el PR:
-          # no bloquea por deuda preexistente en las ~33k líneas ya escritas. La
-          # configuración (conjunto mínimo de linters) vive en .golangci.yml.
-          only-new-issues: true
+          # El binario exacto hace reproducible el baseline. Actualizarlo exige
+          # ejecutar de nuevo el conjunto completo y dejarlo en cero hallazgos.
+          version: v2.12.2
+          # El baseline cubre todo el repositorio: ningún hallazgo queda oculto
+          # por no pertenecer a las líneas modificadas por el PR (ADR-021).
+          only-new-issues: false
 
   # Garantiza el requisito literal de CLAUDE.md ("go build ./... verde") y, además,
   # que el binario distribuible —estático, CGO_ENABLED=0— compila en los DOS sistemas
