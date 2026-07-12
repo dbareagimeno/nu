@@ -60,6 +60,7 @@ Toda aportación de código debe dejar el repositorio en verde:
 - `go build ./...`
 - `go test -race ./...`
 - `go vet ./...` y `gofmt` sin diferencias
+- `golangci-lint run` con la versión fijada en la CI
 
 La integración continua (ver [`.github/workflows/ci.yml`](.github/workflows/ci.yml))
 comprueba esto en cada Pull Request, en Linux y macOS. La API del core es
