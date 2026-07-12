@@ -122,7 +122,8 @@ Este es el corazón del proyecto y debes respetarlo:
    necesita cerradas se numeran `G##` y se resuelven **una a una**: se discuten
    opciones, se decide, se aplica la resolución a *todos* los documentos
    afectados, y la entrada pasa a **RESUELTO** con descripción de la
-   resolución. Estado actual: **25/25 resueltas** (+ G27).
+   resolución. El estado vivo (contador y abiertas) está en la **cabecera del
+   propio `problemas.md`** — consúltala ahí, no aquí.
 
 3. **Decisiones pospuestas** (`docs/pospuesto.md`). Lo que se decide *no*
    decidir todavía se numera `P##` y **siempre lleva un disparador**: la señal
