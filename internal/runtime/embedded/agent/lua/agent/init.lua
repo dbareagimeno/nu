@@ -720,11 +720,14 @@ local function run_tool(session, call)
     return block
   end
 
+  -- tool.start se emite ANTES de cualquier salida (incluida la de tool
+  -- desconocida): así todo tool.end tiene su tool.start y una UI que empareje
+  -- ciclos (contador, spinner) no recibe nunca un end huérfano.
+  emit(sid, "tool.start", { id = call.id, name = call.name, args = call.args })
+
   if tool == nil then
     return err_result(string.format("tool desconocida: %q (no está registrada)", tostring(call.name)))
   end
-
-  emit(sid, "tool.start", { id = call.id, name = call.name, args = call.args })
 
   -- Permisos (agente.md §5). Denegar produce un error ACCIONABLE devuelto al
   -- modelo como tool_result is_error (el turno no se rompe) Y el objeto
@@ -965,6 +968,15 @@ function Session:_finish_turn(canceled)
   self._turn_done = true
   self.turn_active = false
   self.turn_task = nil
+  -- Retira los asks de ESTA sesión que quedaran pendientes: un aborto a mitad de
+  -- espera dejaría la entrada viva para siempre y un respond() tardío de la UI
+  -- escribiría en un future que ya nadie espera. Solo tablas y emit (síncronos):
+  -- esto corre también desde el cleanup del turno, donde no se puede suspender.
+  for id, p in pairs(pending_asks) do
+    if p.session == self.handle.id then
+      pending_asks[id] = nil
+    end
+  end
   local res = canceled and { canceled = true } or { message = self._final_message }
   for _, it in ipairs(self.waiters) do it.fut:set(res) end
   self.waiters = {}
@@ -1007,12 +1019,52 @@ function Session:_turn_loop()
   self:_finish_turn(false)
 end
 
+-- Session:_repair_history() cierra el hueco que deja un aborto a mitad de tool
+-- loop: el assistant (con sus tool_call) se persiste ANTES de ejecutar las tools
+-- y los tool_result solo después, así que una cancelación entre medias deja el
+-- último mensaje del historial con tool_call sin emparejar. Sintetiza un
+-- tool_result de error por cada uno y lo persiste, dejando historial y transcript
+-- reanudables. No puede vivir en el cleanup del turno: anexar al store suspende
+-- (⏸) y un cleanup es síncrono, por eso se repara al ENTRAR al siguiente turno.
+function Session:_repair_history()
+  local last = self.history[#self.history]
+  if last == nil or last.role ~= "assistant" or type(last.content) ~= "table" then
+    return
+  end
+  local results = {}
+  for _, block in ipairs(last.content) do
+    if block.type == "tool_call" then
+      results[#results + 1] = {
+        type = "tool_result",
+        id = block.id,
+        content = { { type = "text", text = "[la tool no llegó a ejecutarse: el turno se canceló]" } },
+        is_error = true,
+      }
+    end
+  end
+  if #results == 0 then
+    return
+  end
+  local tool_message = { role = "user", content = results }
+  table.insert(self.history, tool_message)
+  if self.store then
+    self.store:append_message(tool_message)
+  end
+end
+
 -- Session:_run_turn_body() es el cuerpo del turno (agente.md §2 pasos 2-6): la
 -- secuencia de peticiones al provider y la ejecución de tools en orden. Corre bajo
 -- el pcall de `_turn_loop`, que convierte cualquier error en un `agent:error` visible
 -- y cierra el turno; por eso aquí no se captura nada (deja propagar).
 function Session:_run_turn_body()
   local turns = 0
+
+  -- Repara un turno anterior que quedó a medias (S08): si una cancelación llegó
+  -- entre persistir el assistant con tool_call y anexar sus tool_result, el
+  -- historial viola el emparejamiento tool_call ↔ tool_result (providers.md §2.2)
+  -- y el provider rechazaría la sesión entera. Debe correr ANTES de compactar y
+  -- de inyectar la cola: los tool_result sintéticos quedan adyacentes al assistant.
+  self:_repair_history()
 
   -- Autocompactación en el LÍMITE del turno (P25): comprime el prefijo viejo
   -- ANTES de inyectar el mensaje nuevo y antes de la primera petición. Se hace
@@ -1092,6 +1144,10 @@ function Session:_run_turn_body()
     self.usage.turns = self.usage.turns + 1
     emit(self.handle.id, "message", { message = assistant, usage = usage, stop_reason = done.stop_reason })
     self._final_message = assistant
+    -- last_stop_reason: el motivo de parada canónico del último done (§2.3). Lo
+    -- consume el Digest de un subagente en modo task (§9), que sin esto no podría
+    -- distinguir un final normal de un max_tokens o un refusal.
+    self.last_stop_reason = done.stop_reason
 
     -- ¿Hay tool calls? (agente.md §2 paso 5).
     if done.stop_reason ~= "tool_calls" then
@@ -1241,10 +1297,13 @@ function Session:compact(opts)
   if type(summary) ~= "table" then
     return false
   end
-  if self.store then
-    self.store:append({ t = "compact", summary = summary })
-  end
   local replaced = #self.history
+  if self.store then
+    -- `covers` (sesiones.md §3): cuántas entradas `message` sustituye el resumen.
+    -- Sin él, una herramienta externa no puede reconstruir el alcance de la
+    -- compactación leyendo solo el JSONL.
+    self.store:append({ t = "compact", summary = summary, covers = replaced })
+  end
   self.history = { summary }
   self._last_input_tokens = nil -- tras compactar, el contador de autocompact se reinicia
   emit(self.handle.id, "compact", { auto = opts.auto == true, replaced = replaced })

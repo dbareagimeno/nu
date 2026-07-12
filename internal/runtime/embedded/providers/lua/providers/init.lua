@@ -144,9 +144,11 @@ end
 -- §1). Cada entrada lleva el provider crudo (base_url, adapter, api_key_env,
 -- extra...) y el ModelInfo, listos para cocinar la ProviderConfig en `resolve`.
 --
--- Valida lo mínimo accionable: un provider sin `adapter`, o un modelo sin `id`,
--- es un registro inválido (EPROVIDER) que nombra el provider —el usuario edita
--- datos, no código, y el error debe decirle qué línea arreglar (providers.md §1)—.
+-- Valida lo mínimo accionable: un provider sin `adapter` o sin `base_url` (ambos
+-- requeridos, providers.md §1), o un modelo sin `id`, es un registro inválido
+-- (EPROVIDER) que nombra el provider —el usuario edita datos, no código, y el
+-- error debe decirle qué línea arreglar—. Sin esto, un `base_url` ausente no
+-- reventaría aquí sino al concatenar la URL en el primer turno del adaptador.
 local function build_index(decoded)
   local index = {}            -- "proveedor/clave" -> { provider_name, provider, model }
   local models = {}           -- lista de ModelInfo enriquecidos (para list())
@@ -158,6 +160,9 @@ local function build_index(decoded)
     end
     if type(prov.adapter) ~= "string" or prov.adapter == "" then
       eprovider(string.format("el provider %q en providers.toml no declara `adapter` (providers.md §1)", pname))
+    end
+    if type(prov.base_url) ~= "string" or prov.base_url == "" then
+      eprovider(string.format("el provider %q en providers.toml no declara `base_url` (providers.md §1)", pname))
     end
     local mlist = prov.models or {}
     for _, model in ipairs(mlist) do

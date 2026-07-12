@@ -81,7 +81,7 @@ const (
 type cliOptions struct {
 	eval      string // -e: chunk Lua a evaluar (headless)
 	prompt    string // -p: prompt del turno de agente headless
-	promptSet bool   // -p fue dado (un prompt vacío "" es válido si se pasó)
+	promptSet bool   // hay prompt con el que ejecutar el modo agente (true solo si -p NO vacío; `-p ""` cuenta como ausencia)
 	cont      bool   // --continue: reanudar la última sesión del cwd (G18)
 	autoPerm  bool   // --auto-permissions: modo "auto" de permisos (agente.md §5)
 	model     string // --model: provider/modelo del turno (anula agent.toml)
@@ -107,6 +107,13 @@ func run() int {
 	// que distinguirlos —ninguno dispara un turno—; `promptSet` resume "hay un prompt
 	// con el que ejecutar el modo agente".
 	opts.promptSet = opts.prompt != ""
+
+	// `-e` (eval Lua) y el modo agente (`-p`/`--continue`) son modos EXCLUYENTES (ver
+	// checkFlagConflicts): sin este corte `runWith` resolvería a favor de `-e` en silencio,
+	// descartando el prompt y sus modificadores y saliendo 0 —engañoso para un script/CI—.
+	if code := checkFlagConflicts(opts); code != exitOK {
+		return code
+	}
 
 	// Una acción headless es la que dispara un modo no interactivo (`-e`/`-p`/--continue).
 	// `--auto-permissions`/`--model` sueltos NO la disparan: son modificadores de un turno
@@ -195,6 +202,26 @@ func runInteractive(rt *runtime.Runtime) int {
 	if err := rt.RunInteractive(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return exitError
+	}
+	return exitOK
+}
+
+// checkFlagConflicts valida las combinaciones de flags EXCLUYENTES antes de resolver
+// el modo, y devuelve el código de uso inválido (`exitUsage`, escribiendo el porqué a
+// stderr) o `exitOK` si no hay conflicto. Se separa de `run` para poder testear la
+// regla sin tocar `flag`/os.Args ni construir un Runtime.
+//
+// `-e` (evaluar un chunk Lua, §1.3) y el modo agente (`-p`/`--continue`) eligen modos
+// distintos que `runWith` NO combina: resolvería a favor de `-e` y descartaría en
+// silencio el prompt y sus modificadores (--continue/--auto-permissions/--model),
+// saliendo 0 y engañando a un script/CI. Es uso inválido (código 2), como el resto de
+// combinaciones incompatibles. `-p ""` cuenta como ausencia (promptSet=false): no
+// colisiona con `-e`.
+func checkFlagConflicts(opts cliOptions) int {
+	if opts.eval != "" && (opts.promptSet || opts.cont) {
+		fmt.Fprintln(os.Stderr, "uso: -e y -p/--continue son incompatibles "+
+			"(evaluar un chunk Lua o ejecutar un turno de agente, no ambos)")
+		return exitUsage
 	}
 	return exitOK
 }
@@ -331,11 +358,12 @@ func boolFlag(b bool) string {
 // `sessions.list(cwd)` ordenando los ids descendente (ordenan lexicográfico =
 // temporal, sesiones.md §2/§7) y se pasa como `resume`.
 //
-// Detección de deny headless: se suscribe a `agent:tool.end` (agente.md §4) y marca
-// el estado si una tool terminó con error cuyo texto es el del deny de §5 (contiene
-// "headless" y "allow" —el mensaje accionable que el agente produce sin UI, G20—).
-// Es el mismo acoplamiento estable que usa CP-10: el wording lo fija la extensión
-// `agent` (congelada en S39), no cambia.
+// Detección de deny headless: se suscribe al evento ESTRUCTURADO
+// `agent:permission.denied` (agente.md §5, G40) y marca el estado solo cuando
+// `ev.source == "headless"` —el enum cerrado de la extensión distingue el deny por
+// falta de UI (G20) de un default-deny, un veto de hook o una decisión de usuario—.
+// Nada de matching sobre texto libre: el `source` es dato, no prosa, y no da falsos
+// positivos (un default-deny también nombra `allow` en su mensaje accionable).
 //
 // IMPORTANTE — el estado del handler vive en una TABLA (`state`), no en un escalar:
 // los handlers de `nu.events` corren sobre un thread efímero (ADR-008), y mutar un
@@ -387,9 +415,12 @@ end
 
 -- Estado compartido con el handler de eventos (tabla, no escalar: ver arriba).
 local state = { denied = false }
-local sub = nu.events.on("agent:tool.end", function(ev)
-  if ev.is_error == true and type(ev.error) == "string"
-     and ev.error:find("headless", 1, true) and ev.error:find("allow", 1, true) then
+local sub = nu.events.on("agent:permission.denied", function(ev)
+  -- Solo el deny por AUSENCIA de UI (headless, G20) mapea al código 3: es el que
+  -- --auto-permissions habría concedido. Un default-deny, un veto de hook o un deny
+  -- de usuario son denegaciones legítimas, no "falta el flag". El campo source es un
+  -- enum cerrado de la extensión (agente.md §5), no texto libre.
+  if ev.source == "headless" then
     state.denied = true
   end
 end)

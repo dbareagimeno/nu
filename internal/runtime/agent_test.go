@@ -176,6 +176,63 @@ func TestAgentTurnoCompleto(t *testing.T) {
 	h.expectEval(`return tostring(HIST)`, "4")
 }
 
+// TestAgentReparaToolCallHuerfano (S08, providers.md §2.2): si un turno anterior
+// quedó a medias —el assistant con tool_call se persistió y la cancelación llegó
+// antes de anexar los tool_result—, el SIGUIENTE turno repara el historial
+// sintetizando un tool_result de error por cada tool_call huérfano, ANTES de
+// inyectar el mensaje nuevo. Sin la reparación, el provider rechazaría la sesión
+// entera (tool_use sin su tool_result) y el transcript quedaría irreanudable.
+func TestAgentReparaToolCallHuerfano(t *testing.T) {
+	h, _ := bootAgent(t, providersTomlToolStub, false)
+
+	h.eval(`
+		out, errc = nil, nil
+		nu.task.spawn(function()
+			local ok, e = pcall(function()
+				local agent = require("agent")
+				` + registerToolStub + `
+				TOOLNAME = "probe"
+				TOOLARGS = { value = "x" }
+				agent.tool{
+					name = "probe",
+					description = "tool de prueba",
+					schema = { type = "object" },
+					permissions = { default = "allow" },
+					handler = function(args, ctx) return "resultado" end,
+				}
+				local s = agent.session{ model = "test/m", no_store = true }
+				-- Estado que deja un aborto a mitad de tool loop: el último mensaje
+				-- es un assistant con tool_call SIN su tool_result emparejado.
+				table.insert(s.history, { role = "assistant", content = {
+					{ type = "tool_call", id = "huerfano-1", name = "probe", args = {} },
+				} })
+				local final = s:send("sigue")
+				FINAL_TEXT = final.content[1].text
+				-- La reparación quedó inmediatamente DESPUÉS del assistant roto y
+				-- ANTES del user nuevo: adyacencia que exige el emparejamiento.
+				local rep = s.history[2]
+				REP_ROLE = rep.role
+				REP_TYPE = rep.content[1].type
+				REP_ID = tostring(rep.content[1].id)
+				REP_ERR = tostring(rep.content[1].is_error)
+				NEXT_ROLE = s.history[3].role
+				NEXT_TYPE = s.history[3].content[1].type
+				s:close()
+			end)
+			if not ok then errc = (type(e) == "table" and e.code) or tostring(e) end
+			out = "done"
+		end)`)
+	h.expectEval(`return tostring(out)`, "done")
+	h.expectEval(`return tostring(errc)`, "nil")
+	h.expectEval(`return tostring(FINAL_TEXT)`, "listo")
+	h.expectEval(`return REP_ROLE`, "user")
+	h.expectEval(`return REP_TYPE`, "tool_result")
+	h.expectEval(`return REP_ID`, "huerfano-1")
+	h.expectEval(`return REP_ERR`, "true")
+	h.expectEval(`return NEXT_ROLE`, "user")
+	h.expectEval(`return NEXT_TYPE`, "text")
+}
+
 // providersTomlErrStub: un provider cuyo adaptador "errstub" LANZA en `stream`
 // (simula un 401 por API key ausente/ inválida o un provider caído).
 const providersTomlErrStub = `

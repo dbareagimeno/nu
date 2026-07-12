@@ -37,11 +37,11 @@ puro no puede hacer TLS ni pintar un terminal, así que el kernel se lo da.
 | Módulo | Responsabilidad |
 |---|---|
 | **scheduler** | Event loop, timers, puente ⏸ task-Lua ↔ goroutines (realizado con tasks como corrutinas Lua nativas sobre wazero, ADR-020, tras la retirada de gopher en M17; la realización previa goroutine-por-task + token Lua de ADR-011 quedó reemplazada), workers |
-| **io** | Filesystem, spawn de procesos con streams, entorno |
+| **io** | Filesystem, spawn de procesos con streams, entorno, búsqueda paralela del árbol (`files`/`grep`, G51) |
 | **net** | Cliente HTTP/HTTPS con respuesta en streaming (SSE), TCP/websocket |
 | **ui** | Celdas + regiones + compositor (z-order, blit de bloques, damage tracking, coalescing ~30 ms), eventos de input, keymaps |
 | **text** | UTF-8/graphemes, regex, render de markdown, syntax highlighting |
-| **data** | Codecs JSON y TOML |
+| **data** | Codecs JSON, TOML y YAML (G51) |
 | **loader** | `require`, rutas de plugins, extensiones embebidas |
 
 Notas:

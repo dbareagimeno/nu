@@ -112,7 +112,10 @@ cambiar el razonamiento, ADR-016), `/help`, `/quit`.
 Ante `agent:permission.asked`: modal con la tool, los args completos (sin
 truncar lo peligroso: el comando entero, la ruta entera) y opciones:
 
-- **Permitir una vez** → `agent.permission.respond(id, "once")`.
+- **Permitir una vez** → `agent.permission.respond(id, true)`. El segundo
+  argumento es un **booleano** (`true` concede, `false`/`nil` deniega, G49):
+  "una vez" y "siempre" conceden igual; difieren solo en si además se
+  persiste el patrón (abajo).
 - **Permitir siempre** → añade el patrón a la política de la *sesión*; con
   modificador, persiste a la config **global del usuario** (`agent.toml`) —
   nunca al `agent.toml` del proyecto: sus `allow` se ignoran por el modelo

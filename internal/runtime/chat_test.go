@@ -402,6 +402,78 @@ func TestChatDialogoPermisos(t *testing.T) {
 	h.eval(`C:quit()`)
 }
 
+// TestChatPendingAsksNoSePisan (G3, chat.md §6): el indicador de asks pendientes de
+// la statusline suma DOS estados independientes —la cola de asks PROPIOS (los que
+// abren modal) y el contador de asks de OTRAS sesiones (que solo suben el indicador,
+// G3)— sin que un flujo borre al otro. Regresión: antes un ÚNICO campo `pending_count`
+// lo escribían ambos flujos y se pisaban: un ask propio fijaba la cuenta a 1 (perdía
+// los ajenos), y responderlo la bajaba a 0 (borraba el indicador de los ajenos aún
+// pendientes). También verifica el decremento del contador ajeno al DENEGARSE un ask
+// de la otra sesión (`agent:permission.denied` con source="user").
+func TestChatPendingAsksNoSePisan(t *testing.T) {
+	h, _ := bootChat(t, providersTomlChatStub, 60, 20)
+	h.eval(`
+		C = nil
+		nu.task.spawn(function()
+			` + registerChatStreamStub + `
+			C = require("chat").start({ model = "test/m", no_store = true })
+		end)
+	`)
+	h.eval(`SID = C.session.id`)
+	// texto renderizado del segmento de asks pendientes (derecha de la statusline).
+	h.eval(`
+		function pending_span_text()
+			C:_update_statusline()
+			local parts = {}
+			for _, s in ipairs(C.status_right.spans or {}) do parts[#parts+1] = s.text end
+			return table.concat(parts)
+		end
+	`)
+	// 2 asks AJENOS (de otra sesión): solo suben el contador; NO abren modal (G3).
+	h.eval(`
+		for i = 1, 2 do
+			nu.events.emit("agent:permission.asked", {
+				session = "otra-sesion", id = "ext-"..i, tool = "bash",
+				args = { command = "ls" }, suggested = "bash:ls",
+			})
+		end
+	`)
+	h.expectEval(`return tostring(C.current_modal == nil)`, "true")
+	h.expectEval(`return tostring(C:_pending_total())`, "2")
+	// 1 ask PROPIO (sesión activa): abre modal y SUMA a los ajenos (no los pisa).
+	h.eval(`
+		nu.events.emit("agent:permission.asked", {
+			session = SID, id = "ask-propio", tool = "write_file",
+			args = { path = "/tmp/x", content = "hola" },
+			suggested = "write_file:/tmp/x",
+		})
+	`)
+	h.expectEval(`return tostring(C.current_modal ~= nil)`, "true")
+	h.expectEval(`return tostring(C:_pending_total())`, "3") // 2 ajenos + 1 propio
+	h.expectEval(`return tostring(pending_span_text():find("3 perm", 1, true) ~= nil)`, "true")
+	// El usuario responde el propio (permitir una vez, tecla "a"): baja SOLO el propio.
+	// Los 2 ajenos SIGUEN pendientes (antes esto los borraba con pending_count = 0).
+	h.eval(`C.app:handle_key({ type = "key", key = "a" })`)
+	h.expectEval(`return tostring(C.current_modal == nil)`, "true")
+	h.expectEval(`return tostring(C:_pending_total())`, "2")
+	// Un ajeno se resuelve DENEGANDO (source="user"): decrementa el contador ajeno.
+	h.eval(`
+		nu.events.emit("agent:permission.denied", {
+			session = "otra-sesion", id = "call-1", tool = "bash", source = "user",
+		})
+	`)
+	h.expectEval(`return tostring(C:_pending_total())`, "1")
+	// Una denegación por POLÍTICA (source≠"user") NO decrementa: nunca incrementó el
+	// contador (esas denegaciones no emiten `permission.asked`). Guard a 0 implícito.
+	h.eval(`
+		nu.events.emit("agent:permission.denied", {
+			session = "otra-sesion", id = "call-2", tool = "bash", source = "deny",
+		})
+	`)
+	h.expectEval(`return tostring(C:_pending_total())`, "1")
+	h.eval(`C:quit()`)
+}
+
 // TestChatComandoSlash (chat.md §4): un comando slash se registra y despacha.
 // /help lista los comandos; un comando desconocido devuelve un mensaje (no se
 // envía al modelo).

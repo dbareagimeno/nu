@@ -309,8 +309,10 @@ function M.attach(agent)
     if self.mode == "task" then
       local final = self.child:send(prompt)
       -- Digesto alineado con el modo worker: el usage del proveedor del último turno
-      -- (input/output_tokens), no el acumulado de la sesión (agente.md §9).
-      return digest_of(final, self.child.last_usage, final and "end" or nil, self.child.usage.turns)
+      -- (input/output_tokens), no el acumulado de la sesión, y el stop_reason REAL
+      -- del último done — no un "end" fijo que ocultaría max_tokens/refusal (§9).
+      return digest_of(final, self.child.last_usage,
+        self.child.last_stop_reason or (final and "end" or nil), self.child.usage.turns)
     else
       return run_worker(self, prompt)
     end

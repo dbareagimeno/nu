@@ -103,7 +103,7 @@ local function run_turn(init)
   end
 
   local max_turns = init.max_turns or 32
-  local final_message, last_usage = nil, nil
+  local final_message, last_usage, last_stop = nil, nil, nil
   local turns = 0
 
   while true do
@@ -125,7 +125,7 @@ local function run_turn(init)
     local done, usage = consume_stream(iter)
     local assistant = done.message
     history[#history + 1] = assistant
-    final_message, last_usage = assistant, usage
+    final_message, last_usage, last_stop = assistant, usage, done.stop_reason
 
     if done.stop_reason ~= "tool_calls" then
       break
@@ -155,7 +155,9 @@ local function run_turn(init)
   return {
     text        = text_of(final_message),
     message     = final_message,
-    stop_reason = final_message and "end" or nil,
+    -- El motivo de parada REAL del último done (providers.md §2.3): el padre
+    -- distingue así un final normal de un max_tokens o un refusal.
+    stop_reason = last_stop,
     usage       = last_usage,
     turns       = turns,
   }

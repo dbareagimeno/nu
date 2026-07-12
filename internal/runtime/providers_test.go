@@ -220,6 +220,30 @@ id = "m1"
 	h.expectEval(`return tostring(err_code)`, "EPROVIDER")
 }
 
+// TestProvidersTOMLSinBaseURL: un provider con `adapter` válido pero sin
+// `base_url` es registro inválido accionable (EPROVIDER) que nombra el provider
+// y el campo del TOML a rellenar (providers.md §1). Sin esta validación, el
+// `base_url` nil se propagaría a la ProviderConfig y reventaría con "attempt to
+// concatenate a nil value" en el primer turno del adaptador (A-15).
+func TestProvidersTOMLSinBaseURL(t *testing.T) {
+	toml := `
+[providers.roto]
+adapter = "stub"
+[[providers.roto.models]]
+id = "m1"
+`
+	h := bootProviders(t, toml)
+	h.eval(inTask(`
+		local ok, err = pcall(function() require("providers").list() end)
+		err_ok = ok
+		err_code = err and err.code
+		err_msg = err and err.message
+	`))
+	h.expectEval(`return tostring(err_ok)`, "false")
+	h.expectEval(`return tostring(err_code)`, "EPROVIDER")
+	h.expectEval(`return tostring(string.find(err_msg, "base_url", 1, true) ~= nil)`, "true")
+}
+
 // TestProvidersAdaptadorStub blinda el contrato del adaptador (providers.md §3)
 // contra una petición SIMULADA: el stub emite el stream canónico de Events
 // (§2.3) terminado por un `done` con el Message ensamblado. Es la mitad "un

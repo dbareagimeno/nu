@@ -114,6 +114,32 @@ function Chat:_refresh_transcript()
   end
 end
 
+-- Chat:_pending_total() -> número de asks pendientes que la statusline muestra como
+-- un único `pending_asks` (chat.md §6, G3). Suma DOS estados que antes compartían un
+-- solo campo (`pending_count`) y se PISABAN —el flujo de asks propios lo sobrescribía
+-- con `#ask_queue`/0 y borraba la cuenta de los asks ajenos aún pendientes, y a la
+-- inversa—:
+--   · la cola PROPIA, DERIVADA en vivo de `#self.ask_queue` (asks encolados) más el
+--     que esté visible en el modal (`current_modal`). Al derivarla no hay estado que
+--     otro flujo pueda machacar.
+--   · `self.pending_foreign`, el contador de asks de OTRAS sesiones (G3: no abren
+--     modal, solo suben este indicador). Se incrementa en la rama ajena de
+--     `agent:permission.asked` y se decrementa (con guard a 0) en `agent:permission.
+--     denied`.
+--
+-- ASIMETRÍA CONOCIDA del contador ajeno: el agente NO emite ningún evento observable
+-- cuando un ask se CONCEDE (`agent.permission.respond` solo resuelve el future del
+-- lado del agente; el único evento del ciclo de vida además de `permission.asked` es
+-- `permission.denied`, que emite el flujo de tools al denegar). Por eso solo podemos
+-- descontar los asks ajenos DENEGADOS por el usuario; los concedidos por otra sesión
+-- siguen sumados hasta que el chat cambie de sesión (`switch_session` re-suscribe) o
+-- se cierre. No añadimos un evento nuevo al agente para cerrar el hueco: sería
+-- cambiar su contrato por una mejora cosmética de esta statusline.
+function Chat:_pending_total()
+  local own = #(self.ask_queue or {}) + (self.current_modal ~= nil and 1 or 0)
+  return own + (self.pending_foreign or 0)
+end
+
 -- Chat:_update_statusline() recompone los segmentos (chat.md §6) y los vuelca a los
 -- labels. El ctx lo arma con el estado vivo de la sesión (modelo, usage, permisos).
 function Chat:_update_statusline()
@@ -124,7 +150,7 @@ function Chat:_update_statusline()
     cost_usd = (self.session.usage or {}).cost_usd,
     cwd = self.session.cwd,
     perms_mode = self.perms_mode,
-    pending_asks = self.pending_count or 0,
+    pending_asks = self:_pending_total(),
     thinking = (self.session.thinking_mode and self.session:thinking_mode()) or "off",
   }
   -- Construye los SPANS coloreados de un lado de la barra (chat.md §6): cada segmento
@@ -511,13 +537,28 @@ function Chat:_subscribe_agent()
   -- la statusline (G3) pero no abren modal aquí.
   subs[#subs + 1] = nu.events.on("agent:permission.asked", function(p)
     if not mine(p) then
-      -- ask de otra sesión: indicador en la statusline (G3).
-      self.pending_count = (self.pending_count or 0) + 1
+      -- ask de otra sesión: indicador en la statusline (G3). Campo SEPARADO de la
+      -- cola propia (ver Chat:_pending_total) para que los dos flujos no se pisen.
+      self.pending_foreign = (self.pending_foreign or 0) + 1
       self:_update_statusline()
       self:_repaint()
       return
     end
     self:_enqueue_ask(p)
+  end)
+
+  -- agent:permission.denied — un ask AJENO que la otra sesión resolvió DENEGANDO
+  -- (G3): descuenta el indicador. Es el único evento del ciclo de vida de un ask que
+  -- podemos observar al resolverse (el CONCEDIDO no emite evento: ver la asimetría
+  -- documentada en Chat:_pending_total). `source == "user"` distingue la denegación
+  -- de un diálogo —la que sí incrementó el contador— de las denegaciones por política
+  -- (deny/default/hook/headless), que nunca emitieron `permission.asked`. Guard a 0.
+  subs[#subs + 1] = nu.events.on("agent:permission.denied", function(p)
+    if mine(p) then return end
+    if type(p) ~= "table" or p.source ~= "user" then return end
+    self.pending_foreign = math.max(0, (self.pending_foreign or 0) - 1)
+    self:_update_statusline()
+    self:_repaint()
   end)
 end
 
@@ -526,7 +567,7 @@ end
 -- tool y los args y responde con agent.permission.respond.
 function Chat:_enqueue_ask(p)
   self.ask_queue[#self.ask_queue + 1] = p
-  self.pending_count = #self.ask_queue
+  -- el total propio se deriva de #ask_queue + el modal (Chat:_pending_total).
   self:_update_statusline()
   if self.current_modal == nil then
     self:_show_next_ask()
@@ -539,7 +580,6 @@ function Chat:_show_next_ask()
   local p = table.remove(self.ask_queue, 1)
   if p == nil then
     self.current_modal = nil
-    self.pending_count = 0
     self:_update_statusline()
     self:close_modal(nil)
     return
@@ -578,7 +618,7 @@ function Chat:_show_next_ask()
     end,
   })
   self.current_modal = dialog
-  self.pending_count = #self.ask_queue + 1
+  -- el total propio (cola + este modal) lo deriva Chat:_pending_total.
   self:_update_statusline()
   self:open_modal(dialog, { title = "Permiso requerido", height = 8 })
 end
@@ -942,7 +982,7 @@ function M.start(opts)
     keymaps       = {},
     ask_queue     = {},
     current_modal = nil,
-    pending_count = 0,
+    pending_foreign = 0, -- asks de OTRAS sesiones (G3); la cola propia se deriva
     input_history = {},
     history_cursor = 1,
     perms_mode    = (opts.permissions and opts.permissions.mode) or "ask",

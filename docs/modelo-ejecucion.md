@@ -100,6 +100,10 @@ recibir el chunk ya parseado, pedir el Block, colocarlo.
    siguiente punto de suspensión. Un bucle de CPU puro en Lua no es
    cancelable: solo el watchdog lo aborta. El aborto no es capturable con
    `pcall`; los recursos se liberan con `nu.task.cleanup` (api.md §1.3).
+   Además, cancelar **no interrumpe la primitiva ⏸ en vuelo**: la task ve
+   `ECANCELED` al instante, pero la operación Go en curso (`fs.write`,
+   `http.request`…) corre hasta su fin natural y sus efectos pueden aterrizar
+   después del cleanup ([P33](pospuesto.md)).
 3. **La frontera de workers solo cruza datos, nunca referencias.** Mensajes =
    valores JSON-ables copiados. No cruzan: closures, userdata ni **Blocks**.
    Consecuencia práctica: un worker no puede pre-renderizar UI; manda datos
@@ -109,17 +113,23 @@ recibir el chunk ya parseado, pedir el Block, colocarlo.
    significa que un worker no puede reaccionar a eventos del bus ni emitirlos
    directamente. La API del worker puede recortarse aún más al crearlo
    (`opts.caps`), hasta dejar solo los módulos concedidos.
-5. **Memoria compartida dentro del estado principal.** Un memory leak de un
+5. **El bombeo del scheduler es hoy por invocación** (`Boot` y los `Eval`
+   headless): el modo interactivo aún no ejecuta tasks, y los timers de fondo
+   (`nu.task.every`) mueren al alcanzarse la quiescencia de primer plano de
+   cada invocación, en vez de pausarse. Es la grieta **abierta**
+   [G44](problemas.md) — limitación transitoria de la construcción, no del
+   modelo: el diseño de ADR-004 prevé el bucle de vida continuo.
+6. **Memoria compartida dentro del estado principal.** Un memory leak de un
    plugin infla el proceso entero; no hay presupuesto de memoria por plugin
    en v1 (los actores aislados quedaron como evolución futura, ADR-008).
-6. **Repintado coalescido a ~30 ms.** Suficiente para streaming y UI fluida;
+7. **Repintado coalescido a ~30 ms.** Suficiente para streaming y UI fluida;
    inadecuado para animaciones de alta frecuencia. Decisión consciente: una
    TUI pinta por cambios, no por frames.
-7. **Backpressure por ritmo de consumo.** Los streams (SSE, stdout de
+8. **Backpressure por ritmo de consumo.** Los streams (SSE, stdout de
    procesos) se bufferizan en Go mientras Lua consume a su ritmo; el buffer
    tiene límite y al excederlo el stream falla (`EIO`). Un consumidor Lua
    lento no puede dejar el buffer creciendo sin cota.
-8. **El rendimiento de Lua es el techo del camino caliente.** Todo lo que
+9. **El rendimiento de Lua es el techo del camino caliente.** Todo lo que
    escale con el tamaño de la pantalla o del repo debe ser primitiva Go
    ("Lua decide, Go ejecuta"). Si una extensión necesita CPU en Lua, su
    herramienta es un worker — nunca el estado principal.

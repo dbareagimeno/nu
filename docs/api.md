@@ -78,9 +78,16 @@ silencio.
 
 ### 1.5 Unidades y tipos comunes
 
-Tiempos en **milisegundos**. Rutas como strings UTF-8. Toda función con IO
-acepta `opts.timeout_ms` (lanza `ETIMEOUT`). Los handles del core (Task,
-Region, Proc...) son userdata opacos con métodos.
+Tiempos en **milisegundos**. Rutas como strings UTF-8. El plazo de IO es
+`opts.timeout_ms` (lanza `ETIMEOUT`) **en las firmas que lo listan** —
+`nu.proc.run`, `nu.http.request`, `nu.http.stream`, `nu.ws.connect`—; el
+resto del IO de v1 no acepta plazo (G47 — extenderlo a más firmas es una
+adición futura compatible, no una promesa vigente). El valor frontera queda
+definido donde el plazo existe: en `proc.run`, `0` (el default) significa
+*sin límite* — un proceso local puede legítimamente no tener techo—; en
+`http`/`ws` el plazo existe siempre (default 30 000 ms) y `0` es `EINVAL` —
+no hay petición de red sin techo—. Los handles del core (Task, Region,
+Proc...) son userdata opacos con métodos.
 
 ---
 

@@ -38,7 +38,12 @@ rendimiento del scripting queda acotado por gopher-lua → refuerza ADR-004.
 
 ## ADR-002 · Lua (gopher-lua) como lenguaje de extensión
 
-**Estado:** Aceptada · 2026-06
+**Estado:** Aceptada · 2026-06 · *Nota (2026-07-12, G50): el núcleo de la
+decisión —Lua como lenguaje de extensión, frente a Starlark/JS/WASM— sigue
+vigente. Su realización (gopher-lua, Lua 5.1, y la consecuencia "no
+thread-safe condiciona la concurrencia") quedó reemplazada por
+ADR-019/ADR-020: PUC-Lua 5.4 compilado a WASM sobre wazero; la retirada M17
+eliminó gopher-lua del binario y del `go.mod`.*
 
 **Contexto.** La extensibilidad es el producto. Candidatos: Lua (gopher-lua o
 LuaJIT/cgo), Starlark, Risor/Tengo, JS vía goja, WASM.

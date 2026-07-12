@@ -227,6 +227,49 @@ func TestCLIUsageNoActionAgentMode(t *testing.T) {
 	}
 }
 
+// TestCLIEvalAndPromptIncompatible: `-e` (eval Lua) y el modo agente (`-p`/`--continue`)
+// son modos EXCLUYENTES. Combinarlos es uso inválido (código 2): sin el corte, `runWith`
+// resolvería a favor de `-e` y descartaría el prompt en silencio saliendo 0. Se ejercita
+// `checkFlagConflicts` (la regla, separada de `run` para poder testearla sin `flag`).
+func TestCLIEvalAndPromptIncompatible(t *testing.T) {
+	// -e + -p → incompatible.
+	var code int
+	_, stderr := captureOutput(t, func() {
+		code = checkFlagConflicts(cliOptions{eval: "return 1", prompt: "hola", promptSet: true})
+	})
+	if code != exitUsage {
+		t.Fatalf("-e junto con -p debe ser uso inválido; got %d, want %d", code, exitUsage)
+	}
+	if !strings.Contains(stderr, "incompatibles") || !strings.Contains(stderr, "-p") {
+		t.Fatalf("el error debe nombrar los flags incompatibles; got %q", stderr)
+	}
+
+	// -e + --continue → también incompatible.
+	_, stderr = captureOutput(t, func() {
+		code = checkFlagConflicts(cliOptions{eval: "return 1", cont: true})
+	})
+	if code != exitUsage {
+		t.Fatalf("-e junto con --continue debe ser uso inválido; got %d, want %d", code, exitUsage)
+	}
+	if !strings.Contains(stderr, "incompatibles") || !strings.Contains(stderr, "--continue") {
+		t.Fatalf("el error debe nombrar los flags incompatibles; got %q", stderr)
+	}
+
+	// Casos que NO colisionan: cada modo por su cuenta, y `-e` con `-p ""` (ausencia).
+	for name, opts := range map[string]cliOptions{
+		"solo -e":       {eval: "return 1"},
+		"solo -p":       {prompt: "hola", promptSet: true},
+		"-e con -p ''":  {eval: "return 1", promptSet: false}, // `-p ""` → promptSet=false
+		"solo continue": {cont: true},
+	} {
+		var c int
+		_, _ = captureOutput(t, func() { c = checkFlagConflicts(opts) })
+		if c != exitOK {
+			t.Fatalf("%s no debe ser conflicto; got %d, want %d", name, c, exitOK)
+		}
+	}
+}
+
 // --- Turno de agente headless: --auto-permissions vs deny ------------------------
 
 // registerWriteStub prepara el adaptador para pedir la tool `write_file` (que muta
@@ -334,6 +377,54 @@ return "ok"`
 	}
 	if !strings.Contains(stdout, "listo") {
 		t.Fatalf("stdout debe traer el texto final; got %q", stdout)
+	}
+}
+
+// TestCLIAgentDefaultDenyNotExit3: una tool con `permissions.default = "deny"` se
+// deniega con `source == "default"` (NO "headless"): es una denegación LEGÍTIMA de
+// política, no "falta --auto-permissions". El CLI NO debe mapearla al código 3 (ese
+// código es exclusivo del deny por ausencia de UI, G20). El turno se completa —el
+// modelo recibe el tool_result is_error y responde— así que sale 0. Blinda el
+// discriminador `ev.source == "headless"` del driver: si se marcara `denied` ante
+// cualquier `agent:permission.denied`, este default-deny daría un exit 3 espurio.
+func TestCLIAgentDefaultDenyNotExit3(t *testing.T) {
+	rt, _, _ := bootCLI(t)
+	if _, err := rt.EvalString(registerToolStub); err != nil {
+		t.Fatalf("registrar toolstub: %v", err)
+	}
+	// Una tool custom con default="deny": su permiso se niega por POLÍTICA (source
+	// "default"), sin relación con headless. El handler nunca corre (se deniega antes).
+	setup := `
+local agent = require("agent")
+agent.tool({
+  name = "denegada",
+  description = "tool de prueba con default=deny",
+  schema = { type = "object" },
+  handler = function(args, ctx) return { content = { { type = "text", text = "no debería ejecutarse" } } } end,
+  permissions = { default = "deny" },
+})
+TOOLNAME = "denegada"
+TOOLARGS = {}
+return "ok"`
+	if _, err := rt.EvalString(setup); err != nil {
+		t.Fatalf("registrar tool default=deny: %v", err)
+	}
+
+	var code int
+	stdout, stderr := captureOutput(t, func() {
+		code = runWith(rt, cliOptions{prompt: "usa la tool", promptSet: true, model: "test/m"})
+	})
+	// Lo esencial: NO es el código 3 (ese es solo para el deny headless). En este
+	// arnés el turno se completa (el modelo responde "listo" tras el tool_result), así
+	// que sale 0.
+	if code == exitDenied {
+		t.Fatalf("un default-deny (source=\"default\") NO debe mapear al código 3; got %d (stderr=%q)", code, stderr)
+	}
+	if code != exitOK {
+		t.Fatalf("un default-deny debe completar el turno (exit 0); got %d (stderr=%q)", code, stderr)
+	}
+	if !strings.Contains(stdout, "listo") {
+		t.Fatalf("stdout debe traer el texto final del asistente; got %q", stdout)
 	}
 }
 

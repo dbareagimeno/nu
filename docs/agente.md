@@ -361,6 +361,13 @@ permisos globales. La precedencia es la estándar: defaults < global <
 proyecto (`<repo>/.nu/agent.toml`) < sesión (`opts`) — con la excepción de
 seguridad de §11: los permisos del proyecto solo recortan.
 
+La extensión acuña su código de error estructurado, **`EAGENT`** (forma de
+api.md §1.4, como providers.md §3 acuña `EPROVIDER`): los errores propios del
+motor —un `agent.toml` mal formado, `max_turns` agotado sin que el modelo
+termine, un subagente cuyo canal muere— se lanzan como `{ code = "EAGENT",
+message, detail? }`, capturables con `pcall` (G48). Los errores de *uso* de la
+API siguen siendo `EINVAL`, y los del proveedor, `EPROVIDER`.
+
 El campo `model` (`"proveedor/modelo"`) es **obligatorio** para abrir una sesión:
 `agent.session` falla con `EINVAL` accionable si no está en `opts` ni en
 `agent.toml`. Por eso el onramp `nu --default-config` deja una plantilla **activa**
