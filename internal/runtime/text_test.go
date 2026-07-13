@@ -80,6 +80,14 @@ func TestWrapText(t *testing.T) {
 		{"newline explícito es límite duro", "ab\ncd", 10, []string{"ab", "cd"}},
 		{"línea en blanco entre párrafos", "a\n\nb", 10, []string{"a", "", "b"}},
 		{"cjk se parte por celdas", "你好世界", 4, []string{"你好", "世界"}},
+		// Palabra de anchura 0 (zero-width space suelto): el centinela de "línea
+		// vacía" debe ser cur=="", no curW==0, o la siguiente palabra la pisa y
+		// se pierde contenido (lo cazó FuzzWrapText con "\x04 0").
+		{"palabra de anchura cero no se pierde", "\u200b x", 10, []string{"\u200b x"}},
+		// Misma familia en splitWide: un ZWJ hu\u00e9rfano (anchura 0) dejaba curW en 0
+		// y el siguiente cluster ancho se pegaba a su trozo, excediendo width con
+		// 2 graphemes (lo caz\u00f3 FuzzWrapText con "\u200d\u5b610" y width=1).
+		{"zwj hu\u00e9rfano no se pega al cluster ancho", "\u200d\u5b610", 1, []string{"\u200d", "\u5b61", "0"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -92,9 +100,11 @@ func TestWrapText(t *testing.T) {
 					t.Fatalf("wrapText(%q,%d) línea %d = %q, want %q", c.in, c.width, i, got[i], c.want[i])
 				}
 			}
-			// Invariante 🔒: ninguna línea excede `width` celdas.
+			// Invariante 🔒: ninguna línea excede `width` celdas — salvo la excepción
+			// documentada de splitWide: un grapheme AISLADO más ancho que width
+			// (partirlo es imposible sin romperlo).
 			for i, ln := range got {
-				if w := uniseg.StringWidth(ln); w > c.width {
+				if w := uniseg.StringWidth(ln); w > c.width && uniseg.GraphemeClusterCount(ln) > 1 {
 					t.Fatalf("wrapText(%q,%d) línea %d %q tiene %d celdas > width", c.in, c.width, i, ln, w)
 				}
 			}
