@@ -97,7 +97,31 @@ nu.worker.parent.send({
 })
 `
 
-// providersTomlWStub declara un provider cuyo adaptador es "wstub" (el require-able).
+// wsEchoModule es un adaptador stub que ECOA en el texto del digesto lo que el
+// worker puso en el request (`thinking` y `system`): sirve para auditar desde
+// fuera que el init del subagente-worker reenvía ambos (A-22) sin acoplarse a la
+// implementación del worker.
+const wsEchoModule = `
+return {
+  name = "wecho",
+  caps = { tools = true, system = true, usage = true },
+  stream = function(req, provider)
+    local t = req.thinking
+    local txt = "thinking=" .. (t and (tostring(t.mode) .. ":" .. tostring(t.budget)) or "nil")
+      .. ";system=" .. tostring(req.system)
+    local msg = { role = "assistant", content = { { type = "text", text = txt } } }
+    local events = {
+      { type = "text", text = txt },
+      { type = "done", stop_reason = "end", message = msg },
+    }
+    local i = 0
+    return function() i = i + 1; return events[i] end
+  end,
+}
+`
+
+// providersTomlWStub declara un provider cuyo adaptador es "wstub" (el require-able)
+// y otro con el adaptador de eco "wecho" (para A-22).
 const providersTomlWStub = `
 [providers.test]
 adapter  = "wstub"
@@ -106,6 +130,14 @@ base_url = "http://localhost/unused"
 [[providers.test.models]]
 id      = "m1"
 aliases = ["m"]
+
+[providers.test2]
+adapter  = "wecho"
+base_url = "http://localhost/unused"
+
+[[providers.test2.models]]
+id      = "m2"
+aliases = ["e"]
 `
 
 // bootSubagent arranca un runtime con providers+sessions+agent activadas Y un
@@ -138,6 +170,10 @@ func bootSubagent(t *testing.T) (*harness, string) {
 	// worker (para auditar el aislamiento por caps DESDE DENTRO, G6).
 	if err := os.WriteFile(filepath.Join(pdir, "lua", "wprobe.lua"), []byte(wsProbeModule), 0o644); err != nil {
 		t.Fatalf("write wprobe.lua: %v", err)
+	}
+	// `wecho`: adaptador de eco para auditar el reenvío de thinking/system (A-22).
+	if err := os.WriteFile(filepath.Join(pdir, "lua", "wecho.lua"), []byte(wsEchoModule), 0o644); err != nil {
+		t.Fatalf("write wecho.lua: %v", err)
 	}
 
 	writeNuToml(t, cfg, "[plugins]\nenabled = [\"providers\", \"sessions\", \"agent\", \"wstub_plugin\"]\n")
@@ -248,6 +284,107 @@ func TestSubagentWorkerIsolationAndDigest(t *testing.T) {
 	h.expectEval(`return tostring(WT)`, "DIGESTO-FINAL")
 	h.expectEval(`return tostring(WUSAGE)`, "7")
 	h.expectEval(`return tostring(INTEGRATED)`, "el subagente dijo: DIGESTO-FINAL")
+}
+
+// A-21 (sesiones.md §7): el transcript de un subagente-WORKER es una sesión hija
+// REAL y auditable, no un fichero con solo `meta`. El worker no persiste (sin
+// fs.write): manda cada Message con `{kind="message"}` y el PADRE —que tiene el
+// lock de la proxy_session— lo anexa. Aquí el padre es no_store y el hijo
+// persiste: el único JSONL del dataDir debe contener el prompt del usuario y el
+// assistant final con su usage, en orden.
+func TestSubagentWorkerTranscriptPersistidoA21(t *testing.T) {
+	h, dataDir := bootSubagent(t)
+	h.eval(`
+		out, errc = nil, nil
+		nu.task.spawn(function()
+			local ok, e = pcall(function()
+				local agent = require("agent")
+				local parent = agent.session{ model = "test/m", no_store = true }
+				local sub = parent:spawn{
+					model = "test/m", worker = true, tools = {},
+					adapter_modules = { "wstub" },
+				}
+				local digest = sub:run("audita mi transcript")
+				WT = digest.text
+				sub:cancel()
+				parent:close()
+			end)
+			if not ok then errc = (type(e) == "table" and (e.code or e.message)) or tostring(e) end
+			out = "done"
+		end)`)
+	h.expectEval(`return tostring(out)`, "done")
+	h.expectEval(`return tostring(errc)`, "nil")
+	h.expectEval(`return tostring(WT)`, "DIGESTO-FINAL")
+
+	// El transcript hijo existe y contiene la CONVERSACIÓN, no solo la meta.
+	var jsonls []string
+	if err := filepath.Walk(dataDir, func(p string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() && strings.HasSuffix(p, ".jsonl") {
+			jsonls = append(jsonls, p)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("walk dataDir: %v", err)
+	}
+	if len(jsonls) != 1 {
+		t.Fatalf("A-21: se esperaba exactamente 1 transcript (el hijo; el padre es no_store), hay %d: %v", len(jsonls), jsonls)
+	}
+	raw, err := os.ReadFile(jsonls[0])
+	if err != nil {
+		t.Fatalf("leer transcript hijo: %v", err)
+	}
+	content := string(raw)
+	lines := strings.Count(strings.TrimSpace(content), "\n") + 1
+	if lines < 3 {
+		t.Fatalf("A-21: el transcript hijo tiene %d líneas (se esperaba meta + prompt + assistant como mínimo):\n%s", lines, content)
+	}
+	for _, frag := range []string{`"t":"meta"`, "audita mi transcript", "DIGESTO-FINAL", `"output_tokens":7`} {
+		if !strings.Contains(content, frag) {
+			t.Fatalf("A-21: el transcript hijo no contiene %q:\n%s", frag, content)
+		}
+	}
+	// El prompt del usuario precede al assistant (mismo orden que el modo task).
+	if strings.Index(content, "audita mi transcript") > strings.Index(content, "DIGESTO-FINAL") {
+		t.Fatalf("A-21: el prompt aparece DESPUÉS del assistant en el transcript hijo:\n%s", content)
+	}
+}
+
+// A-22 (agente.md §9): las opts del spawn son «las de agent.session», thinking y
+// skills incluidas. El init del worker reenvía el `thinking` resuelto de la
+// sesión hija y su system ENSAMBLADO (_assemble_system: base → skills → opts),
+// no el opts.system crudo. El adaptador de eco devuelve en el texto lo que vio
+// en el request: si thinking no cruza, el eco diría "thinking=nil".
+func TestSubagentWorkerThinkingYSystemA22(t *testing.T) {
+	h, _ := bootSubagent(t)
+	h.eval(`
+		out, errc = nil, nil
+		nu.task.spawn(function()
+			local ok, e = pcall(function()
+				local agent = require("agent")
+				local parent = agent.session{ model = "test2/e", no_store = true }
+				local sub = parent:spawn{
+					model = "test2/e", no_store = true, worker = true, tools = {},
+					adapter_modules = { "wecho" },
+					thinking = { mode = "budget", budget = 123 },
+					system = "SISTEMA-DEL-SPAWN",
+				}
+				local digest = sub:run("eco")
+				ECO = digest.text
+				sub:cancel()
+				parent:close()
+			end)
+			if not ok then errc = (type(e) == "table" and (e.code or e.message)) or tostring(e) end
+			out = "done"
+		end)`)
+	h.expectEval(`return tostring(out)`, "done")
+	h.expectEval(`return tostring(errc)`, "nil")
+	eco := h.eval(`return tostring(ECO)`)[0]
+	if !strings.Contains(eco, "thinking=budget:123") {
+		t.Fatalf("A-22: el thinking del spawn no llegó al request del worker: %q", eco)
+	}
+	if !strings.Contains(eco, "SISTEMA-DEL-SPAWN") {
+		t.Fatalf("A-22: el system de la sesión hija no llegó al request del worker: %q", eco)
+	}
 }
 
 // TestSubagentWorkerCapsDenyWrite (AISLAMIENTO, G6): el worker del subagente corre

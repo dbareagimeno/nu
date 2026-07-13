@@ -228,13 +228,24 @@ function M.attach(agent)
       tool_defs = filtered
     end
 
-    -- Sesión hija de persistencia en el PADRE (transcript con meta.parent). El
-    -- worker no persiste; manda el digesto y el padre lo anexa. Se omite si el
-    -- padre es no_store (subagente in-memory para tests).
+    -- Sesión hija de persistencia en el PADRE (transcript con meta.parent, A-21).
+    -- El worker no tiene `fs.write` (caps FS_RO por defecto): NO puede persistir ni
+    -- tocar el lock (sesiones.md §6). Así que manda cada mensaje al padre con un
+    -- `{ kind="message" }` y el padre —que ya tiene el lock de la `proxy_session`—
+    -- lo anexa al transcript hijo (bucle de proxy, abajo). Se omite si el padre es
+    -- no_store (subagente in-memory para tests): la proxy_session no tiene store.
+    --
+    -- `system` y `thinking` los aporta la `proxy_session` (que ES la sesión hija con
+    -- todo resuelto igual que el modo task, A-22): su `_assemble_system` ya inyecta
+    -- el ÍNDICE DE SKILLS (filtrado por `opts.skills`, gated por confianza) sobre el
+    -- system base; su `thinking` ya aplica la precedencia opts < agent.toml. El
+    -- worker no re-descubre nada: recibe el system y el thinking ya cocinados.
+    local proxy = self.proxy_session
     w:send({
       kind        = "init",
       model       = self.opts.model or self.parent.model,
-      system      = self.opts.system,
+      system      = (proxy and proxy:_assemble_system()) or self.opts.system,
+      thinking    = proxy and proxy.thinking or nil,
       prompt      = prompt,
       tool_defs   = tool_defs,
       adapters    = self.adapter_modules,
@@ -259,6 +270,17 @@ function M.attach(agent)
           id = msg.id, name = msg.name, args = msg.args,
         })
         w:send({ kind = "tool_result", result = result })
+      elseif msg.kind == "message" then
+        -- Persistencia del transcript hijo (A-21, sesiones.md §7): el worker manda
+        -- cada Message conforme avanza (prompt del usuario, assistant de cada turno
+        -- con su usage/model, y los tool_result como mensaje de usuario) y el padre
+        -- lo anexa a la `proxy_session` —que tiene el lock (§6)—, en el mismo orden
+        -- y con la misma forma que el modo task. Sin store (no_store) no se persiste
+        -- (el worker sigue mandándolos; el padre los ignora). No se responde.
+        if self.proxy_session and self.proxy_session.store then
+          self.proxy_session.store:append_message(msg.message,
+            { usage = msg.usage, model = msg.model })
+        end
       elseif msg.kind == "done" then
         return msg.digest
       elseif msg.kind == "error" then
