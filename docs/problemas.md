@@ -11,7 +11,7 @@ necesita cerrados.
 
 **Estado: 47 registradas, 44 resueltas, 3 abiertas (G44–G46)** (G44–G51
 añadidas 2026-07-12 desde la auditoría integral
-(`INFORME-AUDITORIA-2026-07-12.md`, raíz del repo): G47–G51 —incoherencias
+([auditoria-2026-07-12.md](auditoria-2026-07-12.md)): G47–G51 —incoherencias
 documentales— resueltas el mismo día; G44–G46 —el bombeo del scheduler, la
 superficie [W] de los workers y el replay de `event`— quedan **abiertas**
 esperando decisión de diseño. Los números G42–G43 están **reservados**: los
