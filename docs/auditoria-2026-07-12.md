@@ -30,8 +30,10 @@ Los ítems llevan id `A-##` para referenciarlos. Severidad: 🔴 alta, 🟡 medi
 > implementacion.md)—, la superficie [W] de
 > los workers (A-17) es **G45** —resuelta y **construida** el 2026-07-13 con
 > la opción (a), marca worker-safe por snippet de preludio (bitácora de
-> implementacion.md)— y el replay de `event` (A-19) es **G46**, ABIERTO con
-> opciones y recomendación; las incoherencias
+> implementacion.md)— y el replay de `event` (A-19) es **G46** —resuelta y
+> **construida** el 2026-07-13 con la opción (a) más la (c): precedencia
+> `opts > transcript > agent.toml` y allow/deny reaplicados en orden—; las
+> incoherencias
 > documentales
 > se resolvieron como **G47–G51** (la parte documental de A-33 quedó además
 > recogida en modelo-ejecucion.md §limitaciones, que ya remite a G44); y las

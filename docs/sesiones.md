@@ -77,9 +77,15 @@ llevan `ts` (epoch ms). Tipos v1:
   siguen; todo lo anterior queda en el fichero para los ojos humanos y las
   herramientas.
 - **`event`**: escape genérico namespaced para todo lo demás (cambio de
-  modelo a mitad de sesión, título, marcas de usuario). Regla de replay:
-  para datos repetibles (p. ej. título), la última gana. Extensiones de
-  terceros usan su nombre de plugin como `ns`.
+  modelo a mitad de sesión, título, marcas de usuario). Regla de replay
+  (G46): para datos repetibles (p. ej. el título o el cambio de modelo), la
+  última gana; para acumulativos (p. ej. los `allow`/`deny` del agente), se
+  reaplican **en orden**. Los `event` se releen del transcript **entero**,
+  no desde el último `compact` (la compactación resume mensajes, no
+  configuración). La precedencia frente a las opciones explícitas del
+  reanudador la fija el contrato del consumidor (para el agente,
+  [agente.md](agente.md) §2: opts del resume > `event` > `agent.toml`).
+  Extensiones de terceros usan su nombre de plugin como `ns`.
 
 Robustez de lectura: una última línea truncada (crash a mitad de escritura)
 se descarta en silencio. Líneas con `t` desconocido se ignoran (forward

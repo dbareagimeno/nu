@@ -72,12 +72,24 @@ cancela el turno, **no** vacía la cola (vaciarla es acción aparte:
 El loop drena la cola al inicio de cada iteración; todos los `send` consumidos por
 un turno resuelven con su mensaje final.)*
 
-**Reanudación (G18)**: `opts.resume = <id>` reabre una sesión existente en
-vez de crearla: replay del transcript ([sesiones.md](sesiones.md) §3) y
+**Reanudación (G18, G46)**: `opts.resume = <id>` reabre una sesión existente
+en vez de crearla: replay del transcript ([sesiones.md](sesiones.md) §3) y
 adquisición del lock de escritor (§6, con su flujo de conflicto — fork,
-solo lectura o forzar). El resto de `opts` aplica igual que en una sesión
-nueva: son estado efímero del proceso, no se persisten ni reescriben
-historia. El id sale del listado de sesiones (sesiones.md §7).
+solo lectura o forzar). El replay reconstruye el historial **y reaplica las
+entradas `event` del agente** — la sesión continúa *donde estaba*, no donde
+arrancó — con precedencia explícita (G46): **opts del resume > `event` del
+transcript > `agent.toml`**. Los `opts` siguen siendo estado efímero del
+proceso — no se persisten ni reescriben historia (G18) —, pero solo pisan
+al transcript *cuando se dan*: un `resume` sin `model` rige por el último
+`set_model` grabado (last-wins, sesiones.md §3), no por el default. Para
+los repetibles (`set_model`, `set_thinking`) la última entrada gana; los
+acumulativos (`allow`/`deny`, §5) se **reaplican en orden** sobre la
+política base y ningún opts los pisa — los permisos en caliente son una
+palanca de seguridad: perderlos al reanudar sorprende. Si el modelo grabado
+ya no resuelve (el provider desapareció), reanudar falla con `EPROVIDER` al
+abrir — mejor que en el primer turno —; el escape es un `opts.model`
+explícito, que tiene precedencia. El id sale del listado de sesiones
+(sesiones.md §7).
 
 **Cambio de modelo (G19)**: `Session:set_model("proveedor/modelo")` valida
 contra el registro de providers, escribe una entrada `event` en el

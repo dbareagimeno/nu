@@ -9,15 +9,17 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 47 registradas, 46 resueltas, 1 abierta (G46)** (G44–G51
+**Estado: 47 registradas, 47 resueltas, 0 abiertas** (G44–G51
 añadidas 2026-07-12 desde la auditoría integral
 ([auditoria-2026-07-12.md](auditoria-2026-07-12.md)): G47–G51 —incoherencias
 documentales— resueltas el mismo día; G44 —el bombeo del scheduler— resuelta
 y **construida** el 2026-07-13 con la opción (b), `RunTasks` persistente
 (bitácora de [implementacion.md](implementacion.md)); G45 —la superficie [W]
 de los workers— resuelta y **construida** el 2026-07-13 con la opción (a),
-marca worker-safe por snippet de preludio; G46 —el replay de `event`— queda
-**abierta** esperando decisión de diseño. Los números G42–G43 están **reservados**: los
+marca worker-safe por snippet de preludio; G46 —el replay de `event`—
+resuelta y **construida** el 2026-07-13 con la opción (a) más la (c):
+precedencia `opts > transcript > agent.toml` y allow/deny reaplicados en
+orden. Los números G42–G43 están **reservados**: los
 usa la rama `claude/ux-producto-pulido` (retry con backoff y `agent:error`
 estructurado), aún sin fusionar. G41 añadida 2026-07-03 desde la
 construcción — un handler que escribía en un upvalue de una task suspendida
@@ -1079,7 +1081,27 @@ wrappers operativos punta a punta y poda por caps también de los wrappers).
 
 **Opciones.** (a) **Marca worker-safe por preludio:** `AddPreludio` gana una variante/opción que etiqueta el fragmento como [W] (`log`, `re`, `text`, `proc`, `ws`, `http.stream`, `search.grep` sí; `fs.watch`, ui no), y `spawnWorker` copia los etiquetados — el gating de `caps` sigue haciéndolo `workerGrants` sobre los thunks subyacentes (un wrapper sin su thunk falla con el error de cap, coherente). (b) **Rebajar §16** quitando el marcador [W] a esos módulos — rompe la promesa de la espec y castra a los workers; descartable salvo urgencia. (c) **Mover los wrappers al preludio base** del Pool (compartido por principal y workers) — no discrimina fs.watch ni futuros wrappers solo-principal sin añadir de todos modos una marca, que es la opción (a). Recomendación: (a), con test de paridad que recorra la tabla de §16 dentro de un worker.
 
-## G46 · El replay de `resume` ignora las entradas `event`: los cambios en caliente persistidos se pierden al reanudar — `sesiones.md` §3 / `agente.md` §2 (tensión G18/G19) — **ABIERTO**
+## G46 · El replay de `resume` ignora las entradas `event`: los cambios en caliente persistidos se pierden al reanudar — `sesiones.md` §3 / `agente.md` §2 (tensión G18/G19) — **RESUELTO**
+
+**Resolución** (2026-07-13; opción (a) **más la (c)** — la recomendación
+completa del registro—, construida el mismo día en la extensión `agent`,
+fila `G46 (extensión)` de la bitácora de [implementacion.md](implementacion.md)).
+La tensión G18/G19 se cierra declarando la **precedencia explícita** en
+[agente.md](agente.md) §2: **opts del resume > `event` del transcript >
+`agent.toml`** — los `opts` siguen siendo efímeros (G18) pero solo pisan al
+transcript *cuando se dan*; cuando callan, rige lo grabado. El replay de
+`agent.session{resume=...}` reaplica los `event` del agente: los repetibles
+(`set_model`, `set_thinking`) con last-wins (la regla de sesiones.md §3, cuyo
+ejemplo canónico deja de ser letra muerta), y los acumulativos (`allow`/`deny`)
+**reaplicados en orden** sobre la política base, con la semántica de caliente
+(idempotentes) y sin re-persistir — perder una palanca de seguridad al reanudar
+sorprende, así que ningún opts los pisa. Los `event` se releen del transcript
+**entero**, no desde el último `compact` (la compactación resume mensajes, no
+configuración; anotado en sesiones.md §3). Si el modelo grabado ya no resuelve,
+reanudar falla con `EPROVIDER` al abrir — mejor que en el primer turno—; el
+escape es un `opts.model` explícito, que tiene precedencia. Sin cambios de
+kernel ni de `api.md`. Blindaje: `agent_g46_test.go` (precedencia en ambos
+sentidos, last-wins con cambios repetidos, allow/deny reaplicados sin duplicar).
 
 **Problema.** `Session:set_model`/`set_thinking`/`allow`/`deny` persisten entradas `event` en el transcript, y `sesiones.md` §3 define para ellas una regla de replay explícita ("para datos repetibles… la última gana", con el cambio de modelo como ejemplo canónico). Pero el replay de `agent.session{resume=...}` (`agent/init.lua`) solo reconstruye `message` y `compact`: las `event` se reciben del store y se descartan. Una sesión que cambió de modelo en caliente vuelve al modelo de `opts`/`agent.toml` al reanudarse, sin aviso. La grieta tiene una tensión de espec previa: G18 declaró los `opts` **efímeros** (se reaplican en cada resume), lo que para el caso del modelo choca frontalmente con el last-wins de sesiones.md §3 — hay que decidir la precedencia, no solo implementar.
 
