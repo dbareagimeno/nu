@@ -113,12 +113,16 @@ recibir el chunk ya parseado, pedir el Block, colocarlo.
    significa que un worker no puede reaccionar a eventos del bus ni emitirlos
    directamente. La API del worker puede recortarse aún más al crearlo
    (`opts.caps`), hasta dejar solo los módulos concedidos.
-5. **El bombeo del scheduler es hoy por invocación** (`Boot` y los `Eval`
-   headless): el modo interactivo aún no ejecuta tasks, y los timers de fondo
-   (`nu.task.every`) mueren al alcanzarse la quiescencia de primer plano de
-   cada invocación, en vez de pausarse. Es la grieta **abierta**
-   [G44](problemas.md) — limitación transitoria de la construcción, no del
-   modelo: el diseño de ADR-004 prevé el bucle de vida continuo.
+5. **En headless el bombeo retorna en la quiescencia de primer plano** (`Boot`
+   y los `Eval` de `-e`/`-p`): mientras ningún bucle bombea, los timers de
+   fondo (`nu.task.every`) no laten — se **pausan** (su petición en vuelo
+   sigue su curso y el resultado espera) y el siguiente drenaje los reanuda.
+   En el modo interactivo el bombeo es **continuo** ([G44](problemas.md#g44),
+   resuelta y construida 2026-07-13): `PumpTasks` vive junto al bucle del
+   driver — el estado del bombeo está en la `Instance`, un *kick* desde
+   `Eval`/`EmitEvent`/`FeedInput` despierta el `select`, y `inst.mu` es el
+   único token de entrada a la VM — así que los `every` laten sin pausa y las
+   tasks de un keymap o handler corren de inmediato.
 6. **Memoria compartida dentro del estado principal.** Un memory leak de un
    plugin infla el proceso entero; no hay presupuesto de memoria por plugin
    en v1 (los actores aislados quedaron como evolución futura, ADR-008).

@@ -24,14 +24,24 @@ Los ítems llevan id `A-##` para referenciarlos. Severidad: 🔴 alta, 🟡 medi
 > rama: A-02, A-04, A-05, A-06, A-08, A-09, A-10, A-11, A-13, A-14, A-15,
 > A-16, A-18, A-20, A-23, A-25, A-26, A-32 (ver los commits que citan cada
 > id). Lo pendiente está **registrado en el flujo canónico de diseño**
-> ([problemas.md](docs/problemas.md) / [pospuesto.md](docs/pospuesto.md)):
-> el trío del scheduler (A-01/A-03/A-34) es **G44**, la superficie [W] de los
-> workers (A-17) es **G45** y el replay de `event` (A-19) es **G46** — los
-> tres ABIERTOS con opciones y recomendación—; las incoherencias documentales
-> se resolvieron como **G47–G51**; y las limitaciones A-35/A-37 son ahora
-> **P33/P34** con disparador. Sin registrar quedan solo A-21/A-22
-> (persistencia del subagente-worker) y los anti-patrones §6 (A-39..A-42, de
-> naturaleza informativa).
+> ([problemas.md](problemas.md) / [pospuesto.md](pospuesto.md)):
+> el trío del scheduler (A-01/A-03/A-34) es **G44** —resuelta y **construida**
+> el 2026-07-13 con la opción (b), `RunTasks` persistente (bitácora de
+> implementacion.md)—, la superficie [W] de
+> los workers (A-17) es **G45** y el replay de `event` (A-19) es **G46** —
+> estos dos ABIERTOS con opciones y recomendación—; las incoherencias
+> documentales
+> se resolvieron como **G47–G51** (la parte documental de A-33 quedó además
+> recogida en modelo-ejecucion.md §limitaciones, que ya remite a G44); y las
+> limitaciones A-35/A-37 son ahora **P33/P34** con disparador.
+>
+> **Sin registrar ni corregir** (revisión 2026-07-13): A-07 (registro
+> `Pool.workers` monotónico), A-12 (orden texto/tool_calls del adaptador
+> Gemini), A-21/A-22 (persistencia y opts del subagente-worker), A-28 (⏸
+> ausente en `agent.session`/`fork`), A-36 (watchdog sin cubrir cleanups ni
+> handlers del bus), A-38 (frame de texto en `ws.send`; `sessions.list`
+> O(bytes totales)) y los anti-patrones §6 (A-39..A-42, de naturaleza
+> informativa salvo el disparador de P32 que A-39 reclama).
 
 ---
 
