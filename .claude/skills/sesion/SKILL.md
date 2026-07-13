@@ -60,4 +60,6 @@ con las disciplinas BDD y TDD y el juicio clean-room.
    el puntero es una sesión a medias. **Si la sesión cierra fase**: ejecuta
    antes su checkpoint 🔎 CP-N; si falla, el puntero no se mueve y la bitácora
    anota qué falló. Mensaje en español: `S##: <qué entrega>`, citando el G##
-   si lo hubo. No abras PR salvo petición explícita.
+   si lo hubo. No abras PR salvo petición explícita. Si hay PR y se
+   aprueba (merge a `develop`), borra la rama de trabajo — local y remota —
+   en cuanto el merge esté hecho.
