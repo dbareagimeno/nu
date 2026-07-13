@@ -195,6 +195,31 @@ func TestCLIEvalRuntimeErrorExit(t *testing.T) {
 	}
 }
 
+// TestCLIEvalUserStringErrorExit_A40: A-40. `nu -e` con un `error("ENOENT: ...", 0)`
+// de código de USUARIO (un string cuyo prefijo coincide con un code reservado) sigue
+// saliendo con código 1 y dejando su texto en stderr. El apaño anterior lo habría
+// reclasificado como error estructurado del core parseando "CODE: mensaje"; el arreglo
+// no cambia el código de salida del `-e` (todo fallo de ejecución es 1) pero blinda que
+// el string del usuario no se disfraza de error del core en la frontera del CLI. La
+// contraparte estructurada (exit 1 con el code en stderr) la cubre
+// TestCLIEvalRuntimeErrorExit.
+func TestCLIEvalUserStringErrorExit_A40(t *testing.T) {
+	rt, _, _ := bootCLI(t)
+	var code int
+	stdout, stderr := captureOutput(t, func() {
+		code = runWith(rt, cliOptions{eval: `error("ENOENT: no encontré X", 0)`})
+	})
+	if code != exitError {
+		t.Fatalf("código de salida: got %d, want %d (stderr=%q)", code, exitError, stderr)
+	}
+	if strings.TrimSpace(stdout) != "" {
+		t.Fatalf("un error no debe escribir a stdout; got %q", stdout)
+	}
+	if !strings.Contains(stderr, "no encontré X") {
+		t.Fatalf("stderr no conserva el texto del usuario: %q", stderr)
+	}
+}
+
 // TestCLIEvalSyntaxErrorExit: un error de SINTAXIS (no estructurado) también sale
 // con código 1 (cualquier fallo de ejecución es != 0).
 func TestCLIEvalSyntaxErrorExit(t *testing.T) {
