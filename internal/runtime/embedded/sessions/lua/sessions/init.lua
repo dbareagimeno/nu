@@ -369,10 +369,32 @@ function M.open(opts)
 end
 
 -- M.list(cwd) -> {id, path, meta}[] lista las sesiones de un proyecto (§7):
--- listar el directorio y leer la primera línea (`meta`) de cada `.jsonl`. Sin
--- índice global (§7): si algún día duele, se añade un caché reconstruible. Los
--- `.jsonl.lock` se ignoran (no son sesiones). Orden: el de `nu.fs.list` (los ids
--- ordenan lexicográfico = temporal, §2; el llamante ordena si lo necesita).
+-- enumerar el directorio y adjuntar la primera línea (`meta`) de cada `.jsonl`.
+-- Sin índice global (§7): si algún día duele, se añade un caché reconstruible.
+-- Los `.jsonl.lock` se ignoran (no son sesiones). Orden: el de `nu.fs.list` (los
+-- ids ordenan lexicográfico = temporal, §2; el llamante ordena si lo necesita).
+--
+-- LAS `meta` VÍA `nu.search.grep`, NO leyendo cada fichero entero (A-38b). La
+-- versión previa hacía `nu.fs.read` de CADA transcript solo para quedarse con su
+-- primera línea: con transcripts de MB, listar costaba O(bytes totales) en IO y
+-- en memoria cruzando la frontera wasm. `nu.search.grep` (api.md §11) casa el
+-- patrón en Go, paralelo por dentro, y **solo las líneas que casan cruzan a
+-- Lua**: el escaneo del transcript se queda en Go. Sin API nueva —compone con lo
+-- existente—.
+--
+-- EL PATRÓN. La entrada `meta` lleva las claves ORDENADAS por `nu.json.encode`
+-- (encoding/json ordena alfabéticamente las claves de un objeto), así que `t` no
+-- es la primera clave y NO se puede anclar con `^`; se casa la subcadena
+-- distintiva `"t":"meta"` en cualquier posición (RE2, S26; ninguno de sus
+-- caracteres es metacarácter). Se tolera el espacio opcional de JSON alrededor
+-- de `:` (`"t"\s*:\s*"meta"`) por si el fichero lo escribió una herramienta
+-- externa (el slug es parte del formato, §2). `meta` es SIEMPRE la primera línea
+-- (§3): la coincidencia buena está en `line_no == 1`; nos quedamos con ella e
+-- ignoramos cualquier otra (una subcadena `"t":"meta"` incrustada en el
+-- contenido de un `message` posterior). Además se decodifica y se comprueba
+-- `t == "meta"`, como antes: una línea que casa pero no decodifica a una `meta`
+-- válida se descarta (fichero corrupto → `meta = nil`, igual que la versión
+-- previa, pero el fichero SIGUE en la lista vía el enumerado del directorio).
 function M.list(cwd)
   if type(cwd) ~= "string" or cwd == "" then
     einval("sessions.list requiere `cwd` (string no vacío)")
@@ -381,24 +403,36 @@ function M.list(cwd)
   if nu.fs.stat(dir) == nil then
     return {} -- proyecto sin sesiones aún
   end
+
+  -- Recolecta las `meta` por NOMBRE DE FICHERO (basename): la clave de fusión es
+  -- el nombre, no la ruta completa, para no depender de cómo `grep` normaliza las
+  -- rutas (`filepath.Join`) frente a la concatenación en Lua. Los `.jsonl` son
+  -- planos en `dir`, así que el basename es único.
+  local metas = {}
+  for r in nu.search.grep([["t"\s*:\s*"meta"]], { root = dir, glob = "*.jsonl" }) do
+    if r.line_no == 1 then
+      local name = r.path:match("[^/]+$") or r.path
+      if metas[name] == nil then
+        local decoded
+        if pcall(function() decoded = nu.json.decode(r.line) end)
+          and type(decoded) == "table" and decoded.t == "meta" then
+          metas[name] = decoded
+        end
+      end
+    end
+  end
+
+  -- El enumerado del directorio define el CONJUNTO y el ORDEN del resultado (como
+  -- antes): toda `.jsonl` aparece, con su `meta` si se encontró o `nil` si el
+  -- fichero está corrupto / sin `meta`. Listar el directorio es O(nº sesiones),
+  -- no O(bytes): el coste que A-38b señalaba estaba en LEER cada fichero, no en
+  -- enumerarlos.
   local out = {}
   for _, ent in ipairs(nu.fs.list(dir)) do
     if not ent.is_dir and ent.name:sub(-6) == ".jsonl" then
       local id = ent.name:sub(1, -7) -- quita ".jsonl"
       local path = dir .. "/" .. ent.name
-      local meta = nil
-      pcall(function()
-        local raw = nu.fs.read(path)
-        local nl = raw:find("\n", 1, true)
-        local first = nl and raw:sub(1, nl - 1) or raw
-        if #first > 0 then
-          local decoded = nu.json.decode(first)
-          if type(decoded) == "table" and decoded.t == "meta" then
-            meta = decoded
-          end
-        end
-      end)
-      out[#out + 1] = { id = id, path = path, meta = meta }
+      out[#out + 1] = { id = id, path = path, meta = metas[ent.name] }
     end
   end
   return out

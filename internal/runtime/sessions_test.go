@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -233,6 +234,107 @@ func TestSessionsList(t *testing.T) {
 	h.expectEval(`return tostring(out)`, "ok")
 	h.expectEval(`return tostring(COUNT)`, "2")
 	h.expectEval(`return tostring(ALLMETA)`, "true")
+}
+
+// TestSessionsListA38 (A-38): `sessions.list` obtiene la línea `meta` de cada
+// transcript vía `nu.search.grep` —solo esa línea cruza la frontera wasm— en vez
+// de leer el fichero ENTERO con `nu.fs.read`. Antes, listar costaba O(bytes
+// totales del proyecto) en IO y memoria (un transcript de MB se copiaba a Lua
+// solo para mirar su primera línea). Se blindan las tres invariantes del cambio:
+//
+//	(a) MISMO CONTRATO: con varias sesiones normales, cada entrada trae `id`,
+//	    `path` y la `meta` correcta, en el orden del directorio (como antes).
+//	(b) TRANSCRIPT GRANDE: un fichero de cientos de KB devuelve su `meta` de la
+//	    PRIMERA línea. Se le añade a mano una segunda línea con una `meta` FALSA
+//	    (`cwd="/WRONG"`): list debe quedarse con la de `line_no == 1` (la buena),
+//	    lo que prueba que la disciplina "solo la primera línea" se respeta y que
+//	    el coste ya no escala con el tamaño del fichero (nunca se lee entero).
+//	(c) FICHERO CORRUPTO / SIN `meta`: no rompe list (no hay match de grep) y
+//	    sigue apareciendo en la lista con `meta == nil` (igual que la versión
+//	    previa, que dejaba `meta` a nil pero incluía el fichero).
+func TestSessionsListA38(t *testing.T) {
+	h, _ := bootSessions(t)
+	const cwd = "/repo/a38"
+
+	// Tres sesiones normales; capturamos el directorio del proyecto y el id de la
+	// que convertiremos en GRANDE (escribiendo en su fichero desde Go).
+	h.eval(inTask(`
+		local sessions = require("sessions")
+		local a = sessions.open({ cwd = "` + cwd + `" }); a:close()
+		local b = sessions.open({ cwd = "` + cwd + `" }); b:close()
+		local big = sessions.open({ cwd = "` + cwd + `" }); BIG_ID = big.id; big:close()
+		DIR = sessions.dir("` + cwd + `")
+		out = "ok"`))
+	h.expectEval(`return tostring(out)`, "ok")
+	dir := h.eval(`return DIR`)[0]
+	bigID := h.eval(`return BIG_ID`)[0]
+
+	// (b) Hacemos GRANDE el transcript de `big`: su línea 1 (la `meta` real) ya
+	// está; añadimos una línea 2 con una `meta` FALSA (para verificar que list se
+	// queda con la de line_no==1) y luego cientos de KB de entries `message`.
+	bigPath := filepath.Join(dir, bigID+".jsonl")
+	f, err := os.OpenFile(bigPath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatalf("no se pudo abrir el transcript grande %q: %v", bigPath, err)
+	}
+	if _, err := f.WriteString(`{"created":1,"cwd":"/WRONG","id":"WRONG","t":"meta","v":1}` + "\n"); err != nil {
+		t.Fatalf("append meta falsa: %v", err)
+	}
+	var sb strings.Builder
+	line := `{"model":"m","t":"message","ts":1,"message":{"role":"user","content":"` +
+		strings.Repeat("x", 200) + `"}}` + "\n"
+	for sb.Len() < 400*1024 { // > 400 KiB de relleno: leer esto entero es justo lo que evitamos
+		sb.WriteString(line)
+	}
+	if _, err := f.WriteString(sb.String()); err != nil {
+		t.Fatalf("append relleno: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close transcript grande: %v", err)
+	}
+
+	// (c) Fichero corrupto: un `.jsonl` sin `meta` en la primera línea (ni la
+	// subcadena que casa el patrón). No debe romper list y debe salir con meta=nil.
+	corruptPath := filepath.Join(dir, "0000000000001-dead.jsonl")
+	if err := os.WriteFile(corruptPath,
+		[]byte("esto no es json valido, ni una meta\n{\"t\":\"message\",\"ts\":1}\n"), 0o644); err != nil {
+		t.Fatalf("escribir fichero corrupto: %v", err)
+	}
+
+	// Listar y auditar las tres invariantes desde Lua.
+	h.eval(inTask(`
+		local sessions = require("sessions")
+		local l = sessions.list("` + cwd + `")
+		COUNT = #l
+		local withmeta = 0
+		local corrupt_present, corrupt_meta_nil = false, false
+		local big_meta = nil
+		for _, e in ipairs(l) do
+			if e.meta ~= nil then withmeta = withmeta + 1 end
+			if e.id == "0000000000001-dead" then
+				corrupt_present = true
+				corrupt_meta_nil = (e.meta == nil)
+			end
+			if e.id == "` + bigID + `" then big_meta = e.meta end
+		end
+		WITHMETA = withmeta
+		CORRUPT_PRESENT = corrupt_present
+		CORRUPT_META_NIL = corrupt_meta_nil
+		BIG_CWD = big_meta and big_meta.cwd or "NONE"
+		BIG_METAID = big_meta and big_meta.id or "NONE"
+		out = "ok"`))
+	h.expectEval(`return tostring(out)`, "ok")
+
+	// (a) 3 sesiones normales + 1 corrupto = 4 entradas; 3 con meta.
+	h.expectEval(`return tostring(COUNT)`, "4")
+	h.expectEval(`return tostring(WITHMETA)`, "3")
+	// (b) la meta del fichero grande es la de la PRIMERA línea (cwd real, id real),
+	// NO la falsa de la línea 2 (cwd="/WRONG"): line_no==1 manda.
+	h.expectEval(`return tostring(BIG_CWD)`, cwd)
+	h.expectEval(`return tostring(BIG_METAID)`, bigID)
+	// (c) el corrupto está en la lista, con meta=nil, y no rompió nada.
+	h.expectEval(`return tostring(CORRUPT_PRESENT)`, "true")
+	h.expectEval(`return tostring(CORRUPT_META_NIL)`, "true")
 }
 
 // TestSessionsReanudarInexistente (§6/G18): reanudar una sesión que no existe es
