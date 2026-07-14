@@ -1,0 +1,130 @@
+---
+// Referencia de la API /api/<slug> (pantalla 13a). Se genera desde las 16
+// páginas de la colección `referencia` (presentación de docs/api.md). Tres
+// columnas: sidebar 210px + contenido (cards de función vía rehype-api-cards) +
+// carril 200px. El pager (j/k, n/p entre módulos, ':' comandos, '/' buscar) y el
+// drawer móvil los cablea initPager.
+import { getCollection, render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import HeaderInternal from '../../components/HeaderInternal.astro';
+import Statusline from '../../components/Statusline.astro';
+import ApiSidebar from '../../components/api/ApiSidebar.astro';
+import ApiRail from '../../components/api/ApiRail.astro';
+import { apiPos, apiVecinos, API_TOTAL } from '../../lib/apimap';
+import { i18n } from '../../lib/i18n';
+import '../../styles/api.css';
+
+export async function getStaticPaths() {
+  const entries = await getCollection('referencia');
+  return entries.map((entry) => ({ params: { slug: entry.id }, props: { entry } }));
+}
+
+const { entry } = Astro.props;
+const { Content, headings } = await render(entry);
+const base = import.meta.env.BASE_URL;
+const es = i18n.es;
+const slug = entry.id;
+
+// Título corto: la parte antes del "—" del frontmatter (nu.fs, nu.http / nu.ws…).
+const todas = await getCollection('referencia');
+const tituloCorto = (s: string): string => {
+  const e = todas.find((x) => x.id === s);
+  return (e?.data.title ?? s).split('—')[0].trim();
+};
+const titulo = tituloCorto(slug);
+const rule = '═'.repeat(Math.max(4, titulo.length));
+
+const { prev, next } = apiVecinos(slug);
+const pos = `${apiPos(slug)}/${API_TOTAL}`;
+const prevUrl = prev ? `${base}api/${prev}` : null;
+const nextUrl = next ? `${base}api/${next}` : null;
+const contexto = `api/${slug}`;
+
+const keys = [
+  { k: 'j/k', label: i18n.es.kScroll, i18n: 'kScroll' },
+  { k: 'n/p', label: i18n.es.kMod, i18n: 'kMod' },
+  { k: ':', label: i18n.es.kCmd, i18n: 'kCmd' },
+  { k: '/', label: i18n.es.kSearch, i18n: 'kSearch' },
+  { k: 'q', label: i18n.es.kBack, i18n: 'kBack' },
+];
+---
+<Base title={`${titulo} — nu`} description={entry.data.description}>
+  <HeaderInternal active="api" routePath={`api/${slug}`} />
+  <div class="api-subbar">
+    <span>api v1 · <span class="key" data-i18n="apiStable">{es.apiStable}</span></span>
+  </div>
+
+  <div class="api-shell">
+    <ApiSidebar active={slug} />
+
+    <main class="api-main">
+      <div class="api-mobilebar">
+        <button type="button" class="mb-toggle" data-drawer-toggle>[≡] <span data-i18n="mIndex">{es.mIndex}</span></button>
+      </div>
+
+      <article class="api-prose">
+        <h1 class="api-title">{titulo}</h1>
+        <div class="api-rule" aria-hidden="true">{rule}</div>
+
+        <Content />
+
+        <footer class="api-foot">
+          {prev ? (
+            <a class="foot-prev" href={prevUrl}>← {tituloCorto(prev)}</a>
+          ) : (
+            <span class="foot-prev empty" data-i18n="firstMod">{es.firstMod}</span>
+          )}
+          {next ? (
+            <a class="foot-next" href={nextUrl}>
+              <span data-i18n="next">{es.next}</span> {tituloCorto(next)} →
+            </a>
+          ) : (
+            <span class="foot-next empty" data-i18n="lastMod">{es.lastMod}</span>
+          )}
+        </footer>
+      </article>
+    </main>
+
+    <ApiRail headings={headings} />
+  </div>
+
+  <Statusline left={contexto} keys={keys} />
+
+  <script define:vars={{ contexto, pos, nextUrl, prevUrl }}>
+    // Config del pager serializada desde el frontmatter (script inline). El
+    // script module de abajo la lee para llamar a initPager.
+    window.__nuApiCfg = { context: contexto, pos, withPercent: true, nextUrl, prevUrl };
+  </script>
+  <script>
+    import { initPager } from '../../scripts/pager';
+
+    initPager((window as any).__nuApiCfg);
+
+    // Scrollspy del § del carril: marca la sección visible como activa (bright).
+    const secs = Array.from(document.querySelectorAll<HTMLElement>('[data-sec]'));
+    const ids = secs.map((s) => s.getAttribute('data-sec') || '');
+    function spy(): void {
+      let cur = ids[0];
+      for (const id of ids) {
+        const h = document.getElementById(id);
+        if (h && h.getBoundingClientRect().top <= 130) cur = id;
+      }
+      secs.forEach((s) => s.classList.toggle('active', s.getAttribute('data-sec') === cur));
+    }
+    if (secs.length) {
+      spy();
+      window.addEventListener('scroll', spy, { passive: true });
+    }
+
+    // Statusline táctil (móvil): [≡] abre el drawer; [/] emite el evento de
+    // búsqueda (el overlay lo monta otra fase).
+    document.querySelectorAll('[data-touch="index"]').forEach((b) =>
+      b.addEventListener('click', () =>
+        document.querySelector('[data-drawer]')?.classList.toggle('abierto')
+      )
+    );
+    document.querySelectorAll('[data-touch="search"]').forEach((b) =>
+      b.addEventListener('click', () => window.dispatchEvent(new CustomEvent('nu:search-open')))
+    );
+  </script>
+</Base>

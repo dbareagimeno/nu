@@ -1,0 +1,57 @@
+---
+// Layout base de todas las páginas. Cabecera (title, meta, OG, favicon, fuentes,
+// estilos) + script inline de theme/lang antes del primer paint (sin flash).
+// Sin emojis, sin SVG de iconos (salvo el favicon), todo rectangular.
+import '@fontsource/ibm-plex-mono/400.css';
+import '@fontsource/ibm-plex-mono/500.css';
+import '@fontsource/ibm-plex-mono/600.css';
+import '../styles/tokens.css';
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const { title = 'nu', description = 'nu — un runtime de Lua orientado a terminal cuya killer app es un coding harness.' } = Astro.props;
+
+const base = import.meta.env.BASE_URL;
+const site = Astro.site?.href.replace(/\/$/, '') ?? '';
+const ogImage = `${site}${base}og.png`;
+---
+
+<!doctype html>
+<html lang="es" data-theme="nu" data-lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href={`${base}favicon.svg`} />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={ogImage} />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Theme e idioma antes del primer paint: sin flash. Lee localStorage
+         (default nu / es) y fija los atributos en <html>. -->
+    <script is:inline>
+      (function () {
+        try {
+          var t = localStorage.getItem('nu-theme');
+          if (['nu', 'dracula', 'gruvbox', 'solarized'].indexOf(t) === -1) t = 'nu';
+          document.documentElement.setAttribute('data-theme', t);
+          var l = localStorage.getItem('nu-lang') === 'en' ? 'en' : 'es';
+          document.documentElement.setAttribute('data-lang', l);
+          document.documentElement.setAttribute('lang', l);
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>

@@ -1,0 +1,106 @@
+---
+// Header de las páginas internas (docs/api/plugins). Lo montan las fases
+// posteriores; aquí queda listo y estilado.
+//
+// Props:
+//   active:   'docs' | 'api' | 'plugins'  — la pestaña activa se pinta invertida
+//             (texto bg sobre fondo key).
+//   routePath: ruta a mostrar, p. ej. 'docs/filosofia.md'. Se parte en
+//             directorio (dim) + fichero (bright) por el último '/'.
+import Wordmark from './Wordmark.astro';
+import { GITHUB_URL } from '../lib/const';
+
+interface Props {
+  active: 'docs' | 'api' | 'plugins';
+  routePath?: string;
+}
+const { active, routePath = '' } = Astro.props;
+const base = import.meta.env.BASE_URL;
+
+const tabs = [
+  { id: 'docs', label: 'docs', href: `${base}docs` },
+  { id: 'api', label: 'api', href: `${base}api` },
+  { id: 'plugins', label: 'plugins', href: `${base}plugins` },
+] as const;
+
+// Parte la ruta en directorio + fichero (el fichero es lo que va tras el
+// último '/').
+const slash = routePath.lastIndexOf('/');
+const routeDir = slash >= 0 ? routePath.slice(0, slash + 1) : '';
+const routeFile = slash >= 0 ? routePath.slice(slash + 1) : routePath;
+---
+<header class="int-header">
+  <div class="left">
+    <Wordmark />
+    <nav class="nav">
+      {tabs.map((t, i) => (
+        <>
+          {i > 0 && <span class="sep">·</span>}
+          <a href={t.href} class={t.id === active ? 'tab active' : 'tab'}>{t.label}</a>
+        </>
+      ))}
+    </nav>
+    {routePath && (
+      <span class="route">
+        <span class="dir">{routeDir}</span><span class="file">{routeFile}</span>
+      </span>
+    )}
+  </div>
+  <div class="right">
+    <span class="langnote" data-lang-note data-i18n="langNote">in spanish for now</span>
+    <a href={GITHUB_URL} target="_blank" rel="noopener" class="gh">github ↗</a>
+  </div>
+</header>
+
+<style>
+  .int-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .left,
+  .right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sep {
+    color: var(--dim);
+  }
+  .tab {
+    color: var(--fg);
+    text-transform: lowercase;
+  }
+  .tab.active {
+    background: var(--key);
+    color: var(--bg);
+    padding: 2px 7px;
+    font-weight: 600;
+  }
+  .route {
+    font-size: 11px;
+  }
+  .route .dir {
+    color: var(--dim);
+  }
+  .route .file {
+    color: var(--bright);
+  }
+  .langnote {
+    color: var(--dim);
+    font-style: italic;
+  }
+  .gh {
+    color: var(--dim);
+  }
+</style>

@@ -1,0 +1,119 @@
+---
+// Página única /plugins (pantalla 14b): "Escribe tu primer plugin". No es una
+// colección — el copy de los tres pasos es contenido en español, cableado a
+// mano (son literales del prototipo, código real y funcional). Solo el chrome
+// (HeaderInternal/Statusline) es compartido/bilingüe; ver src/lib/i18n.ts.
+//
+// 2 columnas: contenido (~600px) + carril 230px con los 5 contratos, la card
+// de examples/ y la nota de la regla de oro. Móvil: el carril baja bajo el
+// contenido (sin sidebar, no hay drawer — la statusline táctil es la estándar
+// del componente Statusline).
+import Base from '../layouts/Base.astro';
+import HeaderInternal from '../components/HeaderInternal.astro';
+import Statusline from '../components/Statusline.astro';
+import { GITHUB_URL } from '../lib/const';
+import { i18n } from '../lib/i18n';
+import '../styles/plugins.css';
+
+const base = import.meta.env.BASE_URL;
+const es = i18n.es;
+
+// Teclas de la statusline (pantalla 14b, sin n/p: es una sola página).
+const keys = [
+  { k: 'j/k', label: es.kScroll, i18n: 'kScroll' },
+  { k: ':', label: es.kCmd, i18n: 'kCmd' },
+  { k: '/', label: es.kSearch, i18n: 'kSearch' },
+  { k: 'q', label: es.kBack, i18n: 'kBack' },
+];
+
+const posicion = '1/3';
+const contexto = 'plugins/primer-plugin';
+
+// examples/ existe en la raíz del repo (config XDG_CONFIG_HOME de demo con una
+// TUI en Lua puro): enlaza a su árbol en GitHub, rama por defecto `develop`.
+const examplesUrl = `${GITHUB_URL}/tree/develop/examples`;
+---
+<Base
+  title="plugins · nu"
+  description="Escribe tu primer plugin de nu: plugin.toml + init.lua en tres pasos."
+>
+  <div class="plugins">
+    <HeaderInternal active="plugins" routePath="plugins/primer-plugin" />
+
+    <div class="plugins-shell">
+      <main class="plugins-main">
+        <h1 class="plugins-title">Escribe tu primer plugin</h1>
+        <div class="plugins-rule" aria-hidden="true">═══════════════════════</div>
+        <p class="plugins-intro">
+          Un plugin es un directorio con dos ficheros. Nada de toolchains: lo escribes, lo
+          activas, existe.
+        </p>
+
+        <section class="step">
+          <h2 class="step-title">1 · plugin.toml</h2>
+          <div class="code">
+            <div class="code-line"><span class="tok-bright">name</span> = <span class="tok-str">"hola"</span></div>
+            <div class="code-line"><span class="tok-bright">version</span> = <span class="tok-str">"0.1.0"</span></div>
+          </div>
+        </section>
+
+        <section class="step">
+          <h2 class="step-title">2 · init.lua</h2>
+          <div class="code">
+            <div class="code-line"><span class="tok-key">local</span> chat = <span class="tok-key">require</span>(<span class="tok-str">"chat"</span>)</div>
+            <div class="code-line">chat.command {'{'}</div>
+            <div class="code-line code-indent">name = <span class="tok-str">"hola"</span>,</div>
+            <div class="code-line code-indent">run = <span class="tok-key">function</span>() chat.say(<span class="tok-str">"¡hola desde tu plugin!"</span>) <span class="tok-key">end</span>,</div>
+            <div class="code-line">{'}'}</div>
+          </div>
+        </section>
+
+        <section class="step">
+          <h2 class="step-title">3 · actívalo en nu.toml</h2>
+          <div class="code">
+            <div class="code-line"><span class="tok-dim">[plugins]</span></div>
+            <div class="code-line"><span class="tok-bright">enabled</span> = [<span class="tok-str">"chat"</span>, <span class="tok-str">"hola"</span>]</div>
+          </div>
+        </section>
+
+        <p class="plugins-close">Escribe /hola en el chat. Ya eres autor de plugins.</p>
+      </main>
+
+      <aside class="plugins-rail">
+        <div class="rail-h">contratos para colgarse</div>
+        <nav class="rail-contracts">
+          <a href={`${base}docs/agente`}>agent.tool{'{}'} →</a>
+          <a href={`${base}docs/agente`}>agent.hook() →</a>
+          <a href={`${base}docs/chat`}>chat.command{'{}'} →</a>
+          <a href={`${base}docs/chat`}>chat.renderer() →</a>
+          <a href={`${base}docs/providers`}>providers.register_adapter() →</a>
+        </nav>
+
+        <div class="examples-card">
+          examples/ trae una TUI completa escrita en Lua puro sobre la API del core.<br />
+          <a href={examplesUrl} target="_blank" rel="noopener">XDG_CONFIG_HOME=examples nu →</a>
+        </div>
+
+        <div class="rail-note">
+          la regla de oro: lua decide, go ejecuta <a href={`${base}docs/filosofia`}>filosofia →</a>
+        </div>
+      </aside>
+    </div>
+
+    <Statusline left={`${contexto} · ${posicion}`} keys={keys} />
+  </div>
+
+  <script>
+    import { initPager } from '../scripts/pager';
+
+    // Página única: sin n/p (no hay módulo siguiente/anterior) y sin % de
+    // lectura (el mock muestra `· 1/3` sin porcentaje).
+    initPager({
+      context: 'plugins/primer-plugin',
+      pos: '1/3',
+      withPercent: false,
+      nextUrl: null,
+      prevUrl: null,
+    });
+  </script>
+</Base>

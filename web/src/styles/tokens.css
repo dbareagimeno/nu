@@ -1,0 +1,74 @@
+/* Design tokens — los 4 themes como paletas de terminal.
+ *
+ * Cada theme define 8+1 tokens (--bg --fg --bright --dim --border --key --c2
+ * --c3 --c4). Valores EXACTOS de la tabla del handoff (coinciden con
+ * bootPalettes del prototipo). Default: nu. El cambio de theme es instantáneo
+ * (sin transition). Se aplican bajo html[data-theme="…"]; un script inline en
+ * el <head> fija el atributo antes del primer paint (sin flash). */
+
+/* nu (default, cian) — vale también sin atributo por si el script no corre. */
+html,
+html[data-theme='nu'] {
+  --bg: #0a1416;
+  --fg: #a9bfc4;
+  --bright: #e8f4f6;
+  --dim: #4e686e;
+  --border: #16292d;
+  --key: #4fcadb;
+  --c2: #7fc8a8;
+  --c3: #4fcadb;
+  --c4: #c9a06a;
+}
+
+html[data-theme='dracula'] {
+  --bg: #282a36;
+  --fg: #f8f8f2;
+  --bright: #ffffff;
+  --dim: #6272a4;
+  --border: #3b3d51;
+  --key: #ff79c6;
+  --c2: #50fa7b;
+  --c3: #8be9fd;
+  --c4: #f1fa8c;
+}
+
+html[data-theme='gruvbox'] {
+  --bg: #282828;
+  --fg: #ebdbb2;
+  --bright: #fbf1c7;
+  --dim: #a89984;
+  --border: #3c3836;
+  --key: #fe8019;
+  --c2: #b8bb26;
+  --c3: #8ec07c;
+  --c4: #fabd2f;
+}
+
+html[data-theme='solarized'] {
+  --bg: #fdf6e3;
+  --fg: #657b83;
+  --bright: #073642;
+  --dim: #7d8e91;
+  --border: #eee8d5;
+  --key: #2aa198;
+  --c2: #859900;
+  --c3: #268bd2;
+  --c4: #cb4b16;
+}
+
+/* Mapeo del resaltado de sintaxis (Shiki, tema css-variables) a los tokens del
+ * theme activo: keywords → key, strings → c2, comentarios → dim, texto → fg,
+ * fondo del bloque → border. Así el código cambia de color con el theme. */
+html {
+  --astro-code-foreground: var(--fg);
+  --astro-code-background: var(--border);
+  --astro-code-token-constant: var(--c3);
+  --astro-code-token-string: var(--c2);
+  --astro-code-token-string-expression: var(--c2);
+  --astro-code-token-comment: var(--dim);
+  --astro-code-token-keyword: var(--key);
+  --astro-code-token-function: var(--bright);
+  --astro-code-token-parameter: var(--fg);
+  --astro-code-token-punctuation: var(--dim);
+  --astro-code-token-link: var(--key);
+}

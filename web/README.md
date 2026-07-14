@@ -1,12 +1,16 @@
 # Web de documentación de `nu`
 
-Manual de uso de `nu`: instalación, primeros pasos y la referencia función a
-función de la API del core. Construido con [Astro](https://astro.build/) +
-[Starlight](https://starlight.astro.build/).
+La web de `nu`: portada, wiki (los documentos de diseño de `docs/`), referencia
+función a función de la API del core y guía del primer plugin. Construida con
+[Astro](https://astro.build/), sin ningún theme de terceros: **la web ES un
+terminal** — la portada replica la pantalla de arranque de nu, la wiki es un
+pager tipo `less(1)` y toda la navegación funciona con teclado real. La
+especificación de diseño completa vive en `design_handoff_nu_web/README.md`
+(tokens de los 4 themes, gramática visual TTY, las 8 pantallas canónicas).
 
 > La **fuente de verdad** de la API es [`docs/api.md`](../docs/api.md) (la
-> "superficie sagrada" v1). Este sitio la presenta de forma orientada a tareas y
-> con ejemplos. Si algo discrepa, manda `docs/api.md`.
+> "superficie sagrada" v1). La sección `/api` de este sitio la presenta de forma
+> orientada a tareas y con ejemplos. Si algo discrepa, manda `docs/api.md`.
 
 Esa relación se **verifica mecánicamente**: `npm run check:drift`
 ([`scripts/check-drift.mjs`](scripts/check-drift.mjs), sin dependencias) extrae
@@ -22,22 +26,43 @@ sin etiqueta para firmas, ` -- ` para comentarios de cola).
 ```sh
 cd web
 npm install
-npm run dev      # servidor de desarrollo en http://localhost:4321/nu
-npm run build    # genera el sitio estático en dist/
-npm run preview  # sirve el build
+npm run dev      # servidor de desarrollo en http://localhost:4321/nu/
+npm run build    # sitio estático en dist/ + índice de búsqueda (pagefind)
+npm run preview  # sirve el build (necesario para probar la búsqueda)
 ```
 
 ## Estructura
 
 ```
 web/
-├── astro.config.mjs          # config de Starlight (sidebar, locale es, base /nu)
-├── src/content/docs/
-│   ├── index.mdx             # portada
-│   ├── empezando/            # instalación y primeros pasos
-│   └── referencia/           # una página por namespace de nu.*
-└── public/                   # estáticos
+├── astro.config.mjs              # base /nu/, shiki css-variables, plugins md
+├── scripts/
+│   ├── check-drift.mjs           # detector de deriva web ↔ docs/api.md
+│   └── generar-og.mjs            # regenera public/og.png desde el wordmark
+├── src/
+│   ├── content.config.ts         # colecciones: wiki (../docs), empezar, referencia
+│   ├── content/docs/
+│   │   ├── empezando/            # instalación y primeros pasos (→ /docs/…)
+│   │   └── referencia/           # una página por namespace nu.* (→ /api/…)
+│   ├── pages/                    # index (portada), docs/[slug], api/[slug],
+│   │   │                         # plugins, 404
+│   ├── layouts/ · components/    # Base, headers, statusline, sidebars, carriles
+│   ├── lib/                      # const (dominio placeholder, versión), i18n
+│   │   │                         # es/en del chrome, docmap/apimap, gitmeta,
+│   │   │                         # markdown/ (plugins remark/rehype)
+│   ├── scripts/                  # keyboard (comandos + REPL), pager, búsqueda,
+│   │   │                         # mermaid con colores del theme
+│   └── styles/                   # tokens de los 4 themes + estilos por sección
+└── public/                       # favicon.svg y og.png (generados del wordmark)
 ```
+
+La **wiki** (`/docs/<slug>`) se genera desde los `.md` reales de `../docs/` vía
+content collections; el commit y la fecha de "última edición" de cada página
+salen de git en build (`src/lib/gitmeta.ts`). Las páginas de `empezando/` son
+las únicas con fichero propio aquí (extraídas del README raíz). Los 4 themes
+(nu, dracula, gruvbox, solarized) son CSS custom properties bajo
+`[data-theme]`, persistidos en localStorage; el chrome es bilingüe es/en y el
+contenido solo existe en español por ahora.
 
 ## Ejemplos verificados
 
@@ -49,5 +74,7 @@ en el estado principal: las funciones suspendientes (⏸) van envueltas en
 ## Despliegue
 
 `.github/workflows/docs.yml` construye y publica el sitio en GitHub Pages al
-hacer push a `main` cuando cambia algo bajo `web/`. El `base` del sitio es `/nu`
-(project page); para un dominio propio, vacía `base` en `astro.config.mjs`.
+hacer push a `main` cuando cambia algo bajo `web/`. El `base` del sitio es
+`/nu/` (project page); para un dominio propio, vacía `base` en
+`astro.config.mjs`. El dominio del `curl` de instalación es un placeholder
+centralizado en `src/lib/const.ts` (`DOMAIN`), pendiente de decisión.

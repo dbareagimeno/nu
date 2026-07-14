@@ -1,0 +1,43 @@
+---
+// Sidebar de /api (210px) — y drawer móvil (misma lista). Grupos de apimap.ts:
+// `convenciones` suelta, grupo `nu.*` (orden §N de docs/api.md), `cli` suelta y
+// `extensiones/` enlazando a la wiki. El activo se pinta invertido con `▸`.
+// Es el elemento [data-drawer] que pager.ts abre/cierra en móvil.
+import { API_SIDEBAR } from '../../lib/apimap';
+import { i18n } from '../../lib/i18n';
+
+interface Props {
+  active: string;
+}
+const { active } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const es = i18n.es;
+---
+<aside class="api-sidebar" data-drawer>
+  <div class="drawer-head">
+    <span class="dh-title" data-i18n="mIndex">{es.mIndex}</span>
+    <button type="button" class="drawer-close" data-drawer-toggle data-i18n="drawerClose">{es.drawerClose}</button>
+  </div>
+  <nav class="api-nav">
+    {API_SIDEBAR.map((g) => (
+      <div class="api-group">
+        {g.label && <div class="group-label">{g.label}</div>}
+        <div class="group-items">
+          {g.items.map((it) =>
+            it.slug ? (
+              <a
+                href={`${base}api/${it.slug}`}
+                class={it.slug === active ? 'item active' : 'item'}
+              >
+                {it.slug === active && <span class="mark">▸ </span>}
+                {it.label}
+              </a>
+            ) : (
+              <a href={`${base}docs/${it.docSlug}`} class="item ext">{it.label}</a>
+            )
+          )}
+        </div>
+      </div>
+    ))}
+  </nav>
+</aside>
