@@ -81,7 +81,7 @@ sequenceDiagram
         P->>TX: nu.text.markdown(texto parcial)
         TX-->>P: Block
         P->>C: region:blit(Block)
-        Note over C: marca damage; NO pinta aún
+        Note over C: marca damage — NO pinta aún
     end
     C-->>T: repinta lo dañado (coalescido, ≤ ~30 ms)
 ```
