@@ -166,6 +166,12 @@ tener una respuesta preparada y visible ("no, no es Nushell; se llama así por�
 para no gastar el hilo de Reddit en desambiguar. Este punto es transversal: es la
 puerta 3 del veredicto.
 
+> ✅ **RESUELTO (16-jul-2026).** El proyecto se renombra `nu` → **`enu`**
+> (wordmark **`e/nu`**, backronym *Extensible Native Userland*: **E**xtensible ·
+> **N**ative · **U**serland; el «e» guiña además al modelo Emacs). `enu.dev` y
+> `enu.sh` libres, org `enu-lang`, binario `enu` sin colisión de PATH. Proceso
+> y disponibilidad en [`analisis-nombres-2026-07-15.md`](analisis-nombres-2026-07-15.md) §10.
+
 ### 🔴 R-05 — No hay demostración visual: para un producto de terminal, es *la* pieza que falta
 
 **Problema.** El README arranca con una descripción arquitectónica densa; no hay
@@ -385,7 +391,7 @@ las partes listas para uso real señaladas.
 | R-01 | 🔴 | Release instalable atrasada 102 commits vs el README | repo | Bajo |
 | R-02 | 🔴 | La web pública muestra el diseño ANTIGUO (rediseño no en `main`) | repo | Bajo |
 | R-03 | 🔴 | El CTA de instalación apunta al dominio placeholder `nu.sh` | repo | Bajo |
-| R-04 | 🔴 | Colisión de nombre con Nushell (`nu`) | ext | Medio–alto |
+| R-04 | ✅ | Colisión con Nushell → **resuelto: `nu` → `enu`** (e/nu) | ext | Hecho |
 | R-05 | 🔴 | No hay demostración visual (GIF/asciinema) | ambas | Medio |
 | R-06 | 🟡 | 404 + `:::tip` crudo en la página estrella de docs | repo | Bajo |
 | R-07 | 🟡 | README como referencia, no como landing (arquitectura antes que beneficio) | ext | Medio |
@@ -412,7 +418,7 @@ Imprescindibles, en orden de "convierte *no lo enseñes* en *ya es enseñable*":
 3. **Decidir el dominio de instalación** (o usar la URL de GitHub) para que el CTA
    no falle al pegarse (R-03), y cerrar los 404 + `:::tip` de la página estrella
    (R-06) y los dos 🔴 web (R-11).
-4. **Resolver o encuadrar el nombre `nu`** frente a Nushell (R-04).
+4. ✅ **Nombre resuelto:** `nu` → `enu` / `e/nu` — *Extensible Native Userland* (R-04 cerrado).
 5. **Grabar y colocar un GIF de 20–40 s** al principio del README y de la portada
    (R-05).
 6. **Reescribir las dos primeras pantallas del README** alrededor del beneficio,

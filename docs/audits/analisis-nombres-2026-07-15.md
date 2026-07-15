@@ -8,7 +8,10 @@ los criterios, la metodología de búsqueda y verificación, y **todos los
 resultados**: el cementerio de descartes, los 77 nombres vírgenes rankeados, el
 análisis profundo de los cinco finalistas y el estado de la decisión.
 
-Es un documento vivo: la búsqueda sigue abierta (§8).
+> **✅ RESUELTO (16-jul-2026):** el proyecto se renombra `nu` → **`enu`**
+> (wordmark **`e/nu`**, backronym *Extensible Native Userland*). Detalle y
+> disponibilidad verificada en §10; el resto del documento conserva el proceso
+> que llevó hasta ahí.
 
 ---
 
@@ -327,12 +330,47 @@ Bajo el criterio recalibrado (corto-pero-legible + polisémico + culto + limpio 
 culto, polisémicos y sin una sola connotación incómoda. `noyau` sigue siendo el
 mejor por significado si se acepta su pronunciación.
 
-**Decisión: ABIERTA.**
+**Decisión (16-jul-2026): RESUELTA → `enu`.**
 
-## 10. Próximos pasos
+## 10. Resolución: `nu` → `enu` (16-jul-2026)
 
-1. **Lock autoritativo** del/los finalista(s): WHOIS real de `.dev`/`.sh` en el
-   registrador (el `curl` solo da señal débil), reserva del **org de GitHub** y
-   viabilidad del **tap de Homebrew**.
-2. Cuando se decida, cerrar **R-04** en la auditoría de promoción y registrar el
-   cambio de nombre (binario, repo, dominios, README, strings del CLI).
+Ninguno de los candidatos «bonitos» (rondas 1–2, derivaciones, teatro clásico
+italiano) convenció del todo frente al criterio de **aura**. La solución llegó
+del propio autor: un nombre que **conserva `nu`**, **evoca AI** y **codifica la
+tesis**.
+
+- **Nombre / binario:** **`enu`**
+- **Wordmark:** **`e/nu`** (la barra evoca una ruta/namespace, muy de terminal).
+- **Backronym:** **Extensible Native Userland** — **E**xtensible (todo es
+  extensión Lua) · **N**ative (un binario Go estático, sin runtime que instalar) ·
+  **U**serland (las extensiones Lua son el «userland» sobre el «kernel» Go). El
+  «e» vale además como guiño al modelo **Emacs** ([filosofia.md](../filosofia.md):
+  «Emacs/Textadept, no Neovim»).
+
+**Disponibilidad verificada (16-jul):**
+
+| Superficie | Estado |
+|---|---|
+| Binario `enu` | ✅ sin colisión de PATH |
+| Dominios | `enu.dev` ✅ · `enu.sh` ✅ (`.io/.app/.com/.ai/.org` ocupados) |
+| Org de GitHub | `enu-lang` ✅ (repo `enu-lang/enu`; también `enulang`, `usenu`, `enu-sh`) |
+| Paquetes | PyPI ✅ · crates.io ✅ · Homebrew ✅ (npm/RubyGems ocupados, irrelevantes para un binario Go) |
+| Bluesky | vía `@enu.dev` (el dominio como handle) |
+
+Único ruido asumido: `enu` es substring de `enum`/`enumeration` y del código
+Microsoft «ENU» (inglés-US) → algo de contaminación de búsqueda, que se compensa
+apoyándose en `enu.dev` y en el par «e/nu · Extensible Native Userland».
+
+**Descartados por el camino, para rastro:** `zanni` (perfecto de concepto, pero
+`zanni.ai` **y** `zanni.dev` ocupados) · `nuq`/`nuit`/`nuun` (colisión con nuqs,
+Nuitka y la marca Nuun) · la veta «desnudo» (`nuda`/`naken`, connotación) ·
+finalistas con aura no elegidos (`noyau`, `midollo`, `perno`, `canov`, `kenon`).
+
+## 11. Próximos pasos
+
+1. **Reservar** (por orden): `enu.sh`/`enu.dev` en el registrador · org
+   **`enu-lang`** · nombres en **PyPI**/**crates.io** (placeholder `0.0.0`) · tap
+   **`enu-lang/homebrew-tap`** · handle `@enu.dev` en Bluesky.
+2. **Plan de renombrado** `nu → enu`: binario, repo, dominios, README, strings del
+   CLI en `main.go`, namespaces de eventos de plugins.
+3. **R-04 queda RESUELTO** — marcado en la auditoría de promoción.
