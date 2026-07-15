@@ -5,7 +5,7 @@ description: El scheduler de nu — tasks, sleep, all/race, timers, defer, futur
 
 `nu.task` es el scheduler: corrutinas cooperativas sobre el event loop del estado
 principal. Es donde vive todo el trabajo asíncrono. Repasa el modelo en
-[Conceptos clave](/nu/empezando/conceptos/#3-el-modelo-de-concurrencia-del-navegador)
+[Conceptos clave](/nu/docs/conceptos/#3-el-modelo-de-concurrencia-del-navegador)
 si aún no lo tienes claro.
 
 Todo el módulo está disponible en workers **[W]** (cada worker es un mini-runtime

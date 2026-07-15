@@ -20,7 +20,10 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const DIST_DOCS = join(RAIZ, 'web', 'dist', 'docs');
+// La wiki publicada en ambos idiomas: /docs (ES) y /en/docs (EN). La instantánea
+// EN conserva los marcadores de proceso en la fuente y los limpia el mismo
+// plugin (remark-limpieza-interno), así que el gate cubre las dos.
+const DIST_DOCS = [join(RAIZ, 'web', 'dist', 'docs'), join(RAIZ, 'web', 'dist', 'en', 'docs')];
 const DOCS = join(RAIZ, 'docs');
 
 // --- Modo --fuente: balanceo de los pares en docs/*.md ------------------------
@@ -81,7 +84,7 @@ function ficherosHtml(dir) {
 
 function verificaHtml() {
   const fallos = [];
-  const ficheros = ficherosHtml(DIST_DOCS);
+  const ficheros = DIST_DOCS.flatMap((d) => ficherosHtml(d));
   for (const ruta of ficheros) {
     const html = readFileSync(ruta, 'utf8');
     const rel = ruta.slice(RAIZ.length + 1);
@@ -115,5 +118,5 @@ if (process.argv.includes('--fuente')) {
     console.error('\nEl plugin remark-limpieza-interno debe eliminarlos; si es prosa load-bearing, arréglalo en la fuente.');
     process.exit(1);
   }
-  console.log(`✓ sin marcadores de proceso en dist/docs (${total} HTML comprobados)`);
+  console.log(`✓ sin marcadores de proceso en dist/docs y dist/en/docs (${total} HTML comprobados)`);
 }

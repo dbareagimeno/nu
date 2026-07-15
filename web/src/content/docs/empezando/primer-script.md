@@ -30,7 +30,7 @@ nu -e 'return 1, 2, 3'
 ```
 
 Las tablas se imprimen como el `tostring` de Lua (`table: 0x...`), poco útil. Para
-verlas, codifícalas con [`nu.json`](/nu/referencia/codecs/):
+verlas, codifícalas con [`nu.json`](/nu/api/codecs/):
 
 ```sh
 nu -e 'return nu.json.encode(nu.version)'
@@ -63,7 +63,7 @@ nu -e 'return nu.fs.read("README.md")'
 error: EINVAL: nu.fs.read solo puede llamarse dentro de una task
 ```
 
-Para hacer IO, lanza una **task** con [`nu.task.spawn`](/nu/referencia/task/).
+Para hacer IO, lanza una **task** con [`nu.task.spawn`](/nu/api/task/).
 Dentro de una task, las funciones ⏸ se escriben en estilo secuencial (con
 *await* implícito): no hay callbacks ni promesas.
 
@@ -81,13 +81,13 @@ return "lanzada"
 salir, así que el efecto (el fichero copiado) ya ocurrió cuando el proceso
 acaba. Lo que no puedes es *devolver* el resultado de la task como valor del
 chunk: el `return` del chunk se evalúa antes de que la task corra. Para mover un
-valor de una task a otra usa [`nu.task.future`](/nu/referencia/task/).
+valor de una task a otra usa [`nu.task.future`](/nu/api/task/).
 
 :::tip[¿Por qué esta separación?]
 Es el modelo de concurrencia "del navegador": un hilo principal determinista
 donde el IO bloqueante está prohibido (congelaría el event loop), más tasks
 cooperativas para el trabajo asíncrono. Lo explicamos a fondo en [Conceptos
-clave](/nu/empezando/conceptos/).
+clave](/nu/docs/conceptos/).
 :::
 
 ## Errores estructurados
@@ -110,7 +110,7 @@ false
 
 El `code` es estable y forma parte del contrato (`ENOENT`, `EEXIST`, `EACCES`,
 `ETIMEOUT`, `EINVAL`…). Es lo que ramificas en tu lógica, no el `message`. Ver
-[Convenciones](/nu/referencia/convenciones/#errores) para la lista completa.
+[Convenciones](/nu/api/convenciones/#errores) para la lista completa.
 
 ## Código de salida
 
@@ -124,5 +124,5 @@ nu -e 'assert(nu.version.api >= 2)' && echo "API suficiente"
 ## Siguiente paso
 
 Ya sabes ejecutar Lua y por qué el IO va en tasks. Si quieres ver el harness en
-acción, sigue con [Tu primer agente](/nu/empezando/primer-agente/). Si prefieres
-el modelo mental completo, ve a [Conceptos clave](/nu/empezando/conceptos/).
+acción, sigue con [Tu primer agente](/nu/docs/primer-agente/). Si prefieres
+el modelo mental completo, ve a [Conceptos clave](/nu/docs/conceptos/).

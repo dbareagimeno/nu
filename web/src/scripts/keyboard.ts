@@ -36,6 +36,7 @@ import {
   GITHUB_URL,
   DOCS_FIRST,
   API_FIRST,
+  VERSION,
 } from '../lib/const';
 import { i18n, type Lang } from '../lib/i18n';
 
@@ -71,7 +72,23 @@ export function setTheme(name: string): boolean {
   return true;
 }
 
+// URL homóloga de la página actual en el idioma `l`, si la hay (páginas de
+// contenido: Base la publica en data-lang-home-es/en). En la portada y el 404 no
+// existe → el cambio de idioma es en cliente.
+function langHome(l: Lang): string | null {
+  const v = document.documentElement.getAttribute(`data-lang-home-${l}`);
+  return v && v.length > 0 ? v : null;
+}
+
 export function setLang(l: Lang): void {
+  // En páginas de contenido el idioma lo fija la URL: cambiarlo es NAVEGAR a la
+  // página homóloga, no un swap de chrome (W-04). Fuera de ellas (portada, 404)
+  // se mantiene el toggle en cliente.
+  const home = langHome(l);
+  if (home && l !== currentLang()) {
+    goHref(home);
+    return;
+  }
   lang = l;
   document.documentElement.setAttribute('data-lang', l);
   document.documentElement.setAttribute('lang', l);
@@ -127,16 +144,25 @@ function renderTyped(): void {
     p.textContent = commandMode === 'repl' ? 'lua>' : '>';
     p.style.color = commandMode === 'repl' ? 'var(--key)' : 'var(--dim)';
   }
+  // Hint tecleable (W-06): visible solo con el prompt vacío y fuera del REPL, de
+  // modo que guía al primer tecleo, desaparece en cuanto hay texto y reaparece
+  // si el buffer se vacía. Ocultado con display (sin transición: prohibidas).
+  const h = document.getElementById('nu-hint');
+  if (h) h.style.display = buffer === '' && commandMode !== 'repl' ? '' : 'none';
 }
 
 // ── Mini-REPL Lua (easter egg) ───────────────────────────────────────────────
 // Evalúa lo mismo que evalLua del prototipo: aritmética (^ como potencia),
-// print("…"), concatenación .. de dos strings literales, nu.version → "0.1.3",
-// os.date(); el resto → nil; error aritmético → syntax error.
+// print("…"), concatenación .. de dos strings literales, nu.version (leído de
+// VERSION, sin literal duplicado — W-08), os.date(); el resto → nil; error
+// aritmético → syntax error.
 function evalLua(src: string): string {
   const s = src.trim();
   if (!s) return '';
-  if (s === 'nu.version' || s === 'nu.version.api') return '"0.1.3"';
+  // La versión sale de const.ts (VERSION es "v0.1.3"); el REPL la muestra sin la
+  // `v`, como nu.version en el binario real, y así sigue a la versión de verdad.
+  if (s === 'nu.version' || s === 'nu.version.api')
+    return '"' + VERSION.replace(/^v/, '') + '"';
   if (s === 'os.date()') return '"' + new Date().toString() + '"';
   const pr = s.match(/^print\((["'])(.*)\1\)$/);
   if (pr) return pr[2];
@@ -171,14 +197,21 @@ function actionInstall(): void {
   setFeedback(d.fb_i);
 }
 
+// Prefijo de idioma para las rutas de contenido: 'en/' si el idioma activo es
+// EN, '' si ES. Así [d]/[a] (y el comando `open`) llevan a /en/docs · /en/api
+// cuando el visitante está en inglés (W-04).
+function langPrefix(): string {
+  return currentLang() === 'en' ? 'en/' : '';
+}
+
 function actionDocs(): void {
   setFeedback(i18n[lang].fb_d);
-  goHref(`${BASE}docs/${DOCS_FIRST}`);
+  goHref(`${BASE}${langPrefix()}docs/${DOCS_FIRST}`);
 }
 
 function actionApi(): void {
   setFeedback(i18n[lang].fb_a);
-  goHref(`${BASE}api/${API_FIRST}`);
+  goHref(`${BASE}${langPrefix()}api/${API_FIRST}`);
 }
 
 function actionGithub(): void {
@@ -372,7 +405,7 @@ function pagerEnter(): void {
   }
   if (cmd.startsWith('open ')) {
     const slug = cmd.slice(5).trim().replace(/\.md$/, '');
-    goHref(`${BASE}docs/${slug}`);
+    goHref(`${BASE}${langPrefix()}docs/${slug}`);
     return;
   }
   if (cmd === 'i' || cmd === 'install' || cmd === 'instalar') return actionInstall();
@@ -397,6 +430,13 @@ function pagerKey(e: KeyboardEvent, opts: PagerOpts): void {
       case '/':
         // Delega el overlay de búsqueda a otra fase.
         window.dispatchEvent(new CustomEvent('nu:search-open'));
+        e.preventDefault();
+        return;
+      case '?':
+        // Atajo directo a la ayuda (W-06): equivalente a `:help`, muestra la
+        // primera línea del texto de ayuda en el hueco de contexto.
+        statusLeftDefault = fbHelp().split('\n')[0];
+        renderPagerPrompt();
         e.preventDefault();
         return;
       case 'j':

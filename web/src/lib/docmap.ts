@@ -10,6 +10,8 @@
 // agente, sesiones, chat) y `extensiones` (páginas locales: extensiones, mcp,
 // repl, toolkit). Por eso la colección es propiedad POR SLUG, no de grupo.
 
+import type { Lang } from './i18n';
+
 export type GrupoId = 'empezar' | 'espec' | 'extensiones';
 export type Coleccion = 'wiki' | 'empezar' | 'extensiones';
 
@@ -85,12 +87,32 @@ const DEF: { id: GrupoId; i18nKey: Grupo['i18nKey']; entradas: DefEntrada[] }[] 
 // el plugin remark de la wiki con sus enlaces.
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 
-/** URL absoluta (con base) de la página de un slug. */
-export function urlDoc(slug: string): string {
-  return `${BASE}/docs/${slug}`;
+// Prefijo de idioma para la URL: '' en ES, 'en/' en EN. Las páginas EN cuelgan
+// de rutas estáticas paralelas (`/nu/en/docs/<slug>`) — W-04.
+function prefijoLang(lang: Lang): string {
+  return lang === 'en' ? 'en/' : '';
 }
 
-function gitPath(collection: Coleccion, slug: string): string {
+/** URL absoluta (con base) de la página de un slug, en el idioma dado. */
+export function urlDoc(slug: string, lang: Lang = 'es'): string {
+  return `${BASE}/${prefijoLang(lang)}docs/${slug}`;
+}
+
+// Ruta del fichero fuente (para gitMeta / «última edición»), consciente del
+// idioma: el ES sale de docs/ o del contenido local ES; el EN de su instantánea
+// traducida bajo web/src/content/en/. Así el bloque «última edición» de las
+// páginas EN es veraz respecto al fichero que realmente rinden.
+export function gitPathLang(collection: Coleccion, slug: string, lang: Lang = 'es'): string {
+  if (lang === 'en') {
+    switch (collection) {
+      case 'wiki':
+        return `web/src/content/en/wiki/${slug}.md`;
+      case 'empezar':
+        return `web/src/content/en/empezando/${slug}.md`;
+      case 'extensiones':
+        return `web/src/content/en/extensiones/${slug}.md`;
+    }
+  }
   switch (collection) {
     case 'wiki':
       return `docs/${slug}.md`;
@@ -99,6 +121,12 @@ function gitPath(collection: Coleccion, slug: string): string {
     case 'extensiones':
       return `web/src/content/docs/extensiones/${slug}.md`;
   }
+}
+
+// Compat: la ruta ES baked en cada DocEntry (la usa el wrapper ES; el EN pasa
+// por gitPathLang con lang='en').
+function gitPath(collection: Coleccion, slug: string): string {
+  return gitPathLang(collection, slug, 'es');
 }
 
 // Grupos con sus slugs, para el sidebar/drawer.

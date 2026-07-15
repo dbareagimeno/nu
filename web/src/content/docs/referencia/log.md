@@ -40,7 +40,7 @@ esto sí sale
 :::caution[No uses print para salida de usuario]
 Si quieres que algo aparezca en la terminal: en headless, devuélvelo con `return`
 (en `nu -e`) o escríbelo a stdout vía la extensión correspondiente; en una TUI,
-píntalo con [`nu.ui`](/nu/referencia/ui/). `print`/`nu.log.*` son para
+píntalo con [`nu.ui`](/nu/api/ui/). `print`/`nu.log.*` son para
 diagnóstico, y su destino es el fichero de log en
-[`nu.config.data_dir()`](/nu/referencia/plugin/#directorios).
+[`nu.config.data_dir()`](/nu/api/plugin/#directorios).
 :::

@@ -125,5 +125,5 @@ pudiera construir con la API pública, sería la API la que está incompleta.
 ## Siguiente paso
 
 Ya tienes el harness funcionando. A partir de aquí, la [referencia de la
-API](/nu/referencia/convenciones/) documenta cada primitiva del core sobre la
+API](/nu/api/convenciones/) documenta cada primitiva del core sobre la
 que se construye todo esto.

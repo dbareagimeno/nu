@@ -51,6 +51,6 @@ que tú escribas.
 
 :::tip
 Si vienes a leer código de inmediato, salta a [Tu primer
-script](/nu/empezando/primer-script/). Si quieres entender *por qué* `nu` es
-como es, sigue por [Conceptos clave](/nu/empezando/conceptos/).
+script](/nu/docs/primer-script/). Si quieres entender *por qué* `nu` es
+como es, sigue por [Conceptos clave](/nu/docs/conceptos/).
 :::

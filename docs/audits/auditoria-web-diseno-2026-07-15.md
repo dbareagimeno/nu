@@ -255,3 +255,29 @@ baratos. Los 🟡 (W-03, W-04) son las decisiones donde la coherencia estética 
 gana terreno a la usabilidad justo en las páginas de contenido; merecen una
 decisión consciente. El resto es pulido. Ninguno cuestiona la base: el rediseño
 parte de una idea con punto de vista y la ejecuta con disciplina.
+
+---
+
+## Addendum de resolución (2026-07-15)
+
+W-01…W-08 quedaron resueltos el mismo día (rama `claude/auditoria-web`). W-09
+no era un bug sino una dirección, y se adopta como guía de diseño: doblar en
+interacción con función, evitar adorno de terminal puramente cosmético.
+
+| Id | Resolución |
+|----|------------|
+| W-01 | `search.ts`: fuera los `case 'n'/'p'` planos (ya se escriben como texto); la navegación por resultados queda en `↑`/`↓` y `Ctrl-n`/`Ctrl-p`; el hint del overlay pasa de `[n/p]` a `[↑↓]`. |
+| W-02 | `--dim` sube a AA en los temas que fallaban conservando el matiz (`nu` #63848b 4.63:1, `dracula` #8592b8 4.61:1, `solarized` #637275 4.64:1; `gruvbox` ya pasaba) y, destapado por el propio check, el `--fg` de `solarized` también (#5f737b, 4.61:1). Nuevo gate `check:contraste` (fórmula WCAG 2.1, 2 pares × 4 temas) en npm y en `docs.yml`, como se pedía. |
+| W-03 | El cuerpo de prosa (`.markdown`/`.api-prose` p/li/blockquote) pasa a IBM Plex Sans self-hosted (`--font-prose`, 15px/1.7); títulos, código, tablas y todo el chrome siguen en mono: el terminal sigue siendo terminal. |
+| W-04 | Resuelto por la vía fuerte, por decisión del propietario (sustituye a la mitigación propuesta aquí): **todo el contenido traducido al inglés** y publicado bajo rutas estáticas `/en/…` (18 docs + 16 api + plugins; 72 páginas totales), índice de búsqueda por idioma, toggle de idioma que navega a la página homóloga, gitmeta y plugins remark conscientes del idioma. Fuera la nota «in spanish for now». El español sigue siendo la fuente de verdad (nota de mantenimiento en `web/README.md`). |
+| W-05 | Escala `--fs-1`…`--fs-12` en `tokens.css` con mapeo exacto de los 12 valores existentes (cero cambio visual); 65 literales sustituidos por tokens. No hubo duplicados accidentales que consolidar: los valores cercanos ya eran consistentes por rol. |
+| W-06 | Placeholder tenue `escribe help ↵` / `type help ↵` en el prompt de la portada (desaparece al primer carácter, reaparece al vaciarse) y tecla `[?] ayuda` anunciada en la statusline de los pagers, con su manejador real en `keyboard.ts`. |
+| W-07 | El overlay guarda `document.activeElement` al abrir, enfoca el panel (`tabindex="-1"`) también en escritorio y devuelve el foco al elemento previo al cerrar; el flujo táctil no cambia. |
+| W-08 | `nu.version` del REPL sale de `VERSION` (`const.ts`), sin literal duplicado, y el banner acota la expectativa manteniendo el guiño: «lua (demo del navegador) — escribe salir para volver». |
+| W-09 | Sin cambio de código: criterio de dirección adoptado. |
+
+De propina, la pasada destapó defectos preexistentes que también se corrigieron:
+enlaces del contenido a rutas inexistentes (`/nu/empezando/…` → `/nu/docs/…`,
+`/nu/referencia/…` → `/nu/api/…`, en ES y en EN) y 4 anclas `#fragmento` rotas.
+Cierre verificado: build (72 páginas, pagefind es+en), `check:contraste`,
+`check:drift`, `check:limpieza` y `check:limpieza:fuente` en verde.

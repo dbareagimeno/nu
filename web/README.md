@@ -62,7 +62,26 @@ salen de git en build (`src/lib/gitmeta.ts`). Las páginas de `empezando/` son
 las únicas con fichero propio aquí (extraídas del README raíz). Los 4 themes
 (nu, dracula, gruvbox, solarized) son CSS custom properties bajo
 `[data-theme]`, persistidos en localStorage; el chrome es bilingüe es/en y el
-contenido solo existe en español por ahora.
+contenido se publica en ambos idiomas (ES bajo `/docs`·`/api`·`/plugins`, EN
+bajo `/en/…`).
+
+## Contenido en inglés (instantánea traducida)
+
+El **español es la fuente de verdad**. El contenido inglés bajo
+`src/content/en/` (`wiki/`, `empezando/`, `extensiones/`, `referencia/`) es una
+**instantánea traducida** de su gemelo ES —mismos slugs, mismo orden de docmap,
+mismos marcadores `<!-- nu:interno -->`—, servida en rutas estáticas paralelas
+`/en/docs`, `/en/api` y `/en/plugins` (resolución del hallazgo W-04). El
+template es único por sección (`components/pages/{WikiPage,ApiPage,PluginsPage}
+.astro`) y se parametriza por idioma; los wrappers de `pages/en/` solo cambian
+la colección de origen.
+
+**Al cambiar `docs/` o cualquier contenido ES, hay que regenerar la traducción
+EN afectada** —no se actualiza sola—. El picker de idioma navega a la página
+homóloga (`/nu/docs/x` ↔ `/nu/en/docs/x`), así que una página EN ausente sería
+un 404. Nota: `check:drift` vigila **solo la referencia ES** frente a
+`docs/api.md` (la superficie sagrada); la referencia EN, al ser instantánea, no
+entra en ese gate.
 
 ## Ejemplos verificados
 

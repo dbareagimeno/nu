@@ -28,7 +28,7 @@ Toda la API vive bajo el global `nu`, con identificadores en inglés y
 adición**: una firma nunca cambia ni desaparece. Cada adición incrementa
 `nu.version.api` (el nivel actual es `2`).
 
-Por eso detectas capacidades con [`nu.has()`](/nu/referencia/nu/), nunca
+Por eso detectas capacidades con [`nu.has()`](/nu/api/nu/), nunca
 comparando números de versión: `nu.has("ui")` te dice si hay terminal, sin que
 tu plugin se rompa cuando la API crezca.
 
@@ -68,14 +68,14 @@ Dos cosas que abortan una task **desenrollando la pila sin pasar por `pcall`**
   tiene un presupuesto (100 ms por defecto). Excederlo aborta la task.
 
 Para liberar recursos pase lo que pase —éxito, error o aborto— registra
-[`nu.task.cleanup(fn)`](/nu/referencia/task/). Los códigos `ECANCELED` y
+[`nu.task.cleanup(fn)`](/nu/api/task/). Los códigos `ECANCELED` y
 `EBUDGET` solo sirven para *observar* esos abortos (p. ej. en `Task:await`), no
 para capturarlos.
 
 ## 4. Workers: paralelismo de verdad, opt-in
 
 Cuando necesitas quemar CPU sin congelar el loop, levantas un
-[**worker**](/nu/referencia/worker/): un estado Lua nuevo en su goroutine, **sin
+[**worker**](/nu/api/worker/): un estado Lua nuevo en su goroutine, **sin
 memoria compartida**. La comunicación es por **paso de mensajes JSON-ables**
 (copiados, no referencias). Un worker no tiene `nu.ui` ni el bus de eventos
 principal, y puede restringirse a un subconjunto de la API con `caps`
@@ -93,7 +93,7 @@ el conjunto oficial (el agente, el chat…) con una tecla, y sin TTY el flag
 `nu --default-config` hace lo mismo de un comando —en ambos casos sin red—.
 Mismo modelo mental que Neovim: el programa no trae plugins activados.
 
-Un [**plugin**](/nu/referencia/plugin/) es un directorio con `plugin.toml`
+Un [**plugin**](/nu/api/plugin/) es un directorio con `plugin.toml`
 (`name`, `version`, `requires?`) e `init.lua`. El **nombre es la identidad** y el
 loader la mantiene única, lo que deja que los namespaces de eventos y demás
 registros sean libres de colisión por simple convención (namespace = nombre del
@@ -107,4 +107,4 @@ plugin). El `init.lua` del usuario se carga **el último**, así que tiene la
 | **⏸** | Función **suspendiente**: solo puede llamarse dentro de una task; cede el control hasta completarse y devuelve el resultado directamente. |
 | **[W]** | Disponible dentro de **workers**. Sin esta marca, la función es solo del estado principal. |
 
-Con esto, ya puedes leer cualquier página de la [referencia](/nu/referencia/convenciones/).
+Con esto, ya puedes leer cualquier página de la [referencia](/nu/api/convenciones/).

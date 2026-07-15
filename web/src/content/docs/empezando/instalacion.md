@@ -79,11 +79,11 @@ te muestra una pantalla del runtime con sus capacidades y la opción de activar
 el conjunto oficial (el agente, el chat…) con una tecla, sin red. Sin TTY (CI,
 Docker, scripts), el equivalente de un comando es `nu --default-config`, que
 escribe esa activación en tu `nu.toml`. Esto es deliberado —ver [Conceptos
-clave](/nu/empezando/conceptos/)—. Para scripting headless con `nu -e` no
+clave](/nu/docs/conceptos/)—. Para scripting headless con `nu -e` no
 necesitas activar nada.
 :::
 
 ## Siguiente paso
 
 Ya puedes ejecutar Lua. Sigue con [Tu primer
-script](/nu/empezando/primer-script/).
+script](/nu/docs/primer-script/).

@@ -10,7 +10,8 @@
 //   - Mientras está abierto, ESTE módulo captura el teclado (keydown en window
 //     con capture:true + stopPropagation): keyboard.ts no ve nada. Caracteres →
 //     término (con debounce); Backspace borra (vacío → cierra); Escape cierra;
-//     n/p y flechas ↓/↑ saltan entre resultados; Enter abre el activo.
+//     las flechas ↓/↑ (y Ctrl-n/Ctrl-p, estilo pager) saltan entre resultados;
+//     Enter abre el activo. n/p planas se teclean como cualquier letra.
 //   - Resultados de pagefind agrupados por documento; cada sección es una línea
 //     `§n · <extracto>`. El activo lleva fondo border, término invertido y ◂.
 //   - En móvil hay un <input> real (invoca el teclado virtual); keyboard.ts lo
@@ -54,6 +55,8 @@ let inputEl: HTMLInputElement | null = null;
 let prevLeft = '';
 let prevRight = '';
 let prevOverflow = '';
+// Elemento enfocado antes de abrir, para devolverle el foco al cerrar (W-07).
+let prevFocus: HTMLElement | null = null;
 
 // pagefind cargado perezosamente (o null si falló, p. ej. en dev sin build).
 type Pagefind = {
@@ -105,6 +108,14 @@ function construye(): void {
   panel.className = 'nu-search';
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-modal', 'true');
+  // Foco-trap (W-07): en escritorio el foco se mueve al PANEL (no al input),
+  // porque el modelo de teclado compone el término desde teclas crudas vía el
+  // switch de `onKeyDown` y sincroniza un input oculto; enfocar el input real
+  // haría que el navegador escribiera por su cuenta y duplicaría la lógica. Con
+  // tabindex="-1" el panel puede recibir foco programático (no tabulable) y así
+  // `aria-modal` deja de mentir: el foco queda dentro del diálogo, no en la
+  // página de fondo. En táctil sí se enfoca el input (levanta el teclado).
+  panel.setAttribute('tabindex', '-1');
 
   scrollBox = document.createElement('div');
   scrollBox.className = 'nu-search-scroll';
@@ -169,7 +180,7 @@ function renderStatusRight(): void {
   if (!el) return;
   const d = i18n[lang()];
   const k = (t: string): string => `<span style="color:var(--fg)">${t}</span>`;
-  el.innerHTML = `${k('[n/p]')} ${d.sJump} · ${k('[enter]')} ${d.sOpen} · ${k('[esc]')} ${d.sClose}`;
+  el.innerHTML = `${k('[↑↓]')} ${d.sJump} · ${k('[enter]')} ${d.sOpen} · ${k('[esc]')} ${d.sClose}`;
 }
 
 // ── Etiquetas ─────────────────────────────────────────────────────────────────
@@ -376,6 +387,18 @@ function onKeyDown(e: KeyboardEvent): void {
   // Desktop: capturamos TODO para que keyboard.ts no vea nada.
   e.stopPropagation();
 
+  // Ctrl-n / Ctrl-p: navegación estilo pager, equivalentes a ↓/↑. Se manejan
+  // antes del switch porque comparten `e.key` ('n'/'p') con la escritura: las
+  // teclas n/p SIN modificador ya no navegan (caían al viejo case 'n'/'p'),
+  // sino que se teclean como cualquier letra en el `default` — sin esto era
+  // imposible buscar el grueso del vocabulario nu.* (plugin, spawn, print…,
+  // y `nu` mismo empieza por 'n'). Ver W-01.
+  if (e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'n' || e.key === 'p')) {
+    e.preventDefault();
+    mueve(e.key === 'n' ? 1 : -1);
+    return;
+  }
+
   switch (e.key) {
     case 'Escape':
       e.preventDefault();
@@ -404,17 +427,6 @@ function onKeyDown(e: KeyboardEvent): void {
       e.preventDefault();
       mueve(-1);
       return;
-    case 'n':
-      // n/p navegan (no se teclean): el término se compone con el resto de
-      // caracteres. Ver decisión en el informe: sacrifica poder buscar 'n'/'p'
-      // por teclado en desktop; el input móvil sí los escribe.
-      e.preventDefault();
-      mueve(1);
-      return;
-    case 'p':
-      e.preventDefault();
-      mueve(-1);
-      return;
     default:
       if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
@@ -438,6 +450,8 @@ export function openSearch(): void {
     return;
   }
   construye();
+  // Recuerda el foco actual ANTES de moverlo, para restaurarlo al cerrar (W-07).
+  prevFocus = document.activeElement as HTMLElement | null;
   abierto = true;
   term = '';
   lineas = [];
@@ -464,9 +478,14 @@ export function openSearch(): void {
   window.addEventListener('keydown', onKeyDown, true);
   window.addEventListener('resize', coloca);
 
+  // Mueve el foco DENTRO del diálogo (W-07): en táctil al input (levanta el
+  // teclado virtual), en escritorio al panel (el switch de teclado ya gobierna
+  // la escritura; ver la nota de `construye`). Así el foco no se queda en la
+  // página de fondo mientras el modal está abierto.
   if (esTactil() && inputEl) {
-    // Gesto de usuario (click en [/] buscar): el foco levanta el teclado virtual.
     inputEl.focus();
+  } else {
+    panel!.focus();
   }
 }
 
@@ -488,6 +507,10 @@ function cierra(): void {
   setStatusLeft(prevLeft); // restaura #nu-status-left vía keyboard.ts
   const right = statusRightEl();
   if (right) right.innerHTML = prevRight;
+
+  // Devuelve el foco a quien lo tenía antes de abrir (cierra el foco-trap, W-07).
+  prevFocus?.focus();
+  prevFocus = null;
 
   window.dispatchEvent(new CustomEvent('nu:search-close'));
 }

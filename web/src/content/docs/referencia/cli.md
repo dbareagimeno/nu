@@ -64,7 +64,7 @@ CLI, no API sagrada `nu.*` (no añade nada a la API ni mueve `nu.version.api`).
 Evalúa el chunk Lua **sin TTY** (headless) e imprime cada valor de retorno en su
 propia línea. El chunk corre en el **estado principal** (no es una task): puede
 `nu.task.spawn` pero no usar funciones ⏸ directamente. Ver [Tu primer
-script](/nu/empezando/primer-script/).
+script](/nu/docs/primer-script/).
 
 ```sh
 nu -e 'return nu.version.api'
@@ -79,7 +79,7 @@ nu -e 'return nu.version.api'
 Ejecuta un **turno de agente headless** con el prompt dado e imprime el texto
 final del asistente. Corre como task (las funciones ⏸ del turno y sus tools
 funcionan sin TTY). Requiere las extensiones `providers`, `sessions` y `agent`
-activas. Ver [Tu primer agente](/nu/empezando/primer-agente/).
+activas. Ver [Tu primer agente](/nu/docs/primer-agente/).
 
 #### Modificadores de `-p`
 

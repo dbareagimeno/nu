@@ -11,7 +11,7 @@ pinta como mucho cada ~30 ms. **No existe "flush" manual.**
 Sin TTY interactivo (`nu -e`, CI, salida redirigida) el módulo `nu.ui`
 **directamente no existe** —el mismo modelo que las `caps` de los workers: la
 superficie no concedida no está—. Detéctalo con
-[`nu.has("ui")`](/nu/referencia/nu/#nuhas-w), **nunca** probando y capturando el
+[`nu.has("ui")`](/nu/api/nu/#nuhas-w), **nunca** probando y capturando el
 error. Por eso los ejemplos de esta página no son ejecutables con `nu -e`.
 :::
 
@@ -71,7 +71,7 @@ nu.ui.keymap("j", function() offset = offset + 1; pintar() end)
 ## Blocks y estilos
 
 Un **Block** es un handle opaco de líneas estilizadas, producido por
-[`nu.text.*`](/nu/referencia/text/) o construido a mano. Tiene anchura y altura.
+[`nu.text.*`](/nu/api/text/) o construido a mano. Tiene anchura y altura.
 
 ```
 nu.ui.block(lines: (string | Span[])[]) -> Block   -- Span = { text, style? }

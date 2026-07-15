@@ -10,6 +10,25 @@
 // `extensiones/` enlaza a las páginas de la WIKI que las especifican —no hay
 // páginas /api para ellas y no se inventan—.
 
+import type { Lang } from './i18n';
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+// Prefijo de idioma para la URL: '' en ES, 'en/' en EN (rutas /nu/en/api/… — W-04).
+function prefijoLang(lang: Lang): string {
+  return lang === 'en' ? 'en/' : '';
+}
+
+/** URL de la página /api/<slug> en el idioma dado. */
+export function urlApi(slug: string, lang: Lang = 'es'): string {
+  return `${BASE}/${prefijoLang(lang)}api/${slug}`;
+}
+
+/** URL de la página /docs/<slug> (para los ítems de extensiones del sidebar). */
+export function urlApiDoc(slug: string, lang: Lang = 'es'): string {
+  return `${BASE}/${prefijoLang(lang)}docs/${slug}`;
+}
+
 export interface ApiItem {
   /** etiqueta visible en el sidebar */
   label: string;

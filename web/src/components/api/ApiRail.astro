@@ -3,7 +3,7 @@
 // índice `§ en esta página` (las funciones/secciones de la página; activo bright
 // vía scrollspy) y metadata "generada desde docs/api.md · <hash> · hace N días"
 // tomada de git (la fuente de la referencia es docs/api.md, no estas páginas).
-import { i18n } from '../../lib/i18n';
+import { i18n, type Lang } from '../../lib/i18n';
 import { gitMeta } from '../../lib/gitmeta';
 
 interface Heading {
@@ -13,10 +13,12 @@ interface Heading {
 }
 interface Props {
   headings: Heading[];
+  lang?: Lang;
 }
-const { headings } = Astro.props;
+const { headings, lang = 'es' } = Astro.props;
 const base = import.meta.env.BASE_URL;
-const es = i18n.es; // build-time en español; el swap a EN es en cliente (data-i18n)
+const pref = lang === 'en' ? 'en/' : '';
+const t = i18n[lang]; // build-time en el idioma de la página; el swap es en cliente (data-i18n)
 
 // Etiqueta corta de una sección: último segmento de sus callables
 // (`nu.fs.read` → `read`, `nu.fs.write / nu.fs.append` → `write / append`), o el
@@ -34,21 +36,25 @@ const secciones = headings
 
 const meta = gitMeta('docs/api.md');
 const dias = meta
-  ? meta.diasDesde === 0
-    ? 'hoy'
-    : `hace ${meta.diasDesde} día${meta.diasDesde === 1 ? '' : 's'}`
+  ? lang === 'en'
+    ? meta.diasDesde === 0
+      ? 'today'
+      : `${meta.diasDesde} day${meta.diasDesde === 1 ? '' : 's'} ago`
+    : meta.diasDesde === 0
+      ? 'hoy'
+      : `hace ${meta.diasDesde} día${meta.diasDesde === 1 ? '' : 's'}`
   : '';
 ---
 <aside class="api-rail">
-  <a class="cta" href={`${base}plugins`}>
-    <div class="cta-title" data-i18n="ctaTitle">{es.ctaTitle}</div>
-    <div class="cta-body" data-i18n="ctaBody">{es.ctaBody}</div>
-    <span class="cta-link" data-i18n="ctaLink">{es.ctaLink}</span>
+  <a class="cta" href={`${base}${pref}plugins`}>
+    <div class="cta-title" data-i18n="ctaTitle">{t.ctaTitle}</div>
+    <div class="cta-body" data-i18n="ctaBody">{t.ctaBody}</div>
+    <span class="cta-link" data-i18n="ctaLink">{t.ctaLink}</span>
   </a>
 
   {secciones.length > 0 && (
     <>
-      <div class="rail-h">§ <span data-i18n="onPage">{es.onPage}</span></div>
+      <div class="rail-h">§ <span data-i18n="onPage">{t.onPage}</span></div>
       <nav class="rail-secs">
         {secciones.map((s, i) => (
           <a href={`#${s.slug}`} class={i === 0 ? 'sec active' : 'sec'} data-sec={s.slug}>{s.label}</a>
@@ -60,12 +66,12 @@ const dias = meta
   <div class="rail-meta">
     {meta && (
       <div class="meta-gen">
-        <span data-i18n="genFrom">{es.genFrom}</span><span class="key">{meta.hash}</span> · {dias}
+        <span data-i18n="genFrom">{t.genFrom}</span><span class="key">{meta.hash}</span> · {dias}
       </div>
     )}
     <div class="meta-adr">
-      <span data-i18n="sagrada">{es.sagrada}</span>{' '}
-      <a href={`${base}docs/adr`} class="key" data-i18n="adrLink">{es.adrLink}</a>
+      <span data-i18n="sagrada">{t.sagrada}</span>{' '}
+      <a href={`${base}${pref}docs/adr`} class="key" data-i18n="adrLink">{t.adrLink}</a>
     </div>
   </div>
 </aside>

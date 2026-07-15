@@ -73,7 +73,7 @@ nu.sys.pid() -> integer
 ```
 
 Pid del **propio** proceso `nu`. No lo confundas con
-[`nu.proc.alive(pid)`](/nu/referencia/proc/#nuprocalive-w), que valida pids
+[`nu.proc.alive(pid)`](/nu/api/proc/#nuprocalive-w), que valida pids
 *ajenos*: `pid()` es el tuyo.
 
 ```sh

@@ -36,7 +36,11 @@ function limpiaRuta(r) {
   return r.replace(/^(\.\.?\/)+/, '').replace(/^docs\//, '');
 }
 
-function reescribeUrl(url) {
+// `prefLang` es '' (ES) o 'en/' (EN): las páginas EN publican sus enlaces de
+// wiki bajo /nu/en/docs/<slug>, no /nu/docs/<slug> (W-04). Los enlaces a GitHub
+// (audits/archive/.md despublicado) son idénticos en ambos idiomas: apuntan a
+// la fuente ES, que es la de verdad.
+function reescribeUrl(url, prefLang) {
   if (!url) return url;
   // Absolutos, anclas puras, mailto, protocolos: intactos.
   if (/^(https?:|mailto:|tel:|#|\/)/i.test(url)) return url;
@@ -54,7 +58,7 @@ function reescribeUrl(url) {
   if (/\.md$/i.test(ruta)) {
     const limpio = limpiaRuta(ruta);
     const slug = limpio.replace(/\.md$/i, '').split('/').pop();
-    if (WIKI_SLUGS.has(slug)) return `${BASE}/docs/${slug}${hash}`;
+    if (WIKI_SLUGS.has(slug)) return `${BASE}/${prefLang}docs/${slug}${hash}`;
     // .md que no es página de la wiki (README.md, ficheros sueltos): a GitHub.
     return GH_BLOB + limpio + hash;
   }
@@ -63,11 +67,11 @@ function reescribeUrl(url) {
 }
 
 // Recorre el árbol una sola vez aplicando ambas transformaciones.
-function recorre(node) {
+function recorre(node, prefLang) {
   if (!node || typeof node !== 'object') return;
 
   if (node.type === 'link' && typeof node.url === 'string') {
-    node.url = reescribeUrl(node.url);
+    node.url = reescribeUrl(node.url, prefLang);
   } else if (node.type === 'code' && node.lang === 'mermaid') {
     // Convierte el bloque en HTML crudo; Shiki ya no lo procesará.
     node.type = 'html';
@@ -78,21 +82,29 @@ function recorre(node) {
   }
 
   if (Array.isArray(node.children)) {
-    for (const hijo of node.children) recorre(hijo);
+    for (const hijo of node.children) recorre(hijo, prefLang);
   }
 }
 
 export function remarkEnlacesWiki() {
   return (tree, file) => {
     const ruta = (file?.path || file?.history?.[0] || '').replace(/\\/g, '/');
-    const esReferencia = ruta.includes('/content/docs/referencia/');
-    if (esReferencia) return; // la transforma rehype-api-cards, no nosotros
+    // La referencia (ES o EN) la transforma rehype-api-cards, no nosotros.
+    const esReferencia = ruta.includes('/referencia/');
+    if (esReferencia) return;
 
-    const esEmpezar = ruta.includes('/content/docs/empezando/');
-    const esExtensiones = ruta.includes('/content/docs/extensiones/');
-    const esWikiRepo = /\/docs\/[^/]+\.md$/.test(ruta) && !ruta.includes('/content/docs/');
-    if (!esEmpezar && !esExtensiones && !esWikiRepo) return; // fuera de nuestra jurisdicción
+    // Jurisdicción: contenido ES (empezar/extensiones locales + wiki del repo) y
+    // su instantánea EN bajo content/en/ (empezar/extensiones/wiki). Cada uno
+    // reescribe sus enlaces de wiki al idioma que le corresponde.
+    const esEn = ruta.includes('/content/en/');
+    const esEmpezar =
+      ruta.includes('/content/docs/empezando/') || ruta.includes('/content/en/empezando/');
+    const esExtensiones =
+      ruta.includes('/content/docs/extensiones/') || ruta.includes('/content/en/extensiones/');
+    const esWikiRepo = /\/docs\/[^/]+\.md$/.test(ruta) && !ruta.includes('/content/');
+    const esWikiEn = ruta.includes('/content/en/wiki/');
+    if (!esEmpezar && !esExtensiones && !esWikiRepo && !esWikiEn) return; // fuera de jurisdicción
 
-    recorre(tree);
+    recorre(tree, esEn ? 'en/' : '');
   };
 }

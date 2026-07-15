@@ -73,7 +73,7 @@ end)
 
 :::caution[Vida del proceso]
 La regla es matar el proceso explícitamente vía
-[`nu.task.cleanup`](/nu/referencia/task/#nutaskcleanup-w) en quien lo crea. Como
+[`nu.task.cleanup`](/nu/api/task/#nutaskcleanup-w) en quien lo crea. Como
 red de seguridad, un `Proc` sin referencias acaba matado por el GC, pero es **no
 determinista**: no confíes en ello.
 :::
@@ -86,7 +86,7 @@ nu.proc.alive(pid: integer) -> boolean
 
 ¿Hay un proceso vivo con ese `pid` en esta máquina? Informa de **existencia, no
 de identidad**: un pid reciclado da `true`. Sirve para detectar locks huérfanos
-(combínalo con [`nu.sys.pid`](/nu/referencia/sys/) y `nu.sys.hostname`).
+(combínalo con [`nu.sys.pid`](/nu/api/sys/) y `nu.sys.hostname`).
 
 ```lua
 -- ¿El dueño del lock sigue vivo?

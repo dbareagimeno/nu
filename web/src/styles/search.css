@@ -12,7 +12,7 @@
   flex-direction: column;
   background: var(--bg);
   border-top: 1px solid var(--border);
-  font-size: 12.5px;
+  font-size: var(--fs-5);
   line-height: 2;
 }
 .nu-search.abierto {
@@ -34,7 +34,7 @@
   color: var(--bright);
   border: 1px solid var(--border);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-6);
   padding: 9px 12px;
   margin-bottom: 20px;
   outline: none;

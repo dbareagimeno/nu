@@ -7,22 +7,23 @@
 // Props:
 //   activeSlug: slug de la página actual (se pinta invertido).
 import { GRUPOS, urlDoc } from '../../lib/docmap';
-import { i18n } from '../../lib/i18n';
+import { i18n, type Lang } from '../../lib/i18n';
 
 interface Props {
   activeSlug: string;
+  lang?: Lang;
 }
-const { activeSlug } = Astro.props;
-const es = i18n.es; // etiquetas de grupo iniciales en ES; el swap a EN es en cliente
+const { activeSlug, lang = 'es' } = Astro.props;
+const t = i18n[lang]; // etiquetas de grupo en el idioma de la página; el swap es en cliente
 ---
 <nav class="wiki-nav" aria-label="índice de la wiki">
   {GRUPOS.map((g) => (
     <div class="grupo-bloque">
-      <div class="grupo"><span data-i18n={g.i18nKey}>{es[g.i18nKey]}</span>/</div>
+      <div class="grupo"><span data-i18n={g.i18nKey}>{t[g.i18nKey]}</span>/</div>
       <div class="entradas">
         {g.slugs.map((slug) => (
           <a
-            href={urlDoc(slug)}
+            href={urlDoc(slug, lang)}
             class={slug === activeSlug ? 'entrada activa' : 'entrada'}
           >
             {slug === activeSlug ? `▸ ${slug}.md` : `${slug}.md`}
@@ -35,7 +36,7 @@ const es = i18n.es; // etiquetas de grupo iniciales en ES; el swap a EN es en cl
 
 <style>
   .wiki-nav {
-    font-size: 12.5px;
+    font-size: var(--fs-5);
     line-height: 2.1;
   }
   .grupo-bloque {

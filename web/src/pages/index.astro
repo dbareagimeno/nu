@@ -55,10 +55,13 @@ const langs = ['es', 'en'];
         </div>
       </nav>
 
-      <!-- Prompt interactivo (solo desktop). -->
+      <!-- Prompt interactivo (solo desktop). El hint tenue tras el cursor
+           anuncia que la línea es tecleable (W-06); keyboard.ts lo oculta al
+           primer carácter y lo restaura al vaciarse el buffer. -->
       <div class="prompt">
         <span id="nu-prompt" class="dim">&gt;</span>
         <span id="nu-typed" class="bright"></span><span class="nu-cursor"></span>
+        <span id="nu-hint" class="prompt-hint" data-i18n="hint">{es.hint}</span>
       </div>
       <div id="nu-feedback" class="feedback"></div>
 
@@ -161,17 +164,17 @@ const langs = ['es', 'en'];
     flex-direction: column;
     justify-content: center;
     padding: 48px 60px;
-    font-size: 13px;
+    font-size: var(--fs-6);
     line-height: 2;
   }
   .prompt-line {
     color: var(--dim);
-    font-size: 12px;
+    font-size: var(--fs-4);
     margin-bottom: 20px;
   }
   .slogan {
     margin: 0 0 14px;
-    font-size: 40px;
+    font-size: var(--fs-12);
     line-height: 1.4;
     font-weight: 600;
     color: var(--bright);
@@ -181,7 +184,7 @@ const langs = ['es', 'en'];
   }
   .lead {
     color: var(--fg);
-    font-size: 14px;
+    font-size: var(--fs-8);
     line-height: 1.8;
     max-width: 450px;
     margin: 0 0 26px;
@@ -198,9 +201,16 @@ const langs = ['es', 'en'];
   .prompt {
     margin-top: 22px;
   }
+  /* Hint del prompt: tenue y a la misma altura que el texto tecleado (hereda el
+     fs-6 de .body, sin literal). Separado del cursor por un margen; sin
+     transición porque global.css las prohíbe. */
+  .prompt-hint {
+    color: var(--dim);
+    margin-left: 12px;
+  }
   .feedback {
     color: var(--dim);
-    font-size: 12px;
+    font-size: var(--fs-4);
     min-height: 26px;
     white-space: pre-wrap;
   }
@@ -209,7 +219,7 @@ const langs = ['es', 'en'];
     justify-content: space-between;
     padding: 12px 24px;
     border-top: 1px solid var(--border);
-    font-size: 11px;
+    font-size: var(--fs-2);
     color: var(--dim);
   }
   .ver-link {
@@ -229,10 +239,10 @@ const langs = ['es', 'en'];
       padding: 36px 24px;
     }
     .slogan {
-      font-size: 24px;
+      font-size: var(--fs-11);
     }
     .lead {
-      font-size: 12.5px;
+      font-size: var(--fs-5);
     }
     /* Sin prompt ni feedback en móvil (no hay teclado físico). */
     .prompt,
@@ -247,7 +257,7 @@ const langs = ['es', 'en'];
       align-items: center;
       padding: 14px 20px;
       border-bottom: 1px solid var(--border);
-      font-size: 11px;
+      font-size: var(--fs-2);
     }
     .m-header .ver {
       color: var(--dim);
@@ -273,7 +283,7 @@ const langs = ['es', 'en'];
     }
     .trow .tail {
       margin-left: auto;
-      font-size: 11px;
+      font-size: var(--fs-2);
     }
     .m-foot {
       display: flex;
@@ -281,7 +291,7 @@ const langs = ['es', 'en'];
       gap: 10px;
       padding: 14px 20px;
       border-top: 1px solid var(--border);
-      font-size: 11px;
+      font-size: var(--fs-2);
     }
     .m-pickers,
     .m-langrow {

@@ -74,7 +74,7 @@ nu.fs.list(dir) -> { name, is_dir }[]
 ```
 
 Lista el directorio **sin recursión**. Para recursivo respetando `.gitignore`,
-usa [`nu.search.files`](/nu/referencia/search/).
+usa [`nu.search.files`](/nu/api/search/).
 
 ```sh
 nu -e '

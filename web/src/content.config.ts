@@ -47,4 +47,50 @@ const referencia = defineCollection({
   }),
 });
 
-export const collections = { wiki, empezar, extensiones, referencia };
+// Colecciones EN (W-04): instantánea traducida del contenido ES bajo
+// src/content/en/. Mismos slugs y mismos schemas que sus gemelas: `wiki_en` sin
+// frontmatter (los .md de docs/ traducidos no lo llevan), el resto con
+// title/description ya traducido. Las páginas EN (/en/docs, /en/api) las
+// consumen; check-drift sigue mirando SOLO la referencia ES.
+const wiki_en = defineCollection({
+  loader: glob({ pattern: ['*.md', '!README.md'], base: './src/content/en/wiki' }),
+  schema: z.object({
+    title: z.string().optional(),
+    description: z.string().optional(),
+  }),
+});
+
+const empezar_en = defineCollection({
+  loader: glob({ pattern: '*.md', base: './src/content/en/empezando' }),
+  schema: z.object({
+    title: z.string(),
+    description: z.string().optional(),
+  }),
+});
+
+const extensiones_en = defineCollection({
+  loader: glob({ pattern: '*.md', base: './src/content/en/extensiones' }),
+  schema: z.object({
+    title: z.string(),
+    description: z.string().optional(),
+  }),
+});
+
+const referencia_en = defineCollection({
+  loader: glob({ pattern: '*.md', base: './src/content/en/referencia' }),
+  schema: z.object({
+    title: z.string(),
+    description: z.string().optional(),
+  }),
+});
+
+export const collections = {
+  wiki,
+  empezar,
+  extensiones,
+  referencia,
+  wiki_en,
+  empezar_en,
+  extensiones_en,
+  referencia_en,
+};

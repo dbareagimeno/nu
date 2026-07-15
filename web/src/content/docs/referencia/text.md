@@ -8,7 +8,7 @@ cuadráticas-en-pantalla, en Go— y `nu.re` el motor de regex. Ambos disponible
 workers **[W]** y ninguno suspende.
 
 Varias funciones devuelven un **Block** (un handle opaco de líneas estilizadas)
-que se estampa con [`Region:blit`](/nu/referencia/ui/#superficie). Las que
+que se estampa con [`Region:blit`](/nu/api/ui/#superficie). Las que
 devuelven valores planos (`width`, `truncate`) se prueban directamente con
 `nu -e`.
 

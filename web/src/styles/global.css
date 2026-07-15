@@ -23,7 +23,7 @@ body {
   color: var(--fg);
   min-height: 100vh;
   min-height: 100dvh;
-  font-size: 14px;
+  font-size: var(--fs-8);
   line-height: 1.9;
 }
 
@@ -70,7 +70,7 @@ a {
   color: var(--bg);
   padding: 2px 9px;
   font-weight: 700;
-  font-size: 12px;
+  font-size: var(--fs-4);
   line-height: 1.2;
 }
 
@@ -113,10 +113,4 @@ a {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
-}
-
-/* La nota de idioma (langNote) solo se muestra en EN. El script de i18n pone
- * data-lang en <html>; en ES se oculta. */
-html[data-lang='es'] [data-lang-note] {
-  display: none;
 }

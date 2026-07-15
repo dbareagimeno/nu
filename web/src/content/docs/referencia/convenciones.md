@@ -25,7 +25,7 @@ Las firmas usan la notación `nu.mod.fn(arg: tipo, opts?: tabla) -> tipo`:
 
 Recuerda: el chunk de `nu -e` corre en el estado principal, **no** en una task,
 así que para probar funciones ⏸ las envuelves en `nu.task.spawn(function() ...
-end)`. Ver [Tu primer script](/nu/empezando/primer-script/).
+end)`. Ver [Tu primer script](/nu/docs/primer-script/).
 
 ## El namespace `nu`
 
@@ -90,4 +90,4 @@ lista (p. ej. `EPROVIDER`, `EAGENT`).
 Congelar v1 = congelar las firmas y semánticas: solo cambian **por adición**, y
 cada adición incrementa `nu.version.api`. El código escrito contra un nivel sigue
 siendo válido en los siguientes. Detecta capacidades con
-[`nu.has()`](/nu/referencia/nu/), nunca comparando versiones.
+[`nu.has()`](/nu/api/nu/), nunca comparando versiones.

@@ -1,6 +1,7 @@
-// Diccionarios de i18n del CHROME (headers, statusline, menú, feedback). El
-// CONTENIDO de docs solo existe en español por ahora: en EN las páginas
-// internas muestran "in spanish for now" en el header (langNote).
+// Diccionarios de i18n del CHROME (headers, statusline, menú, feedback). Desde
+// W-04 el CONTENIDO de docs, referencia y plugins existe también en inglés,
+// publicado bajo rutas /en/…, así que ya no hay «acantilado» de idioma ni nota
+// «in spanish for now»: el picker de idioma navega a la página homóloga.
 //
 // Copiado fielmente de la clase Component del prototipo (strings es/en y el
 // objeto W del chrome interno) y del copy del README del handoff. No inventar
@@ -16,8 +17,9 @@ export interface Dict {
   // Portada — menú [i][d][a][g]
   k1: string; // instalar
   k2: string; // documentación
-  k2d: string; // la wiki de nu (· in spanish for now en EN)
+  k2d: string; // la wiki de nu
   kApiD: string; // referencia nu.*
+  hint: string; // placeholder tenue del prompt de la portada ("escribe help ↵")
   // Feedback de la línea de comandos
   fb_i: string;
   fb_d: string;
@@ -33,7 +35,6 @@ export interface Dict {
   // Error de comando desconocido en el pager (guiño a vim)
   e492: string;
   // Chrome interno (páginas de docs/api/plugins)
-  langNote: string; // solo visible en EN: "in spanish for now"
   s1: string; // grupo sidebar: empezar
   s2: string; // espec
   s3: string; // extensiones
@@ -48,6 +49,7 @@ export interface Dict {
   kCmd: string;
   kSearch: string;
   kBack: string;
+  kHelp: string; // etiqueta de la tecla [?] en la statusline (ayuda)
   // Statusline táctil (móvil)
   mIndex: string; // "índice"
   // Chrome de la referencia /api
@@ -88,6 +90,7 @@ export const i18n: Record<Lang, Dict> = {
     k2: 'documentación',
     k2d: 'la wiki de nu',
     kApiD: 'referencia nu.*',
+    hint: 'escribe help ↵',
     fb_i: '→ copia y pega: curl -fsSL nu.sh/install | sh',
     fb_d: '→ abriendo la wiki de nu…',
     fb_g: '→ github.com/dbareagimeno/nu',
@@ -98,10 +101,9 @@ export const i18n: Record<Lang, Dict> = {
     fb_theme: 'theme = ',
     fb_theme_nf: 'theme no encontrado: nu · dracula · gruvbox · solarized',
     fb_lang: 'lang = ',
-    fb_repl: 'lua 5.4 (embebido en nu) — escribe salir para volver',
+    fb_repl: 'lua (demo del navegador) — escribe salir para volver',
     fb_repl_out: 'hasta luego',
     e492: 'no es un comando del editor',
-    langNote: '',
     s1: 'empezar',
     s2: 'espec',
     s3: 'extensiones',
@@ -115,6 +117,7 @@ export const i18n: Record<Lang, Dict> = {
     kCmd: 'comando',
     kSearch: 'buscar',
     kBack: 'portada',
+    kHelp: 'ayuda',
     mIndex: 'índice',
     apiStable: 'estable',
     ctaTitle: '¿tu primer plugin?',
@@ -148,8 +151,9 @@ export const i18n: Record<Lang, Dict> = {
     body: 'Install it with one line. Use it as is, or rewrite the whole thing in Lua. nu is the coding harness that is truly yours.',
     k1: 'install',
     k2: 'documentation',
-    k2d: 'the nu wiki · in spanish for now',
+    k2d: 'the nu wiki',
     kApiD: 'nu.* reference',
+    hint: 'type help ↵',
     fb_i: '→ copy & paste: curl -fsSL nu.sh/install | sh',
     fb_d: '→ opening the nu wiki…',
     fb_g: '→ github.com/dbareagimeno/nu',
@@ -160,10 +164,9 @@ export const i18n: Record<Lang, Dict> = {
     fb_theme: 'theme = ',
     fb_theme_nf: 'theme not found: nu · dracula · gruvbox · solarized',
     fb_lang: 'lang = ',
-    fb_repl: 'lua 5.4 (embedded in nu) — type exit to leave',
+    fb_repl: 'lua (browser demo) — type exit to leave',
     fb_repl_out: 'see you',
     e492: 'not an editor command',
-    langNote: 'in spanish for now',
     s1: 'start',
     s2: 'spec',
     s3: 'extensions',
@@ -177,6 +180,7 @@ export const i18n: Record<Lang, Dict> = {
     kCmd: 'command',
     kSearch: 'search',
     kBack: 'home',
+    kHelp: 'help',
     mIndex: 'index',
     apiStable: 'stable',
     ctaTitle: 'your first plugin?',

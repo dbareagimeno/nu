@@ -167,7 +167,11 @@ export function remarkLimpiezaInterno() {
   return (tree, file) => {
     const ruta = (file?.path || file?.history?.[0] || '').replace(/\\/g, '/');
     const esWikiRepo = /\/docs\/[^/]+\.md$/.test(ruta) && !ruta.includes('/content/docs/');
-    if (!esWikiRepo) return; // fuera de jurisdicción: no se toca
+    // La instantánea EN de la wiki conserva los marcadores de proceso
+    // (<!-- nu:interno -->, (G##), > ✅ …) igual que la fuente ES: se limpia con
+    // el mismo criterio, para que las páginas /en/docs no filtren trazabilidad.
+    const esWikiEn = ruta.includes('/content/en/wiki/');
+    if (!esWikiRepo && !esWikiEn) return; // fuera de jurisdicción: no se toca
 
     eliminaRangosInternos(tree); // A primero: rangos enteros con sus enlaces
     limpia(tree); // B, C, D (y E dentro de stripTags)
