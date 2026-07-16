@@ -195,6 +195,14 @@ return {
 }
 ```
 
+*(Redirects (G54): el default de [api.md](api.md) §8 ya recorta las cabeceras
+del llamante en saltos cross-host, así que un `302` del provider hacia un
+tercero no arrastra `x-api-key`/`x-goog-api-key`; un adaptador que solo habla
+con su `base_url` no necesita hacer nada. Si tu adaptador descarga URLs que
+no controla —adjuntos o imágenes que el modelo referencia—, pon
+`max_redirects = 0` (o un límite corto) y valida cada salto: la guía de tools
+de [guia-plugins.md](guia-plugins.md) §5 tiene el porqué.)*
+
 ---
 
 ## 4. Registro y descubrimiento

@@ -28,7 +28,7 @@ shortcut—. That's what keeps the API honest.
 The whole API lives under the `enu` global, with identifiers in English and
 `snake_case`. It's deliberately **small and boring**, and it **grows only by
 addition**: a signature never changes or disappears. Every addition bumps
-`enu.version.api` (the current level is `2`).
+`enu.version.api` (the current level is `4`).
 
 That's why you detect capabilities with
 [`enu.has()`](/enu/en/api/enu/), never by comparing version numbers:

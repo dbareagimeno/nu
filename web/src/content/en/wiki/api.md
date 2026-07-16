@@ -206,8 +206,8 @@ and consume SSE).
 
 | Signature | Semantics |
 |---|---|
-| `enu.http.request(opts) -> {status, headers, body}` ⏸ | `opts`: `url`, `method?`, `headers?`, `body?`, `timeout_ms?`, `tls?`, `proxy?` (per-request TLS/proxy, see note G12 below). Buffered response. Doesn't throw on status >= 400 (status is data); throws `ENET`/`ETIMEOUT` on transport failures. |
-| `enu.http.stream(opts) -> Stream` ⏸ | Returns upon receiving headers: `Stream.status`, `Stream.headers`. `opts.timeout_ms` covers up to the headers; `opts.idle_timeout_ms?` throws `ETIMEOUT` if N ms pass without receiving body bytes (an SSE can go silent forever). |
+| `enu.http.request(opts) -> {status, headers, body}` ⏸ | `opts`: `url`, `method?`, `headers?`, `body?`, `timeout_ms?`, `tls?`, `proxy?`, `max_redirects?` (per-request TLS/proxy, see note G12 below; redirects, note G54). Buffered response. Doesn't throw on status >= 400 (status is data); throws `ENET`/`ETIMEOUT` on transport failures. |
+| `enu.http.stream(opts) -> Stream` ⏸ | Returns upon receiving headers: `Stream.status`, `Stream.headers`. `opts.timeout_ms` covers up to the headers; `opts.idle_timeout_ms?` throws `ETIMEOUT` if N ms pass without receiving body bytes (an SSE can go silent forever). It also accepts `opts.max_redirects?` (note G54 below). |
 | `Stream:chunks() -> iterator` ⏸ | Raw body chunks as they arrive. |
 | `Stream:events() -> iterator` ⏸ | Built-in SSE parser: iterates `{event?, data, id?}`. |
 | `Stream:close()` | Aborts the connection. |
@@ -220,6 +220,29 @@ TLS and proxy (G12): `request` and `stream` accept
 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` from the environment are respected
 by default. Global defaults in the `[net]` section of `enu.toml` (`ca_file`,
 proxy), overridable per request.
+
+Redirects (G54): `request` and `stream` accept `opts.max_redirects?: number` —
+the budget of redirects the client follows automatically. Default **10** (the
+policy the client used to apply implicitly becomes contract); `0` = follow
+none. When the budget runs out **no error is thrown**: the last `3xx`
+response is delivered **as data** — consistent with "the status is data" —
+with its `location` in `headers`; whoever needs to observe or validate the
+chain hop by hop passes `0` and follows it by hand (a `302` towards
+`169.254.169.254` must not be able to evade the validation performed on the
+initial URL). And on every **cross-host** hop the client **strips every
+header the caller set in `opts.headers`** before resending the request. The
+exact rule: a hop is cross-host if the host of the destination URL (name and
+port) differs from that of the initial `opts.url`, **or** if the scheme
+downgrades from `https` to `http` even when the host is preserved (the
+header would travel in the clear over an interceptable channel); once
+stripped, headers are **not restored** even if a later hop returns to the
+initial host — the chain went through a third party and is no longer
+trusted. *Everything* from the caller is stripped, with no allowlist of
+"safe" headers, on top of what the client already stripped across domains
+(`Authorization`, `Cookie`): credentials increasingly live in custom headers
+(`x-api-key`, `x-goog-api-key`) no denylist would know, and a different
+destination is a different party that doesn't inherit what the caller told
+the first one.
 | `enu.ws.connect(url, opts?) -> Ws` ⏸ | `Ws:send(data, opts?)` ⏸ — `opts.binary?: boolean` sends a **binary** frame; without it, a text frame (the protocol requires valid UTF-8 in text: arbitrary bytes go with `binary`, or a conformant server closes with 1007) (G52). `Ws:recv() -> data: string?, binary: boolean` ⏸ (`nil` on close; the second value distinguishes the incoming frame type) (G52). `Ws:close()`. |
 
 Reserved for the future (not v1): `enu.net.tcp`.
@@ -419,10 +442,12 @@ by construction, with no priority system.
 
 - Freezing v1 = freezing **this document**: signatures and semantics only
   change by addition; `enu.version.api` increments with each addition.
-  **Current level: `api = 3`** — level 1 was the initial freeze;
+  **Current level: `api = 4`** — level 1 was the initial freeze;
   `enu.sys.pid()` (G32) bumped it to 2; `enu.ws`'s binary frames (G52:
   `opts.binary` in `Ws:send`, second return value of `Ws:recv`) bumped it
-  to 3. An addition never breaks existing signatures: code written against
+  to 3; `enu.http`'s redirect control (G54: `opts.max_redirects` in
+  `request`/`stream` and header stripping on cross-host hops) bumped it
+  to 4. An addition never breaks existing signatures: code written against
   level 1 remains valid at subsequent levels.
 - Capability detection with `enu.has()`, never version sniffing.
 - `core:`/`ui:` event namespaces and the error codes from §1.4 are

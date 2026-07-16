@@ -26,7 +26,7 @@ privilegiado—. Eso es lo que mantiene la API honesta.
 Toda la API vive bajo el global `enu`, con identificadores en inglés y
 `snake_case`. Es deliberadamente **pequeña y aburrida**, y **crece solo por
 adición**: una firma nunca cambia ni desaparece. Cada adición incrementa
-`enu.version.api` (el nivel actual es `2`).
+`enu.version.api` (el nivel actual es `4`).
 
 Por eso detectas capacidades con [`enu.has()`](/enu/api/enu/), nunca
 comparando números de versión: `enu.has("ui")` te dice si hay terminal, sin que

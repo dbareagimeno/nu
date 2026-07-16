@@ -200,6 +200,14 @@ return {
 }
 ```
 
+*(Redirects (G54): the default in [api.md](api.md) §8 already strips the
+caller's headers on cross-host hops, so a `302` from the provider towards a
+third party doesn't drag `x-api-key`/`x-goog-api-key` along; an adapter that
+only talks to its `base_url` needs to do nothing. If your adapter downloads
+URLs it doesn't control — attachments or images the model references — set
+`max_redirects = 0` (or a short limit) and validate every hop: the tools
+guidance in [guia-plugins.md](guia-plugins.md) §5 has the why.)*
+
 ---
 
 ## 4. Registration and discovery

@@ -204,8 +204,8 @@ providers viven en Lua y consumen SSE).
 
 | Firma | Semántica |
 |---|---|
-| `enu.http.request(opts) -> {status, headers, body}` ⏸ | `opts`: `url`, `method?`, `headers?`, `body?`, `timeout_ms?`, `tls?`, `proxy?` (TLS/proxy por petición, ver nota G12 abajo). Respuesta buffereada. No lanza por status >= 400 (el status es dato); lanza `ENET`/`ETIMEOUT` por fallos de transporte. |
-| `enu.http.stream(opts) -> Stream` ⏸ | Devuelve al recibir cabeceras: `Stream.status`, `Stream.headers`. `opts.timeout_ms` cubre hasta las cabeceras; `opts.idle_timeout_ms?` lanza `ETIMEOUT` si pasan N ms sin recibir bytes del body (un SSE puede quedarse mudo para siempre). |
+| `enu.http.request(opts) -> {status, headers, body}` ⏸ | `opts`: `url`, `method?`, `headers?`, `body?`, `timeout_ms?`, `tls?`, `proxy?`, `max_redirects?` (TLS/proxy por petición, ver nota G12 abajo; redirects, nota G54). Respuesta buffereada. No lanza por status >= 400 (el status es dato); lanza `ENET`/`ETIMEOUT` por fallos de transporte. |
+| `enu.http.stream(opts) -> Stream` ⏸ | Devuelve al recibir cabeceras: `Stream.status`, `Stream.headers`. `opts.timeout_ms` cubre hasta las cabeceras; `opts.idle_timeout_ms?` lanza `ETIMEOUT` si pasan N ms sin recibir bytes del body (un SSE puede quedarse mudo para siempre). Acepta también `opts.max_redirects?` (nota G54 abajo). |
 | `Stream:chunks() -> iterator` ⏸ | Trozos crudos del body según llegan. |
 | `Stream:events() -> iterator` ⏸ | Parser SSE incorporado: itera `{event?, data, id?}`. |
 | `Stream:close()` | Aborta la conexión. |
@@ -218,6 +218,29 @@ TLS y proxy (G12): `request` y `stream` aceptan
 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` del entorno se respetan por defecto.
 Defaults globales en la sección `[net]` de `enu.toml` (`ca_file`, proxy),
 sobreescribibles por petición.
+
+Redirects (G54): `request` y `stream` aceptan `opts.max_redirects?: number` —
+el presupuesto de redirecciones que el cliente sigue automáticamente. Default
+**10** (la política que el cliente aplicaba de forma implícita pasa a
+contrato); `0` = no seguir ninguna. Agotado el presupuesto **no se lanza
+error**: se entrega la última respuesta `3xx` **como dato** —coherente con
+"el status es dato"—, con su `location` en `headers`; quien necesite observar
+o validar la cadena salto a salto pone `0` y la sigue a mano (un `302` hacia
+`169.254.169.254` no debe poder evadir la validación que se hizo sobre la URL
+inicial). Y en cada salto **cross-host** el cliente **recorta todas las
+cabeceras que el llamante puso en `opts.headers`** antes de reenviar la
+petición. La regla exacta: un salto es cross-host si el host de la URL de
+destino (nombre y puerto) difiere del de la URL inicial de `opts.url`, **o**
+si el esquema degrada de `https` a `http` aunque el host se conserve (la
+cabecera viajaría en claro por un canal interceptable); una vez recortadas,
+las cabeceras **no se restauran** aunque un salto posterior regrese al host
+inicial — la cadena pasó por un tercero y dejó de ser de confianza. Se
+recorta *todo* lo del llamante, sin lista blanca de cabeceras "seguras",
+además de lo que el cliente ya recortaba entre dominios (`Authorization`,
+`Cookie`): las credenciales viven cada vez más en cabeceras custom
+(`x-api-key`, `x-goog-api-key`) que ninguna lista negra conocería, y un
+destino distinto es un interlocutor distinto que no hereda lo que el llamante
+le dijo al primero.
 | `enu.ws.connect(url, opts?) -> Ws` ⏸ | `Ws:send(data, opts?)` ⏸ — `opts.binary?: boolean` manda frame **binario**; sin él, frame de texto (el protocolo exige UTF-8 válido en texto: bytes arbitrarios van con `binary`, o un servidor conforme cierra con 1007) (G52). `Ws:recv() -> data: string?, binary: boolean` ⏸ (`nil` al cerrar; el segundo valor distingue el tipo de frame entrante) (G52). `Ws:close()`. |
 
 Reservado para futuro (no v1): `enu.net.tcp`.
@@ -417,9 +440,11 @@ theme, overrides) por construcción, sin sistema de prioridades.
 
 - Congelar v1 = congelar **este documento**: firmas y semánticas solo cambian
   por adición; `enu.version.api` se incrementa con cada adición. **Nivel actual:
-  `api = 3`** — el nivel 1 fue el congelado inicial; `enu.sys.pid()` (G32) lo
+  `api = 4`** — el nivel 1 fue el congelado inicial; `enu.sys.pid()` (G32) lo
   subió a 2; los frames binarios de `enu.ws` (G52: `opts.binary` en `Ws:send`,
-  segundo retorno de `Ws:recv`) lo subieron a 3. Una adición nunca rompe
+  segundo retorno de `Ws:recv`) lo subieron a 3; el control de redirects de
+  `enu.http` (G54: `opts.max_redirects` en `request`/`stream` y recorte de
+  cabeceras en saltos cross-host) lo subió a 4. Una adición nunca rompe
   firmas existentes: el código escrito contra el nivel 1 sigue siendo válido
   en los niveles siguientes.
 - Detección de capacidades con `enu.has()`, nunca sniffing de versión.

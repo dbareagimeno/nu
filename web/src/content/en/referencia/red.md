@@ -20,7 +20,8 @@ enu.http.request(opts) -> { status, headers, body }
 ```
 
 Request with a **buffered** response. `opts`: `url`, `method?`, `headers?`,
-`body?`, `timeout_ms?`, `tls?`, `proxy?` (see [TLS and proxy](#tls-and-proxy)).
+`body?`, `timeout_ms?`, `tls?`, `proxy?` (see [TLS and proxy](#tls-and-proxy)),
+`max_redirects?` (see [Redirects](#redirects)).
 **Doesn't throw for status ≥ 400** (the status is just data); it throws
 `ENET`/`ETIMEOUT` for transport failures.
 
@@ -49,7 +50,8 @@ enu.http.stream(opts) -> Stream
 Returns **as soon as headers are received** (`Stream.status`,
 `Stream.headers`), before the body. `opts.timeout_ms` covers up to the
 headers; `opts.idle_timeout_ms?` throws `ETIMEOUT` if N ms pass without
-receiving bytes (an SSE can go silent forever).
+receiving bytes (an SSE can go silent forever). It also accepts
+`opts.max_redirects?` (see [Redirects](#redirects)).
 
 ```
 Stream.status / Stream.headers
@@ -90,6 +92,35 @@ proxy for that request). The `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`
 environment variables are respected by default. Global defaults live in the
 `[net]` section of `enu.toml`, overridable per request with those two
 options.
+
+### Redirects
+
+`request` and `stream` accept `opts.max_redirects?: number`: the budget of
+redirects the client follows automatically. The default is **10**; with `0`
+none is followed. When the budget runs out **no error is thrown**: the last
+`3xx` response is delivered as data (with its `location` in `headers`),
+consistent with "the status is just data". If you need to observe or validate
+the chain hop by hop, pass `0` and follow it by hand — validating only the
+initial URL is defeated by a `302` towards an internal destination.
+
+On every **cross-host** hop — a change of host (name and port) relative to
+the initial URL, or a scheme downgrade from `https` to `http` — the client
+**strips every header you set in `opts.headers`** before resending the
+request, on top of the ones already stripped across domains (`Authorization`,
+`Cookie`), and doesn't restore them even if the chain returns to the initial
+host. A different destination is a different party: it doesn't inherit your
+credentials (`x-api-key` and friends) unless you decide so.
+
+```lua
+enu.task.spawn(function()
+  -- Fetching a third-party URL: don't follow redirects blindly.
+  local res = enu.http.request{ url = external_url, max_redirects = 0 }
+  if res.status >= 300 and res.status < 400 then
+    local target = res.headers.location
+    -- validate `target` before deciding whether to follow
+  end
+end)
+```
 
 ## `enu.ws.connect` ⏸ [W]
 

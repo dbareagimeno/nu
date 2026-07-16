@@ -92,6 +92,14 @@ error({ code = "EINVAL", message = "filtro vacío", detail = { arg = "filter" } 
   visiblemente (`[output binario: 48KB omitidos]`) antes de devolver. El
   codec JSON es estricto y lanzará `EINVAL` aguas abajo — lejos de tu
   código y de tu contexto.
+- **Redirects bajo control ante URLs de terceros** (G54): si tu tool hace
+  fetch de URLs que propone el modelo o que llegan de fuera (un fetcher, un
+  websearch), pon `max_redirects = 0` y valida el destino de **cada** salto
+  antes de seguirlo a mano — validar solo la URL inicial se evade con un
+  `302` hacia dentro de la red (`169.254.169.254`). El recorte de cabeceras
+  en saltos cross-host (api.md §8) protege tus credenciales por defecto,
+  pero la validación del *destino* es tuya: el core no sabe qué hosts son
+  legítimos para tu tool.
 
 ## 6. UI: bloques, no celdas; y limpia al salir
 

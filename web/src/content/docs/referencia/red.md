@@ -19,7 +19,8 @@ enu.http.request(opts) -> { status, headers, body }
 ```
 
 Petición con respuesta **buffereada**. `opts`: `url`, `method?`, `headers?`,
-`body?`, `timeout_ms?`, `tls?`, `proxy?` (ver [TLS y proxy](#tls-y-proxy)).
+`body?`, `timeout_ms?`, `tls?`, `proxy?` (ver [TLS y proxy](#tls-y-proxy)),
+`max_redirects?` (ver [Redirects](#redirects)).
 **No lanza por status ≥ 400** (el status es un dato); lanza `ENET`/`ETIMEOUT`
 por fallos de transporte.
 
@@ -48,7 +49,7 @@ enu.http.stream(opts) -> Stream
 Devuelve **al recibir las cabeceras** (`Stream.status`, `Stream.headers`), antes
 del body. `opts.timeout_ms` cubre hasta las cabeceras; `opts.idle_timeout_ms?`
 lanza `ETIMEOUT` si pasan N ms sin recibir bytes (un SSE puede quedarse mudo para
-siempre).
+siempre). Acepta también `opts.max_redirects?` (ver [Redirects](#redirects)).
 
 ```
 Stream.status / Stream.headers
@@ -87,6 +88,35 @@ por petición) y `opts.proxy = "http://host:puerto"` (proxy concreto para esa
 petición). Las variables `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` del entorno se
 respetan por defecto. Los defaults globales viven en la sección `[net]` de
 `enu.toml`, sobreescribibles por petición con esas dos opciones.
+
+### Redirects
+
+`request` y `stream` aceptan `opts.max_redirects?: number`: el presupuesto de
+redirecciones que el cliente sigue automáticamente. El default es **10**; con
+`0` no se sigue ninguna. Agotado el presupuesto **no se lanza error**: se
+entrega la última respuesta `3xx` como dato (con su `location` en `headers`),
+coherente con "el status es dato". Quien necesite observar o validar la cadena
+salto a salto pone `0` y la sigue a mano — validar solo la URL inicial se
+evade con un `302` hacia un destino interno.
+
+En cada salto **cross-host** — cambio de host (nombre y puerto) respecto de la
+URL inicial, o degradación de esquema `https` → `http` — el cliente **recorta
+todas las cabeceras que pusiste en `opts.headers`** antes de reenviar la
+petición, además de las que ya se recortan entre dominios (`Authorization`,
+`Cookie`), y no las restaura aunque la cadena regrese al host inicial. Un
+destino distinto es un interlocutor distinto: no hereda tus credenciales
+(`x-api-key` y compañía) sin que tú lo decidas.
+
+```lua
+enu.task.spawn(function()
+  -- Fetch de una URL de terceros: no seguir redirects a ciegas.
+  local res = enu.http.request{ url = url_externa, max_redirects = 0 }
+  if res.status >= 300 and res.status < 400 then
+    local destino = res.headers.location
+    -- validar `destino` antes de decidir si se sigue
+  end
+end)
+```
 
 ## `enu.ws.connect` ⏸ [W]
 
