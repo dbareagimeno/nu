@@ -106,7 +106,7 @@ func TestBareScreenContent(t *testing.T) {
 
 	// Versión + nivel de API (§2). El nivel subió a 2 en S38 (enu.sys.pid, G32)
 	// y a 3 con los frames binarios de enu.ws (G52).
-	wantVer := "enu 0.1.3 · API 3"
+	wantVer := "enu 0.1.4 · API 3"
 	if !strings.Contains(joined, wantVer) {
 		t.Errorf("falta la versión/API %q en la pantalla:\n%s", wantVer, joined)
 	}
