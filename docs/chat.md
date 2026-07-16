@@ -121,7 +121,12 @@ truncar lo peligroso: el comando entero, la ruta entera) y opciones:
   nunca al `agent.toml` del proyecto: sus `allow` se ignoran por el modelo
   de confianza ([agente.md](agente.md) §11). El patrón propuesto se
   muestra y es editable antes de aceptar (generalizar `bash:npm install` a
-  `bash:npm *` es decisión del humano, no de la UI).
+  `bash:npm *` es decisión del humano, no de la UI). Para un comando `bash`
+  **compuesto**, la propuesta es **un patrón por subcomando** — la calcula la
+  extensión `agent` y llega como lista en `suggested`; no el string
+  encadenado, que bajo la semántica de emparejamiento por subcomando
+  ([agente.md](agente.md) §5, G53) solo volvería a casar esa combinación
+  exacta; cada patrón propuesto es además auditable por separado.
   *(✅ Implementado: [pospuesto.md](pospuesto.md) **P29**. Tecla `s` = siempre
   (sesión), `g` = siempre (global, persiste a `agent.toml`). La edición inline del
   patrón antes de aceptar queda como pulido menor; v1 usa el patrón sugerido.)*

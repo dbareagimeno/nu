@@ -203,8 +203,12 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
      §3) bajo el prefijo `mcp__<servidor>__<tool>`; su handler hace `tools/call`
      por JSON-RPC. La **confianza** —son tools de TERCEROS— se gobierna con el
      pipeline de permisos del agente ([agente.md](agente.md) §5): se registran
-     con `permissions.default = "ask"`, así que requieren permiso explícito
-     (`allow = {"mcp__<servidor>__*"}`) y en headless sin él se DENIEGAN con
+     con `permissions.default = "ask"`, así que requieren permiso explícito —
+     un `allow` por tool, con nombre **exacto**
+     (`allow = {"mcp__github__search_code"}`): el emparejamiento de nombres no
+     admite glob (G53, [agente.md](agente.md) §5), de modo que autorizar un
+     servidor entero es enumerar sus tools o conceder por hook `permission` —
+     y en headless sin él se DENIEGAN con
      error accionable. No hay caso especial: una tool MCP pasa por la misma
      valla que cualquier otra.
 5. ~~**Superficie CLI**: `enu -e` y `--auto-permissions` aparecen en los

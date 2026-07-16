@@ -80,6 +80,12 @@ error({ code = "EINVAL", message = "filtro vacío", detail = { arg = "filter" } 
   si muta (escribir, ejecutar, red), deja `"ask"`. No te auto-concedas
   `allow` en tools mutantes: el diálogo de permisos es la confianza del
   usuario en todo el ecosistema.
+- Los patrones `tool:argumento` casan por **glob anclado sobre el argumento
+  principal** de la tool, y `bash` empareja **por subcomando** con
+  fail-closed ([agente.md](agente.md) §5, G53). No vendas `allow`/`deny`
+  como sandbox: no acotan lo que un binario permitido ejecuta por dentro
+  (hooks de git, `postinstall` de npm) — la valla dura para código no
+  confiable son los workers con `caps`.
 - Salida larga o lenta: emite `ctx.progress(...)` — la UI lo pinta en vivo.
 - **Sanea el binario en el origen** (G11): si tu tool puede producir bytes
   no-UTF-8 (salida de procesos, ficheros arbitrarios), sustitúyelos
