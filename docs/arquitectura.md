@@ -1,4 +1,4 @@
-# Arquitectura de nu
+# Arquitectura de enu
 
 Estado: borrador fundacional. Esto describe la forma del sistema, no una
 especificación cerrada. Las decisiones y su razonamiento viven en
@@ -135,7 +135,7 @@ recompilación. El contrato del adaptador y el formato del registro están en
   nativo: [P18](pospuesto.md).
 - Extensiones oficiales embebidas con `go:embed` pero **inactivas por
   defecto** (ADR-010): activación explícita (pantalla de runtime desnudo
-  con TTY — api.md §14 —, el flag `nu --default-config` sin TTY, o `nu.toml`
+  con TTY — api.md §14 —, el flag `enu --default-config` sin TTY, o `nu.toml`
   a mano), sin red; sobreescribibles por el usuario
   desde su directorio de config. El **conjunto oficial de producto** son
   las embebidas menos el andamiaje `example` y la malla `mesh` (ADR-015;
@@ -144,7 +144,7 @@ recompilación. El contrato del adaptador y el formato del registro están en
   Lua sobre la API pública, activable solo, el punto de partida del autor
   de extensiones que no quiere el harness (G21)—. Con TTY, **una sola UI
   primaria posee la pantalla**: el repl **cede al chat** (solo auto-monta su
-  UI si el chat no está activo, vía `nu.plugin.list`), así `nu` con el
+  UI si el chat no está activo, vía `nu.plugin.list`), así `enu` con el
   conjunto oficial abre una TUI única y no el chat *y* el REPL solapados
   ([G36](problemas.md#g36), [ADR-018](adr.md)). La **`mesh`** ([malla.md](malla.md),
   nacida de la ronda 8 de pseudocódigo) viaja embebida pero se activa
@@ -207,7 +207,7 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
      (`allow = {"mcp__<servidor>__*"}`) y en headless sin él se DENIEGAN con
      error accionable. No hay caso especial: una tool MCP pasa por la misma
      valla que cualquier otra.
-5. ~~**Superficie CLI**: `nu -e` y `--auto-permissions` aparecen en los
+5. ~~**Superficie CLI**: `enu -e` y `--auto-permissions` aparecen en los
    contratos sin especificación propia (flags, subcomandos, comportamiento
    headless, códigos de salida). El azúcar de reanudación (un `--continue`
    sobre `agent.session{ resume }`) se decidirá aquí: G18 lo dejó
@@ -218,8 +218,8 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
    core sigue sin saber lo que es un agente (ADR-003) — el CLI orquesta las
    extensiones (`agent`, `sessions`) por la API pública, como podría hacerlo un
    `init.lua` de usuario. Lo fijado:
-   - **Flags**: `nu -e '<lua>'` (evalúa un chunk Lua headless e imprime sus
-     retornos, ya de S01); `nu -p '<prompt>'` (ejecuta un **turno de agente
+   - **Flags**: `enu -e '<lua>'` (evalúa un chunk Lua headless e imprime sus
+     retornos, ya de S01); `enu -p '<prompt>'` (ejecuta un **turno de agente
      headless** — agente.md §1, "modo scripting/CI gratis" — e imprime el texto
      final del asistente a stdout); `--auto-permissions` (permisos del agente en
      modo `"auto"`, agente.md §5 amortiguador 3 — sin él, en headless las tools
@@ -231,7 +231,7 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
      `agent.toml`/`providers.toml` si no existen, para dejar el harness usable,
      ADR-017/G35— y sale; con `-p`/`-e`, lo activa solo para ese
      proceso sin tocar disco. ADR-015, G33).
-   - **Headless / códigos de salida**: `nu -e` y el modo agente corren SIN TTY
+   - **Headless / códigos de salida**: `enu -e` y el modo agente corren SIN TTY
      (G20) con códigos de salida coherentes para CI/scripts — **0** éxito;
      **1** error de ejecución (el chunk, el turno o el provider lanzaron, o el
      arranque falló); **2** uso inválido (flags/argumentos); **3** permiso
@@ -245,7 +245,7 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
      deliberadamente fuera de los contratos por pertenecer a esta superficie.
    - **Arranque** (S33): sin args y con TTY → arranque normal (pantalla de
      runtime desnudo si no hay plugins, G21); sin args y sin TTY → uso (código 2);
-     `nu -e`/`-p`/`--continue` → modo headless. `--default-config` solo (sin acción
+     `enu -e`/`-p`/`--continue` → modo headless. `--default-config` solo (sin acción
      headless) escribe el conjunto de producto en `nu.toml` —más plantillas de
      `agent.toml`/`providers.toml` si faltan (ADR-017/G35)— y sale (G33): el onramp
      sin TTY que la pantalla desnuda no daba.

@@ -37,7 +37,7 @@ nu.config.data_dir()/
   por herramientas externas (§1), la codificación cwd→directorio no puede ser
   un detalle privado. Algoritmo: todo carácter fuera de `[A-Za-z0-9.-]` se
   sustituye por `_`; se recortan los `_` de ambos bordes; si queda vacío,
-  `"root"`. Ejemplo: `/home/diego/nu` → `home_diego_nu`. Es deliberadamente
+  `"root"`. Ejemplo: `/home/diego/enu` → `home_diego_enu`. Es deliberadamente
   **legible y con pérdida**: no es reversible, y dos `cwd` patológicamente
   parecidos (`/a/b` y `/a_b`) pueden colisionar en el mismo directorio. No es
   una identidad sino una **clave de agrupación**: la identidad canónica de
@@ -124,7 +124,7 @@ Dos procesos haciendo append al mismo JSONL = corrupción intercalada. Regla:
   (crear/reanudar) con creación **exclusiva**
   (`nu.fs.write(..., { exclusive = true })`, atómica: dos procesos no
   pueden ganar a la vez — [api.md](api.md) §5), se libera al salir. La
-  identidad del escritor que se graba es la del proceso `nu` actual: el
+  identidad del escritor que se graba es la del proceso `enu` actual: el
   `pid`, de `nu.sys.pid()` (G32); el `hostname`, de `nu.sys.hostname()`
   (G17); el `started`, de `nu.sys.now_ms()`. Al *verificar* un lock ajeno se
   comprueba su `pid` con `nu.proc.alive` (existencia en esta máquina, no

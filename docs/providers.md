@@ -58,7 +58,7 @@ key del entorno y entrega al adaptador una `ProviderConfig` ya cocinada.
 `resolve` **no falla** si la variable de `api_key_env` no está en el entorno:
 entrega la config con `api_key` ausente y el adaptador decide (un Ollama local no
 la necesita; Anthropic dará un error accionable en la primera petición, no al
-resolver). El onramp `nu --default-config` deja una plantilla **activa** de este
+resolver). El onramp `enu --default-config` deja una plantilla **activa** de este
 fichero —provider `anthropic` con `api_key_env = "ANTHROPIC_API_KEY"` y el modelo
 `claude-opus-4-8` (alias `opus`)— escrita solo si no existe, para que el harness
 quede usable con un comando ([ADR-017](adr.md), [G35](problemas.md)).

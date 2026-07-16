@@ -3,13 +3,13 @@
 
 // Dominio placeholder: el dominio real está pendiente de decisión (ver el
 // handoff, "Decisiones abiertas"). Al fijarlo, solo se cambia aquí.
-export const DOMAIN = 'nu.sh';
+export const DOMAIN = 'enu.sh';
 
 // La línea de instalación de una sola línea. La usan la portada ([i]) y el
 // portapapeles.
 export const INSTALL_CMD = `curl -fsSL ${DOMAIN}/install | sh`;
 
-export const GITHUB_URL = 'https://github.com/dbareagimeno/nu';
+export const GITHUB_URL = 'https://github.com/dbareagimeno/enu';
 export const RELEASES_URL = `${GITHUB_URL}/releases`;
 
 // Versión visible (footer, chrome). La versión sin `v` la usa el REPL

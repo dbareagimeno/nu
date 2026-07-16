@@ -15,7 +15,7 @@
 // no hay acceso fiable a import.meta.env, así que se fija aquí.
 
 const BASE = '/nu';
-const GH_BLOB = 'https://github.com/dbareagimeno/nu/blob/main/docs/';
+const GH_BLOB = 'https://github.com/dbareagimeno/enu/blob/main/docs/';
 
 // Los 18 slugs publicados como página en /docs/<slug> (docmap.ts es la fuente;
 // aquí se replican porque el plugin corre en el pipeline de build, fuera de

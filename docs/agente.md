@@ -14,7 +14,7 @@ loop, ejecuta tools, emite eventos. La interfaz de chat es **otra** extensión
 oficial (`chat`) que consume este contrato igual que podría hacerlo cualquier
 tercero. Consecuencias buscadas:
 
-- Modo scripting/CI gratis: `nu -e "script.lua"` puede usar el agente sin
+- Modo scripting/CI gratis: `enu -e "script.lua"` puede usar el agente sin
   terminal interactivo.
 - Los subagentes pueden correr en workers (sin `ui`) sin caso especial.
 - La UI oficial no tiene acceso privilegiado: la API pública es suficiente o
@@ -382,7 +382,7 @@ API siguen siendo `EINVAL`, y los del proveedor, `EPROVIDER`.
 
 El campo `model` (`"proveedor/modelo"`) es **obligatorio** para abrir una sesión:
 `agent.session` falla con `EINVAL` accionable si no está en `opts` ni en
-`agent.toml`. Por eso el onramp `nu --default-config` deja una plantilla **activa**
+`agent.toml`. Por eso el onramp `enu --default-config` deja una plantilla **activa**
 de `agent.toml` con un `model` por defecto (`anthropic/opus`) y su `providers.toml`
 emparejado ([ADR-017](adr.md), [G35](problemas.md)): el primer arranque ya trae un
 modelo configurado (solo falta exportar la API key del entorno). Las plantillas se
@@ -399,7 +399,7 @@ sandbox ni diálogos constantes:
    los concede en sesión. Cero fricción, cierra el vector "clonar y abrir
    ejecuta la voluntad del repo".
 2. **TOFU de una tecla para el contenido que llega al modelo.** La primera
-   vez que nu se abre en un repo con `.nu/skills/` o `nu.md`, una sola
+   vez que enu se abre en un repo con `.nu/skills/` o `nu.md`, una sola
    pregunta ("este repo trae skills/contexto, ¿usarlas? — se recuerda por
    repo", persistido en `data_dir`). Sin respuesta afirmativa (incluido
    headless), ese contenido no se inyecta. Es el mismo patrón `:trust` /

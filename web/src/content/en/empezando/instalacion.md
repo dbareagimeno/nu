@@ -14,14 +14,14 @@ amd64/arm64), downloads the binary for the latest release, **verifies the
 checksum**, and installs it on your `PATH`.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dbareagimeno/nu/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/dbareagimeno/enu/main/install.sh | sh
 ```
 
 By default it installs to `~/.local/bin` (or `/usr/local/bin` if you have
 permission); you can force the destination with `NU_INSTALL_DIR`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dbareagimeno/nu/main/install.sh | NU_INSTALL_DIR=/usr/local/bin sh
+curl -fsSL https://raw.githubusercontent.com/dbareagimeno/enu/main/install.sh | NU_INSTALL_DIR=/usr/local/bin sh
 ```
 
 Prefer to review it before running it? Download it, read it, and run it by
@@ -32,7 +32,7 @@ script, use the manual method below.
 
 Every release publishes the binary for the target platforms (linux/darwin ×
 amd64/arm64). Download the `.tar.gz` for your system from the [latest
-release](https://github.com/dbareagimeno/nu/releases/latest), unpack it, and
+release](https://github.com/dbareagimeno/enu/releases/latest), unpack it, and
 put it on your `PATH`:
 
 ```sh
@@ -55,7 +55,7 @@ sha256sum -c checksums.txt
 You need Go (the minimum version is in `go.mod`):
 
 ```sh
-git clone https://github.com/dbareagimeno/nu
+git clone https://github.com/dbareagimeno/enu
 cd nu
 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o nu .
 ```

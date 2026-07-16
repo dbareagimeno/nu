@@ -2,7 +2,7 @@
 
 Estado: viva — crece con cada lección aprendida. No es un contrato: es la
 sabiduría práctica para escribir plugins que funcionen bien en el modelo de
-ejecución de nu ([modelo-ejecucion.md](modelo-ejecucion.md)). Las firmas
+ejecución de enu ([modelo-ejecucion.md](modelo-ejecucion.md)). Las firmas
 exactas están en [api.md](api.md) y los contratos de extensión en
 [agente.md](agente.md) / [chat.md](chat.md) / [providers.md](providers.md).
 
@@ -141,7 +141,7 @@ error({ code = "EINVAL", message = "filtro vacío", detail = { arg = "filter" } 
   nombre.
 - **Sé librería**: lo reutilizable, en `lua/` de tu plugin — otros podrán
   hacer `require("tu-plugin.modulo")`. Así se construyó el ecosistema de
-  Neovim y así queremos el de nu.
+  Neovim y así queremos el de enu.
 - **Hooks**: registra con la mínima `priority` necesaria y devuelve `nil`
   cuando no opinas. Un hook que modifica payloads que no entiende rompe a
   los plugins que vienen detrás en la cadena.

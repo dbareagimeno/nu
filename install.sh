@@ -14,12 +14,12 @@
 #   NU_VERSION       Versión a instalar, p. ej. "v0.1.0" (default: la última estable).
 #
 # Uso:
-#   curl -fsSL https://raw.githubusercontent.com/dbareagimeno/nu/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/dbareagimeno/enu/main/install.sh | sh
 #   curl -fsSL .../install.sh | NU_INSTALL_DIR=/usr/local/bin sh
 
 set -eu
 
-REPO="dbareagimeno/nu"
+REPO="dbareagimeno/enu"
 RELEASES_API="https://api.github.com/repos/${REPO}/releases"
 
 # --- utilidades ------------------------------------------------------------------

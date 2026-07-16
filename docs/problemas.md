@@ -72,10 +72,10 @@ proceso *propio* y la API no lo exponía — el cabo suelto de G17. G33 es la
 tercera de la construcción y la primera de *usar* el binario terminado: el
 arranque sin TTY no tenía onramp (la pantalla desnuda de G21 es solo-TTY) y
 "el conjunto oficial" estaba sin definir frente a `example` — resuelta con el
-flag `nu --default-config` y ADR-015 (sin tocar la API sagrada: es superficie
+flag `enu --default-config` y ADR-015 (sin tocar la API sagrada: es superficie
 CLI). G35 es la **segunda** de *usar* el binario terminado: ese mismo onramp
 activa los siete plugins pero **no deja config de agente** (modelo/provider), así
-que el primer `nu` muere sin modelo y deja la UI atrapada — resuelta con ADR-017
+que el primer `enu` muere sin modelo y deja la UI atrapada — resuelta con ADR-017
 (plantillas activas en el onramp + degradación con gracia del chat). La lista queda
 como registro del proceso; los problemas nuevos que surjan (spike incluido) se
 añaden aquí con el mismo método.
@@ -117,7 +117,7 @@ desarrollo, no garantía de producción. El reinicio-con-`--continue` se
 descartó como historia de DX (pierde estado de UI/plugins); posponer
 dolía justo donde se ganan los primeros autores.
 
-**Problema.** Iterar sobre un plugin exige reiniciar nu: `require` cachea,
+**Problema.** Iterar sobre un plugin exige reiniciar enu: `require` cachea,
 re-ejecutar `init.lua` duplicaría registros, y aunque todos los registros
 devuelven handles, nadie los rastrea por plugin (no existe "deshaz todo lo
 de X"). Lo mismo aplica a recargar `providers.toml` / `nu.toml` en
@@ -128,7 +128,7 @@ proyecto. No bloquea contratos.
 
 **Opciones.** (a) El core rastrea ownership de handles por plugin (ya sabe
 `plugin.current()` en cada registro) y ofrece `nu.plugin.reload(name)`;
-(b) sin reload: comando de reinicio rápido de nu que repone la sesión
+(b) sin reload: comando de reinicio rápido de enu que repone la sesión
 (`--continue` ya casi lo da); (c) posponer con disparador (P-nuevo).
 
 ## G3 · Multi-sesión: atribución de eventos y modales concurrentes — `agente.md` §4 / `chat.md` — **RESUELTO**
@@ -183,7 +183,7 @@ forzar con confirmación. `flock` descartado (semántica impredecible en
 Windows/red); auto-fork silencioso descartado (bifurca sin conocimiento
 del usuario).
 
-**Problema.** Dos procesos nu pueden abrir el mismo JSONL y hacer appends
+**Problema.** Dos procesos enu pueden abrir el mismo JSONL y hacer appends
 intercalados: corrupción silenciosa. No hay lock.
 
 **Impacto.** Pérdida de datos del usuario; barato de cerrar ahora, caro
@@ -261,7 +261,7 @@ compite (no determinista — probablemente descartable).
 
 ## G9 · Alcance Windows en v1 — transversal — **RESUELTO**
 
-**Resolución**: v1 soporta Linux y macOS nativos; en Windows, **nu se usa
+**Resolución**: v1 soporta Linux y macOS nativos; en Windows, **enu se usa
 dentro de WSL2** (documentado como requisito, no como apología). Ventaja
 decisiva: dentro de WSL2 el contrato POSIX se cumple íntegro — cero
 especificación condicional, cero shell portable, cero semántica dual de
@@ -361,7 +361,7 @@ de listener HTTP. Y no hay convención de dónde/cómo guarda un adaptador
 sus refresh tokens.
 
 **Impacto.** Los planes de suscripción (no API key) son cada vez más
-comunes; decide si nu los soporta de primera.
+comunes; decide si enu los soporta de primera.
 
 **Opciones.** (a) Bendecir device flow como el camino v1 + convención de
 almacenamiento de tokens (`plugins/<nombre>/`, `0600`) y nada de
@@ -378,7 +378,7 @@ para skills y `nu.md` (patrón `:trust` de Neovim); sin sí explícito
 (incluido headless), no se inyectan. Las descripciones de tools MCP quedan
 como responsabilidad del usuario (instalar un servidor es acto consciente).
 
-**Problema.** Abrir nu en un repo clonado ya ejecuta la voluntad del
+**Problema.** Abrir enu en un repo clonado ya ejecuta la voluntad del
 repo: sus `.nu/skills/` se inyectan al system prompt y su
 `.nu/agent.toml` puede ampliar permisos (`allow = ["bash:*"]`) por la
 precedencia proyecto > global. Las descripciones de tools de servidores
@@ -483,12 +483,12 @@ función, dos modos. Reabre con replay del transcript (sesiones.md §3) y
 adquisición del lock de escritor (§6); el resto de `opts` es estado
 efímero, no se persiste. `agent.resume()` aparte se descartó (firma
 duplicada sin ganancia); reanudar-como-fork se descartó (bifurca el
-historial en cada reanudación). El azúcar CLI (`nu --continue`) queda
+historial en cada reanudación). El azúcar CLI (`enu --continue`) queda
 deliberadamente fuera de los contratos: pertenece a la superficie CLI
 (cuestión abierta 5 de [arquitectura.md](arquitectura.md)).
 
 **Problema.** `agent.session(opts)` solo crea sesiones nuevas (sus `opts`
-no admiten id). Pero [chat.md](chat.md) §8 (`nu --continue`, picker de
+no admiten id). Pero [chat.md](chat.md) §8 (`enu --continue`, picker de
 `/sessions`) presupone reanudación, y [sesiones.md](sesiones.md) §7
 describe el listado que la alimenta. Falta el punto de entrada.
 
@@ -548,7 +548,7 @@ su rama principal en una función sin especificar.
 `nu.has("ui.tty")`); (b) en headless el módulo `nu.ui` directamente no
 existe y el test es `nu.has("ui")` — coherente con caps de workers
 (deny-by-default de superficie); (c) exponer el modo de arranque en
-`nu.sys` (`nu -e` = headless por definición).
+`nu.sys` (`enu -e` = headless por definición).
 
 ## G21 · El primer arranque de ADR-010 no tiene dueño — ADR-010 / `api.md` §14 — **RESUELTO**
 
@@ -561,7 +561,7 @@ del loader, así que la pregunta es del kernel. El runtime desnudo (TTY +
 ningún plugin activo) pinta una **pantalla fija de runtime**: versión y
 API, rutas, extensiones embebidas y acciones (activar el conjunto
 oficial, activar sueltas, salir) — render fijo, pre-Lua, sin lógica de
-producto; es la cara permanente de nu sin plugins, no un diálogo de
+producto; es la cara permanente de enu sin plugins, no un diálogo de
 primera vez. El apetito de "algo usable sin el harness" lo cubre una
 extensión oficial más: **`repl`** (REPL de Lua sobre la API pública),
 activable sola desde esa pantalla. Descartados: la extensión bootstrap
@@ -583,7 +583,7 @@ plugins activos y hay TTY, el core pinta un prompt fijo de activación
 (la única UI del core, deliberadamente trivial); (b) una extensión
 oficial `bootstrap` siempre activa que hace solo esto (¿contradice el
 "ninguna se activa sola" de ADR-010?); (c) sin UI: el binario imprime
-instrucciones (`nu --enable-official`) y sale — austero pero hostil.
+instrucciones (`enu --enable-official`) y sale — austero pero hostil.
 
 ## G22 · Resolución de colores semánticos entre core y toolkit — `api.md` §9.2 — **RESUELTO**
 
@@ -854,7 +854,7 @@ nativos de gopher-lua y sobreviven a la suspensión. Implementado en S04
 
 **Resolución** (aplicada en [api.md](api.md) §7/§16/§17 y
 [sesiones.md](sesiones.md) §6): una primitiva mínima —`nu.sys.pid() ->
-integer`, el pid del proceso `nu` actual—, consulta local inmediata (no ⏸) y
+integer`, el pid del proceso `enu` actual—, consulta local inmediata (no ⏸) y
 [W] como el resto de `nu.sys`. Junto a `nu.sys.hostname()` forma la **identidad
 del escritor** que el lock graba (`{ pid, hostname, started }`, §6). Es la
 cuarta pieza que el corolario de completitud (filosofía §2) reclama: G17 añadió
@@ -866,7 +866,7 @@ crece solo por adición, el contador se incrementa con cada una); es estricta
 adición, no rompe ninguna firma. La primitiva dedicada se justifica como las
 de G17: es vocabulario del **kernel** (un pid es del proceso, no del producto)
 y no se compone con lo existente —`nu.proc` solo conoce los pids de los hijos
-que lanza, jamás el del propio `nu`—. Descartado derivarlo de un subproceso
+que lanza, jamás el del propio `enu`—. Descartado derivarlo de un subproceso
 (`nu.proc.run(["sh","-c","echo $PPID"])` es frágil, caro y POSIX-only) y
 descartado plegarlo a `nu.proc.alive` (es existencia de un pid dado, no
 descubrimiento del propio).
@@ -919,17 +919,17 @@ propio, no con el yield aquí descartado.
 
 **Resolución** (registrada en [ADR-015](adr.md#adr-015--conjunto-oficial-de-producto-y-onramp-no-interactivo), que **refina** ADR-010; aplicada en [api.md](api.md) §14, [arquitectura.md](arquitectura.md) §5, [filosofia.md](filosofia.md) §5 y el sitio de docs): dos piezas, ninguna en la API sagrada.
 
-1. **Onramp no interactivo: el flag CLI `nu --default-config`.** La pantalla de runtime desnudo de G21 resolvió el primer arranque **solo con TTY** (es UI; §14 lo cierra con "Sin TTY no hay pantalla: arranca desnudo"). El caso sin TTY —CI, Docker, scripts— quedaba sin un paso para activar el conjunto oficial: había que escribir `config.dir()/nu.toml` a mano. El flag lo cubre con **dos modos**: solo (`nu --default-config`) **escribe** `plugins.enabled` con el conjunto de producto y sale (idempotente, atómico, preservando el resto del fichero — reusa `writeEnabledPlugins`, la misma vía que la acción TTY); combinado con una acción headless (`--default-config -p '…'` / `-e '…'`) **no toca disco**: activa el conjunto **solo para ese proceso** (option interna `WithEnabledPlugins`) y ejecuta la acción. Vive en el **binario** (`main.go`), no en `nu.*`: es la superficie CLI de S45 —como `-e`/`-p`/`--continue`—, así que **`nu.version.api` no cambia** (a diferencia de G17/G32, que sí ampliaron la superficie sagrada). El core sigue sin saber lo que es un agente (ADR-003): el flag orquesta extensiones por la API pública, como podría un `init.lua`.
+1. **Onramp no interactivo: el flag CLI `enu --default-config`.** La pantalla de runtime desnudo de G21 resolvió el primer arranque **solo con TTY** (es UI; §14 lo cierra con "Sin TTY no hay pantalla: arranca desnudo"). El caso sin TTY —CI, Docker, scripts— quedaba sin un paso para activar el conjunto oficial: había que escribir `config.dir()/nu.toml` a mano. El flag lo cubre con **dos modos**: solo (`enu --default-config`) **escribe** `plugins.enabled` con el conjunto de producto y sale (idempotente, atómico, preservando el resto del fichero — reusa `writeEnabledPlugins`, la misma vía que la acción TTY); combinado con una acción headless (`--default-config -p '…'` / `-e '…'`) **no toca disco**: activa el conjunto **solo para ese proceso** (option interna `WithEnabledPlugins`) y ejecuta la acción. Vive en el **binario** (`main.go`), no en `nu.*`: es la superficie CLI de S45 —como `-e`/`-p`/`--continue`—, así que **`nu.version.api` no cambia** (a diferencia de G17/G32, que sí ampliaron la superficie sagrada). El core sigue sin saber lo que es un agente (ADR-003): el flag orquesta extensiones por la API pública, como podría un `init.lua`.
 
 2. **Definición de "el conjunto oficial de producto".** Hasta ahora "el conjunto oficial" era, de hecho, `embeddedNames()` (*todo* lo embebido), que incluye `example` — el plugin-andamiaje que existe **solo para probar el gating** de ADR-010 ([implementacion.md](implementacion.md), Fase 8). Meterlo en la config por defecto del usuario es ruido. Se fija el conjunto en las **siete de producto** —`providers, sessions, agent, mcp, chat, repl, toolkit`— = el catálogo embebido **menos `example`**, cerrado bajo dependencias (`agent → providers, sessions`; `mcp → agent`; `chat → toolkit, agent, providers, sessions`). Por **coherencia** (regla de oro del flujo: una semántica no se contradice entre documentos), la acción TTY de G21 pasa a activar **el mismo** conjunto: la pantalla desnuda y el flag enchufan lo mismo. La distinción "producto vs todo lo embebido" vive en una sola fuente (`officialProductSet`, derivada de `embeddedNames` filtrando `example`).
 
 **Mismo conjunto en ambos modos**, incluido `chat`: aunque `chat`/`repl` necesitan TTY, sus `init.lua` ya se auto-gatean con `if nu.has("ui")` — sin superficie de UI quedan inertes solos (G20/§9). Activarlos en headless no estorba, y omitirlos exigiría una segunda lista y un caso borde sin ganancia. Descartado.
 
-**Problema.** Dos grietas que afloran al *usar* el binario terminado para probarlo con sus extensiones oficiales (no en una ronda de pseudocódigo ni construyendo el kernel: usándolo). (a) ADR-010 deja las oficiales **inactivas por defecto** y G21 dio el onramp del primer arranque, pero **solo para TTY**; en headless (`nu -e`/CI/Docker) no hay forma de un paso de activar el conjunto: hay que editar `nu.toml` a mano, contradiciendo de hecho la ergonomía "de una tecla" que ADR-010 promete. (b) "El conjunto oficial" nunca se definió con precisión frente a `example`: `ActivateOfficial()` activa `embeddedNames()` entero, así que la acción TTY de hoy ya mete el plugin de pruebas en la config del usuario.
+**Problema.** Dos grietas que afloran al *usar* el binario terminado para probarlo con sus extensiones oficiales (no en una ronda de pseudocódigo ni construyendo el kernel: usándolo). (a) ADR-010 deja las oficiales **inactivas por defecto** y G21 dio el onramp del primer arranque, pero **solo para TTY**; en headless (`enu -e`/CI/Docker) no hay forma de un paso de activar el conjunto: hay que editar `nu.toml` a mano, contradiciendo de hecho la ergonomía "de una tecla" que ADR-010 promete. (b) "El conjunto oficial" nunca se definió con precisión frente a `example`: `ActivateOfficial()` activa `embeddedNames()` entero, así que la acción TTY de hoy ya mete el plugin de pruebas en la config del usuario.
 
-**Impacto.** Es la **primera experiencia** de quien instala `nu` y quiere el harness en CI/contenedor — justo lo que ADR-010 dice proteger, pero por el lado no interactivo que G21 no cubrió. No bloquea ninguna sesión de construcción (el plan está cerrado, 45/45); es deuda de producto barata de saldar sobre la superficie CLI ya congelada (S45), sin tocar la API sagrada.
+**Impacto.** Es la **primera experiencia** de quien instala `enu` y quiere el harness en CI/contenedor — justo lo que ADR-010 dice proteger, pero por el lado no interactivo que G21 no cubrió. No bloquea ninguna sesión de construcción (el plan está cerrado, 45/45); es deuda de producto barata de saldar sobre la superficie CLI ya congelada (S45), sin tocar la API sagrada.
 
-**Opciones.** (a) **El flag `nu --default-config`** (la elegida): espejo no interactivo de la acción 1 de la pantalla, con modo efímero para Docker inmutable; vive en el binario, no roza `nu.*`. (b) Exponer la escritura a Lua (`nu.config.enable_official()`) y resolverlo con `nu -e`: **amplía la API sagrada** (`nu.version.api`++) para *empeorar* la ergonomía (`nu -e 'nu.config.enable_official()'` no es más fácil que el flag) — contradice el objetivo; descartada. (c) Un subcomando `nu init`: honesto semánticamente, pero estrena el **primer subcomando** del binario (hoy solo flags), una puerta a `nu run`/`nu chat`… que S45 evitó al mantener el binario delgado; prematuro por una sola necesidad. (d) No hacer nada y documentar "edita `nu.toml`": austero y hostil, justo lo que ADR-010 quiso evitar (es la opción (c) descartada en G21, ahora para el caso sin TTY).
+**Opciones.** (a) **El flag `enu --default-config`** (la elegida): espejo no interactivo de la acción 1 de la pantalla, con modo efímero para Docker inmutable; vive en el binario, no roza `nu.*`. (b) Exponer la escritura a Lua (`nu.config.enable_official()`) y resolverlo con `enu -e`: **amplía la API sagrada** (`nu.version.api`++) para *empeorar* la ergonomía (`enu -e 'nu.config.enable_official()'` no es más fácil que el flag) — contradice el objetivo; descartada. (c) Un subcomando `enu init`: honesto semánticamente, pero estrena el **primer subcomando** del binario (hoy solo flags), una puerta a `enu run`/`enu chat`… que S45 evitó al mantener el binario delgado; prematuro por una sola necesidad. (d) No hacer nada y documentar "edita `nu.toml`": austero y hostil, justo lo que ADR-010 quiso evitar (es la opción (c) descartada en G21, ahora para el caso sin TTY).
 
 ## G34 · El modelo canónico de `thinking` no expresa el modo adaptativo (Opus 4.6+ 400ea con `budget_tokens`) — `providers.md` §2.1/§3 — **RESUELTO**
 
@@ -941,21 +941,21 @@ propio, no con el yield aquí descartado.
 
 **Opciones.** (a) `mode` en el canónico + dialecto por-modelo como dato del TOML (**la elegida**, ADR-016): traductor puro, crecimiento por adición; (b) heurística por id del modelo en el adaptador (`model:match("opus%-4%-[6-9]")`) — frágil, mete conocimiento de versiones de producto en un traductor, falla con ids renombrados; (c) **reemplazar** `budget` por la forma nueva — rompe la firma congelada y los tests grabados; (d) dejarlo pospuesto — descartado: el disparador (modelo por defecto Opus 4.8) ya está activo.
 
-## G35 · El onramp de ADR-015 activa los plugins pero no deja config de agente: el primer `nu` muere sin modelo y deja la UI atrapada — ADR-015 / `chat.md` §8 / `agente.md` §10 — **RESUELTO**
+## G35 · El onramp de ADR-015 activa los plugins pero no deja config de agente: el primer `enu` muere sin modelo y deja la UI atrapada — ADR-015 / `chat.md` §8 / `agente.md` §10 — **RESUELTO**
 
 **Resolución** (registrada en [ADR-017](adr.md#adr-017--el-onramp-deja-config-de-agente-usable-y-el-chat-degrada-con-gracia), que **refina** ADR-015; aplicada en [chat.md](chat.md) §8, [agente.md](agente.md) §10, [providers.md](providers.md) y el binario): dos piezas, ninguna en la API sagrada (es superficie CLI, loader y Lua de extensión; `nu.version.api` no cambia).
 
-1. **Onramp completo: `nu --default-config` deja config de agente USABLE.** El modo persistente, además de escribir `plugins.enabled` en `nu.toml` (G33), escribe **plantillas activas** de `agent.toml` (`model = "anthropic/opus"`, `max_turns`) y `providers.toml` (provider `anthropic` con `base_url`, `api_key_env = "ANTHROPIC_API_KEY"` y el modelo `claude-opus-4-8`/alias `opus`) **solo si no existen** (nunca sobrescribe; atómico, idempotente — reusa `writeAtomic` y el patrón "no pisar TOML existente" de `writeEnabledPlugins`). Default **opinado a Anthropic** (la identidad del producto, un harness estilo claude-code). La clave **nunca** va al fichero (providers.md §1): vive en el entorno (`api_key_env`). El mensaje de éxito deja de ser engañoso ("ya puedes ejecutar el agente: nu -p") y pasa a ser **honesto y accionable**: lista los ficheros escritos y recuerda exportar `ANTHROPIC_API_KEY` (o editar `providers.toml`) antes de arrancar.
+1. **Onramp completo: `enu --default-config` deja config de agente USABLE.** El modo persistente, además de escribir `plugins.enabled` en `nu.toml` (G33), escribe **plantillas activas** de `agent.toml` (`model = "anthropic/opus"`, `max_turns`) y `providers.toml` (provider `anthropic` con `base_url`, `api_key_env = "ANTHROPIC_API_KEY"` y el modelo `claude-opus-4-8`/alias `opus`) **solo si no existen** (nunca sobrescribe; atómico, idempotente — reusa `writeAtomic` y el patrón "no pisar TOML existente" de `writeEnabledPlugins`). Default **opinado a Anthropic** (la identidad del producto, un harness estilo claude-code). La clave **nunca** va al fichero (providers.md §1): vive en el entorno (`api_key_env`). El mensaje de éxito deja de ser engañoso ("ya puedes ejecutar el agente: enu -p") y pasa a ser **honesto y accionable**: lista los ficheros escritos y recuerda exportar `ANTHROPIC_API_KEY` (o editar `providers.toml`) antes de arrancar.
 
 2. **Degradación con gracia del chat (robustez, principio 5).** Si `chat.start` no puede construir la sesión inicial (`agent.session` lanza `EINVAL` por modelo ausente, `EPROVIDER` por provider/modelo no resoluble, o `EAGENT`/`EPROVIDER` por TOML roto), el chat **no muere al log**: monta una **UI mínima accionable y salible** —un texto que explica cómo configurar (`agent.toml`, `providers.toml`, la API key) y un keymap de salida (`esc`/`q`/`ctrl+c` → `core:shutdown`)—. Los errores **inesperados** (no de config) se siguen propagando como hoy. Como **red de seguridad** del kernel, el modo interactivo instala además un handler de salida de emergencia al fondo de la pila de input (cualquier app montada lo tapa), de modo que **ninguna** ruta deje la terminal en raw mode sin forma de salir con teclado.
 
-**Por qué plantillas activas y no comentadas.** Con la key en el entorno, `nu` *just works* tras un solo comando (la promesa "batteries-included" de ADR-015, ahora real). Sin la key, `providers.resolve` **no falla** (deja `api_key=nil`): el chat monta igual, la statusline muestra el modelo y el error por clave ausente sale **in-transcript** al primer turno (`agent:error` → `transcript:add_error`, que el chat ya renderiza) — mucho mejor que una pantalla muerta. Plantillas comentadas obligarían a editar TOML antes del primer arranque, justo la fricción que el onramp quería borrar.
+**Por qué plantillas activas y no comentadas.** Con la key en el entorno, `enu` *just works* tras un solo comando (la promesa "batteries-included" de ADR-015, ahora real). Sin la key, `providers.resolve` **no falla** (deja `api_key=nil`): el chat monta igual, la statusline muestra el modelo y el error por clave ausente sale **in-transcript** al primer turno (`agent:error` → `transcript:add_error`, que el chat ya renderiza) — mucho mejor que una pantalla muerta. Plantillas comentadas obligarían a editar TOML antes del primer arranque, justo la fricción que el onramp quería borrar.
 
-**Problema.** Aflora al *usar* el binario terminado (como G33, no en pseudocódigo ni construyendo): tras `nu --default-config`, ejecutar `nu` deja la terminal en blanco. El log lo dice: `ERROR [user] chat: no se pudo arrancar: agent.session requiere model ("proveedor/modelo") en opts o en agent.toml`. Dos capas: (a) el onramp activa los siete plugins pero **no deja `model`/`provider`**, así que `core:ready` → `chat.start` → `agent.session({model=nil})` lanza `EINVAL`; (b) el `pcall` del `init.lua` del chat manda el error a `nu.log.error` (a disco, nunca a pantalla, §15) y **no monta nada**, y como la pantalla desnuda (la única ruta que instala un handler de salida de emergencia) no se toma con plugins activos, el usuario **queda atrapado** —en raw mode `ctrl+c` no genera `SIGINT`—.
+**Problema.** Aflora al *usar* el binario terminado (como G33, no en pseudocódigo ni construyendo): tras `enu --default-config`, ejecutar `enu` deja la terminal en blanco. El log lo dice: `ERROR [user] chat: no se pudo arrancar: agent.session requiere model ("proveedor/modelo") en opts o en agent.toml`. Dos capas: (a) el onramp activa los siete plugins pero **no deja `model`/`provider`**, así que `core:ready` → `chat.start` → `agent.session({model=nil})` lanza `EINVAL`; (b) el `pcall` del `init.lua` del chat manda el error a `nu.log.error` (a disco, nunca a pantalla, §15) y **no monta nada**, y como la pantalla desnuda (la única ruta que instala un handler de salida de emergencia) no se toma con plugins activos, el usuario **queda atrapado** —en raw mode `ctrl+c` no genera `SIGINT`—.
 
 **Impacto.** Es la **primera experiencia** de quien sigue el onramp de ADR-015 al pie de la letra: el comando que prometía dejar el harness listo lo deja roto e inservible. Bloquea por completo el arranque interactivo del producto. Barato de cerrar sobre la superficie CLI ya congelada (S45) y la Lua de las extensiones, sin tocar la API sagrada.
 
-**Opciones.** (a) **Onramp completo + degradación con gracia** (la elegida, ADR-017): el onramp deja config usable *y* el chat sobrevive a la falta de config. (b) Solo degradación: el chat monta una UI accionable, pero el primer `nu` sigue sin modelo y exige editar TOML a mano — deshace la ergonomía de ADR-015. (c) Solo onramp: escribir las plantillas, pero el chat seguiría muriendo si el usuario borra/rompe la config — deja el segundo defecto (UI atrapada) sin cerrar. (d) Un **modelo por defecto cableado en el agente** sin `providers.toml`: mete vocabulario de producto (qué modelo, qué endpoint, qué env) en el motor, contra ADR-003/ADR-005; descartada. (e) No hacer nada y documentar "edita `agent.toml`/`providers.toml`": hostil, justo lo que ADR-010/ADR-015 quisieron evitar.
+**Opciones.** (a) **Onramp completo + degradación con gracia** (la elegida, ADR-017): el onramp deja config usable *y* el chat sobrevive a la falta de config. (b) Solo degradación: el chat monta una UI accionable, pero el primer `enu` sigue sin modelo y exige editar TOML a mano — deshace la ergonomía de ADR-015. (c) Solo onramp: escribir las plantillas, pero el chat seguiría muriendo si el usuario borra/rompe la config — deja el segundo defecto (UI atrapada) sin cerrar. (d) Un **modelo por defecto cableado en el agente** sin `providers.toml`: mete vocabulario de producto (qué modelo, qué endpoint, qué env) en el motor, contra ADR-003/ADR-005; descartada. (e) No hacer nada y documentar "edita `agent.toml`/`providers.toml`": hostil, justo lo que ADR-010/ADR-015 quisieron evitar.
 
 ## G36 · El conjunto oficial de producto auto-monta dos UIs (chat y repl): salir del chat deja el REPL debajo — ADR-015 / `arquitectura.md` §Distribución / `chat.md` §8 — **RESUELTO**
 
@@ -980,7 +980,7 @@ propio, no con el yield aquí descartado.
 **Resolución** (aplicada en [sesiones.md](sesiones.md) §2): la opción (c), con el **algoritmo actual congelado tal cual**. Dos piezas:
 
 1. **El slug pasa a ser parte del formato.** §2 especifica la codificación que la implementación ya hacía: todo carácter fuera de `[A-Za-z0-9.-]` → `_`, recorte de `_` en ambos bordes, vacío → `"root"`. Se congela con sus propiedades declaradas honestamente: **legible y con pérdida** — no reversible, colisiones posibles entre `cwd` patológicamente parecidos (`/a/b` y `/a_b`). No es una identidad sino una **clave de agrupación**: la identidad canónica de la sesión viaja dentro del fichero (línea `meta`, con `cwd` e `id`), y desambiguar una colisión es leer `meta`. Se descartó una codificación reversible (percent-encoding): compraría una propiedad que ningún consumidor pidió al precio de la legibilidad y de migrar todos los directorios existentes.
-2. **La extensión expone la codificación como funciones puras**: `sessions.slug(cwd) -> string` y `sessions.dir(cwd) -> string`, junto a `open`/`list` en `require("sessions")`. Mismo reparto que G6/G22: el contrato da la garantía (el algoritmo especificado, para herramientas externas que componen rutas sin nu), la extensión da la comodidad (los plugins no reimplementan).
+2. **La extensión expone la codificación como funciones puras**: `sessions.slug(cwd) -> string` y `sessions.dir(cwd) -> string`, junto a `open`/`list` en `require("sessions")`. Mismo reparto que G6/G22: el contrato da la garantía (el algoritmo especificado, para herramientas externas que componen rutas sin enu), la extensión da la comodidad (los plugins no reimplementan).
 
 Nota para la sesión de construcción: la grieta ya mordía **dentro del repo** — tres copias del algoritmo sincronizadas por fe (`slug` en `sessions/init.lua`, `trust_slug` duplicado literal en `agent/init.lua`, y la réplica en Go de `main_test.go` con el comentario "debe coincidir con `slug` de sessions/init.lua"). Al construir: `sessions.slug` queda como única fuente Lua (el agente lo `require`a para las claves de `trust.json`), y la copia del test de Go — inevitable, Go no llama a Lua — pasa a replicar la *especificación*, citándola, no el código.
 
@@ -988,7 +988,7 @@ Nota para la sesión de construcción: la grieta ya mordía **dentro del repo** 
 
 **Impacto.** Cualquier consumidor externo del formato: orquestadores, exportadores, estadísticas de coste, pickers de terceros. También muerde *dentro* del proceso: un plugin que quiera leer el transcript de una sesión que él mismo abrió no tiene forma contractual de encontrar el fichero. Barato de cerrar (es especificar lo que la implementación ya hace, o exponer un helper); caro de cambiar después, cuando haya herramientas externas dependiendo de una codificación adivinada.
 
-**Opciones.** (a) Especificar el algoritmo del slug en sesiones.md §2 (determinista, sin estado, documentado como parte del formato); (b) no especificarlo y exponer un helper de la extensión (`agent.sessions.dir(cwd) -> string` o `agent.sessions.path(cwd, id)`), dejando la codificación como detalle interno — pero entonces las herramientas *externas* (fuera de nu) siguen sin poder resolver rutas; (c) ambas: el algoritmo especificado es la verdad para herramientas externas y el helper es la comodidad para plugins.
+**Opciones.** (a) Especificar el algoritmo del slug en sesiones.md §2 (determinista, sin estado, documentado como parte del formato); (b) no especificarlo y exponer un helper de la extensión (`agent.sessions.dir(cwd) -> string` o `agent.sessions.path(cwd, id)`), dejando la codificación como detalle interno — pero entonces las herramientas *externas* (fuera de enu) siguen sin poder resolver rutas; (c) ambas: el algoritmo especificado es la verdad para herramientas externas y el helper es la comodidad para plugins.
 
 ## G39 · `Session:fork` no re-aloja: sin `opts` (cwd/permisos/modelo) y con `at` sin unidad definida — `agente.md` §2 / `sesiones.md` §5 — **RESUELTO**
 
@@ -1179,7 +1179,7 @@ indistinguible de texto: un proxy/echo fiel era inexpresable. Detectado en la
 auditoría integral (A-38 del informe).
 
 **Impacto.** Cualquier protocolo WS binario (o mixto) era inutilizable desde
-`nu`: MCP sobre WS con payloads comprimidos, protocolos de LSP/DAP framing
+`enu`: MCP sobre WS con payloads comprimidos, protocolos de LSP/DAP framing
 binario, o un simple relay fiel.
 
 **Opciones.** (a) `opts.binary` en `send` + segundo retorno en `recv`

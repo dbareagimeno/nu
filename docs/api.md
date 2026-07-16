@@ -1,4 +1,4 @@
-# API del core de nu — especificación v1 (borrador)
+# API del core de enu — especificación v1 (borrador)
 
 Estado: **borrador para discusión**. Cuando se congele, esta superficie es la
 "API sagrada" (ADR-003): solo crece por adición. Todo lo que no está aquí

@@ -503,13 +503,13 @@ local reg = nu.ui.region{ x = 4, y = 2, w = nu.ui.size().w - 8, h = 20, z = 100 
 ## Escenario 13: el ciclo de desarrollo del autor de plugins
 
 ```lua
--- Edito mi plugin y quiero probarlo SIN reiniciar nu:
+-- Edito mi plugin y quiero probarlo SIN reiniciar enu:
 nu.plugin.reload("mi-plugin")   -- ← no existe
 -- Y aunque existiera: require cachea módulos; re-ejecutar init.lua
 -- duplicaría tools, comandos, keymaps y hooks (no hay des-registro masivo).
 -- Todos los registros devuelven handle (Sub, Keymap, Hook...), pero nadie
 -- los rastrea por plugin → no se puede deshacer "todo lo de mi-plugin".
--- Hoy la única vía es reiniciar nu en cada iteración.               [G2]
+-- Hoy la única vía es reiniciar enu en cada iteración.               [G2]
 -- (Mismo agujero menor: editar providers.toml o nu.toml en caliente.)
 ```
 
@@ -533,8 +533,8 @@ session:send("otra cosa")   -- ¿EBUSY? ¿se encola? ¿cancela y reemplaza?
 ## Escenario 15: la misma sesión reanudada en dos terminales
 
 ```lua
--- Terminal A: nu --continue  → abre sessions/proy/2026-...jsonl
--- Terminal B: nu --continue  → ¡abre EL MISMO fichero!
+-- Terminal A: enu --continue  → abre sessions/proy/2026-...jsonl
+-- Terminal B: enu --continue  → ¡abre EL MISMO fichero!
 -- Dos procesos haciendo fs.append intercalado sobre un JSONL: corrupción
 -- silenciosa (líneas entrelazadas). sesiones.md no contempla lock alguno.
 --                                                                   [G5]
@@ -634,12 +634,12 @@ base_url = "https://llm.interna.corp"   -- CA corporativa autofirmada
 ## Escenario 22: el repo malicioso (modelo de confianza)
 
 ```lua
--- nu se abre en un repo clonado de internet. El repo trae:
+-- enu se abre en un repo clonado de internet. El repo trae:
 --   .nu/skills/inocente/SKILL.md   → se inyecta su índice en el system
 --                                     prompt (agente §6-§7) SIN preguntar
 --   .nu/agent.toml                 → ¡puede traer allow = ["bash:*"]!
 --                                     (precedencia: proyecto > global)
--- Resultado: clonar un repo y abrir nu ya es ejecutar la voluntad del
+-- Resultado: clonar un repo y abrir enu ya es ejecutar la voluntad del
 -- repo. Mismo problema con descripciones de tools de servidores MCP de
 -- terceros (texto no confiable inyectado al modelo). No hay modelo de
 -- confianza: ni trust-on-first-use, ni qué config del repo se honra sin
@@ -1120,11 +1120,11 @@ en [problemas.md](problemas.md#g34) (G34). Es la primera grieta nacida de
 
 Pregunta del stress test: si la **unidad de trabajo es la rama/worktree** y la
 coordinación viaja por git (o por un broker externo), ¿puede un tercero montar
-con solo el contrato público una malla de nodos `nu -e` headless que ejecutan
+con solo el contrato público una malla de nodos `enu -e` headless que ejecutan
 **specs declarativas en dos capas** (Role reutilizable + Job instancia),
 soportan **fork-como-replicación** (local y entre máquinas) y colocan al humano
 en las fronteras que importan (los Roles y los merges, nunca el torrente de
-turnos)? La hipótesis dura de la ronda es **pull-only**: nu solo actúa de
+turnos)? La hipótesis dura de la ronda es **pull-only**: enu solo actúa de
 cliente — sin listener, P1/P19 siguen dormidos. Fuera de alcance, como en la
 Ronda 5: el no-determinismo del *muestreo* del modelo (territorio de
 [providers.md](providers.md); el "replay adapter" del escenario 27 sigue siendo
@@ -1152,7 +1152,7 @@ hash = "b52f..."    # git hash-object: cuando el sustrato es git, git es el hash
 ```
 
 ```lua
--- plugins/fleet/node.lua — corre con `nu -e node.lua` en cada máquina: el motor
+-- plugins/fleet/node.lua — corre con `enu -e node.lua` en cada máquina: el motor
 -- headless es gratis por diseño (agente.md §1); default deny sin supervisión (§5).
 local agent = require("agent")
 
@@ -1330,7 +1330,7 @@ Ninguna nueva — buena señal para el formato.
 ## Escenario 36: broker de contraste + la denegación como dato
 
 ```lua
--- (a) El MISMO nodo sobre el otro sustrato: un broker al que nu se conecta
+-- (a) El MISMO nodo sobre el otro sustrato: un broker al que enu se conecta
 -- SALIENTE (pull-only se mantiene; P1/P19 siguen dormidos).
 local ws = nu.ws.connect("wss://broker.example/fleet")                 -- ⏸
 while true do

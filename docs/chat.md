@@ -1,7 +1,7 @@
 # La extensión oficial de chat: contrato
 
 Estado: **borrador para discusión**. Contrato de la extensión oficial
-`chat` — la cara visible de nu, lo que el usuario ve al arrancar. Como el
+`chat` — la cara visible de enu, lo que el usuario ve al arrancar. Como el
 resto de extensiones oficiales, **sin privilegios**: consume la API pública
 del agente ([agente.md](agente.md)), el toolkit de widgets (extensión
 oficial sobre [api.md](api.md) §9) y el bus de eventos. Una UI alternativa
@@ -172,7 +172,7 @@ chat.statusline.add{ id, side: "left"|"right", priority, render: fn(ctx) -> Span
   auto-monta su UI si el chat no está activo (lo comprueba con `nu.plugin.list`, sin
   depender de chat). Y `Chat:quit` (y `ctrl+c`) emiten `core:shutdown`: salir del chat
   **apaga el runtime** en vez de dejar al usuario en una capa inferior (el REPL/intérprete).
-  Así `nu` con el conjunto oficial abre **una** TUI única; con solo `repl` activo
+  Así `enu` con el conjunto oficial abre **una** TUI única; con solo `repl` activo
   (G21), abre el REPL.
 - Crea la sesión inicial (`agent.session`) con la config resuelta
   (defaults < global < proyecto), o reanuda una existente
@@ -185,7 +185,7 @@ chat.statusline.add{ id, side: "left"|"right", priority, render: fn(ctx) -> Span
   **no muere al log**: monta una **UI mínima accionable y salible** que explica
   cómo configurar (`agent.toml`, `providers.toml`, la API key del entorno) y deja
   salir (`esc`/`q`/`ctrl+c` → `core:shutdown`). Un fallo **inesperado** (no de
-  config) se propaga como siempre. El onramp `nu --default-config` deja plantillas
+  config) se propaga como siempre. El onramp `enu --default-config` deja plantillas
   activas que evitan este camino en el primer arranque (ADR-017); la falta de
   **API key** no llega aquí (`providers.resolve` no falla sin ella): el error sale
   in-transcript como `agent:error` al primer turno.

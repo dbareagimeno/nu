@@ -14,14 +14,14 @@ descarga el binario de la última release, **verifica el checksum** y lo instala
 tu `PATH`.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dbareagimeno/nu/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/dbareagimeno/enu/main/install.sh | sh
 ```
 
 Por defecto instala en `~/.local/bin` (o `/usr/local/bin` si tienes permiso); puedes
 forzar el destino con `NU_INSTALL_DIR`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dbareagimeno/nu/main/install.sh | NU_INSTALL_DIR=/usr/local/bin sh
+curl -fsSL https://raw.githubusercontent.com/dbareagimeno/enu/main/install.sh | NU_INSTALL_DIR=/usr/local/bin sh
 ```
 
 ¿Prefieres revisarlo antes de ejecutarlo? Descárgalo, léelo y córrelo a mano —es un
@@ -31,7 +31,7 @@ script POSIX corto y sin magia. Si no quieres el script, sigue con el método ma
 
 Cada release publica el binario para las plataformas objetivo
 (linux/darwin × amd64/arm64). Descarga el `.tar.gz` de tu sistema de la
-[última release](https://github.com/dbareagimeno/nu/releases/latest),
+[última release](https://github.com/dbareagimeno/enu/releases/latest),
 descomprímelo y ponlo en el `PATH`:
 
 ```sh
@@ -54,7 +54,7 @@ sha256sum -c checksums.txt
 Necesitas Go (la versión mínima está en `go.mod`):
 
 ```sh
-git clone https://github.com/dbareagimeno/nu
+git clone https://github.com/dbareagimeno/enu
 cd nu
 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o nu .
 ```

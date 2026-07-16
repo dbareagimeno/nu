@@ -91,9 +91,9 @@ export const i18n: Record<Lang, Dict> = {
     k2d: 'la wiki de nu',
     kApiD: 'referencia nu.*',
     hint: 'escribe help ↵',
-    fb_i: '→ copia y pega: curl -fsSL nu.sh/install | sh',
+    fb_i: '→ copia y pega: curl -fsSL enu.sh/install | sh',
     fb_d: '→ abriendo la wiki de nu…',
-    fb_g: '→ github.com/dbareagimeno/nu',
+    fb_g: '→ github.com/dbareagimeno/enu',
     fb_a: '→ abriendo la referencia de la api…',
     fb_nf: 'no encontrado — prueba [i], [d], [g] o help',
     fb_help:
@@ -154,9 +154,9 @@ export const i18n: Record<Lang, Dict> = {
     k2d: 'the nu wiki',
     kApiD: 'nu.* reference',
     hint: 'type help ↵',
-    fb_i: '→ copy & paste: curl -fsSL nu.sh/install | sh',
+    fb_i: '→ copy & paste: curl -fsSL enu.sh/install | sh',
     fb_d: '→ opening the nu wiki…',
-    fb_g: '→ github.com/dbareagimeno/nu',
+    fb_g: '→ github.com/dbareagimeno/enu',
     fb_a: '→ opening the api reference…',
     fb_nf: 'not found — try [i], [d], [g] or help',
     fb_help:

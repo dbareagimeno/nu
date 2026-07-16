@@ -2,7 +2,7 @@
 
 Estado: **borrador para discusión — v0.1 construida**. Nace de la [Ronda 8 de
 pseudocódigo](pseudocodigo.md) ("kubernetes de agentes"): una malla de nodos
-`nu` headless que ejecutan trabajos declarativos sobre ramas de git, con el
+`enu` headless que ejecutan trabajos declarativos sobre ramas de git, con el
 humano en las dos fronteras que importan (los Roles y los merges). Como el
 resto de extensiones oficiales, NO es API sagrada del core: es el contrato
 público del plugin `mesh`, versionado aparte, construido **íntegramente** sobre
@@ -21,7 +21,7 @@ incompletas (ADR-003). La Ronda 8 validó exactamente eso antes de construir
    script del usuario (§10 trae el patrón). Un daemon con su ciclo de vida
    sería producto encima del producto — cuando duela escribirlo a mano, se
    reabre.
-2. **Pull-only.** nu solo actúa de **cliente** (git, y en el futuro `nu.ws`
+2. **Pull-only.** enu solo actúa de **cliente** (git, y en el futuro `nu.ws`
    saliente): sin listener, [P1/P19](pospuesto.md) siguen dormidos.
 3. **Git es el único sustrato v0.1**: transporte, almacén y coordinación
    (claim por CAS de refs). La Ronda 8 (escenario 36) validó que la capa
@@ -198,7 +198,7 @@ repo no se inyectan (el default headless de §11.2 se mantiene).
 ## 10. El nodo, como patrón (no API)
 
 ```lua
--- node.lua — corre con `nu -e node.lua` en cada máquina
+-- node.lua — corre con `enu -e node.lua` en cada máquina
 local mesh = require("mesh")
 while true do
   for _, jf in ipairs(nu.search.files(JOBS_DIR, { glob = "*.toml" })) do

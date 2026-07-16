@@ -10,7 +10,7 @@ debe poder reconstruir.
 
 ### Semántica de quiescencia con timers activos (decisión clave)
 
-`api.md` §3 no dice cómo interactúan los timers con el fin de `nu -e`. El
+`api.md` §3 no dice cómo interactúan los timers con el fin de `enu -e`. El
 modelo de S04 hace que `EvalString` corra el chunk, suelte el token y llame a
 `waitIdle()`, que bloquea hasta que el conjunto queda **quiescente**. Había que
 decidir qué cuenta como "trabajo pendiente":
@@ -22,14 +22,14 @@ decidir qué cuenta como "trabajo pendiente":
   chunk podría no llegar a correr nunca.
 
 - **`every(ms, fn)` NO cuenta.** Un timer periódico no termina jamás; si contara
-  para la quiescencia, `nu -e` no volvería nunca. Decisión: un `every` activo es
-  **facilidad de fondo**, no trabajo de primer plano. El fin de `nu -e` lo
+  para la quiescencia, `enu -e` no volvería nunca. Decisión: un `every` activo es
+  **facilidad de fondo**, no trabajo de primer plano. El fin de `enu -e` lo
   determinan el chunk + sus tasks + sus `defer` encolados; cuando todo eso queda
   quiescente, `EvalString` vuelve aunque haya timers activos, y `Runtime.Close`
   los apaga (corta sus goroutines de ticker, sin fugas).
 
-  Justificación: en un `nu` interactivo (S33+) el loop sigue vivo por la UI/los
-  eventos de entrada, no por los timers; bajo `nu -e` (headless, sin UI) el fin
+  Justificación: en un `enu` interactivo (S33+) el loop sigue vivo por la UI/los
+  eventos de entrada, no por los timers; bajo `enu -e` (headless, sin UI) el fin
   natural es la quiescencia del primer plano. Un timer que debiera mantener vivo
   el proceso indica que el trabajo real está en una task (que sí cuenta), no en
   el timer. Esto es coherente con el criterio de hecho de S05 en el plan
@@ -563,7 +563,7 @@ verá owner "user" — el etiquetado fiable de handles por dueño es trabajo de 
 ## S12 — activación de extensiones embebidas gobernada por `nu.toml` (api.md §14, ADR-010)
 
 S12 monta lo que ADR-010 exige: las extensiones oficiales se distribuyen DENTRO
-del binario (`go:embed`) pero están **INACTIVAS por defecto** —nu instalado es un
+del binario (`go:embed`) pero están **INACTIVAS por defecto** —enu instalado es un
 runtime desnudo; el harness se activa, no se presupone—. La activación la gobierna
 `config.dir()/nu.toml`.
 
@@ -923,7 +923,7 @@ timers.go) y corre el handler en un thread efímero del estado principal bajo `p
 por frontera (ADR-008) —cero data races: los paths cruzan como `string` copiadas y
 el handler se invoca con el token tomado—. Un `Watcher` activo **no** cuenta para la
 quiescencia (no toca `pending`), igual que un `every`: un watcher nunca termina y
-colgaría `nu -e`. `Watcher` implementa `ownedHandle` (handles.go, S13): `watch` lo
+colgaría `enu -e`. `Watcher` implementa `ownedHandle` (handles.go, S13): `watch` lo
 etiqueta con `currentOwner()` y lo `track`-a; `Watcher:stop()` lo `untrack`-a (sin
 fuga en el registro) y `nu.plugin.reload` lo suelta vía `release()` —"reload no deja
 handlers huérfanos" (G2)—. `stop` (y `Runtime.Close` vía `stopAllWatchers`) corta la
@@ -1000,7 +1000,7 @@ de seguridad**, no la vía principal: (1) el **finalizer del GC**
 determinista**, no se confía en ello—; (2) `Runtime.Close`→`stopAllProcs` mata
 todos los vivos al cerrar la sesión (scheduler `procs`/`trackProc`, gemelo de
 `watchers`/`timers`). Como `every`/`watch`, **un `Proc` vivo no cuenta para la
-quiescencia**: esperar a que un subproceso muera para que `nu -e` retorne lo
+quiescencia**: esperar a que un subproceso muera para que `enu -e` retorne lo
 colgaría. `*luaProc` implementa `ownedHandle` (S13): `reload` mata los procesos del
 plugin que se recarga.
 
@@ -1052,14 +1052,14 @@ al lanzar subprocesos. Ninguna función ⏸ (son consultas/registros inmediatos)
 todas [W] (§16, hoy en el estado principal: los workers son S34). Sin hallazgos:
 §7 y la `procOpts` que dejó S16 bastaron; APILevel sigue en 1 (§7 ya estaba).
 
-**`setenv` NO muta el entorno del proceso `nu` actual (decisión central, §7).**
+**`setenv` NO muta el entorno del proceso `enu` actual (decisión central, §7).**
 Nada de `os.Setenv`: mutar el entorno global del proceso es un efecto compartido
 que (a) rompería el aislamiento por tarea (ADR-008) —se vería desde TODO el
 código, no solo desde quien lo pidió— y (b) contradiría el contrato ("afecta solo
 a subprocesos futuros"). En su lugar, `setenv` escribe en un **overlay** del
 Runtime (`sysState.envOver map[string]string`) que `nu.proc` aplica al construir
 el entorno del hijo. El criterio de hecho ("`setenv` se ve en un subproceso
-lanzado después, no en el actual") se cumple por construcción: el `nu` actual
+lanzado después, no en el actual") se cumple por construcción: el `enu` actual
 nunca cambia su entorno; lo único que ve la variable es el hijo.
 
 **Candado, no token, para el overlay.** `setenv` escribe el mapa en el estado
@@ -1228,7 +1228,7 @@ round-trip + raíz no-objeto → `EINVAL`; YAML frontmatter de skill (claves, li
 strings) + round-trip; codecs desde una task ([W]); no-serializable (función,
 NaN, Inf) → `EINVAL`. `CGO_ENABLED=0 go build`/`go vet`/`gofmt -l` limpios;
 `CGO_ENABLED=1 go test -race -timeout 120s -count=2 ./internal/...` verde. Binario
-`nu -e` confirma de extremo a extremo encode/decode de los tres formatos, el
+`enu -e` confirma de extremo a extremo encode/decode de los tres formatos, el
 round-trip del sentinel NULL, `pretty` y el UTF-8 estricto (G11 → `EINVAL`).
 
 **Sin hallazgos:** §12 bastó tal cual. **CP-4 verde → Fase 3 cerrada.**
@@ -1319,7 +1319,7 @@ ausente/vacía/`opts` no-tabla → `EINVAL`; `timeout_ms` negativo/no-numérico 
 headers múltiples unidos por ", "; 5 peticiones concurrentes progresan en paralelo
 (red anti-data-race del cliente reutilizable). `CGO_ENABLED=0 go build`/`go
 vet`/`gofmt -l` limpios; `CGO_ENABLED=1 go test -race -timeout 120s -count=2
-./internal/...` verde, sin flaky. Binario `nu -e` confirma de extremo a extremo:
+./internal/...` verde, sin flaky. Binario `enu -e` confirma de extremo a extremo:
 GET → status=200, 404 → no lanza (status=404), puerto cerrado → `ENET`, `url`
 vacía → `EINVAL`.
 
@@ -1433,7 +1433,7 @@ goroutines colgadas), `close` idempotente, **close por cleanup al cancelar la
 task** (mide `NumGoroutine` para descartar fuga), `stream` fuera de task →
 `EINVAL`, `idle_timeout_ms` inválido → `EINVAL`. `CGO_ENABLED=0 go
 build`/`go vet`/`gofmt -l` limpios; `CGO_ENABLED=1 go test -race -timeout 120s
--count=2 ./internal/...` verde, sin flaky (no regresiona S01–S19). Binario `nu -e`
+-count=2 ./internal/...` verde, sin flaky (no regresiona S01–S19). Binario `enu -e`
 confirma e2e: status=200 + evento partido en varios writes parseado como uno
 (`ping`/`hola mundo`) + evento sin `event` (data="fin").
 
@@ -1538,7 +1538,7 @@ buffer → `EIO` (backpressure de S20).
 
 `CGO_ENABLED=0 go build`/`go vet`/`gofmt -l` limpios; `CGO_ENABLED=1 go test
 -race -timeout 120s -count=2 ./internal/...` verde, sin flaky (no regresiona
-S01–S20). Binario `nu -e` confirma e2e contra un servidor de eco local: `send`/
+S01–S20). Binario `enu -e` confirma e2e contra un servidor de eco local: `send`/
 `recv` round-trip (`hola`/`mundo`), recv tras cerrar → `nil`, puerto cerrado →
 `ENET`.
 
@@ -1666,7 +1666,7 @@ task.
 
 `CGO_ENABLED=0 go build`/`go vet`/`gofmt -l` limpios; `CGO_ENABLED=1 go test
 -race -timeout 120s -count=2 ./internal/...` verde, sin flaky (no regresiona
-S01–S21). Binario `nu -e` confirma e2e: width (5/4/2/2 para ascii/CJK/emoji/ZWJ),
+S01–S21). Binario `enu -e` confirma e2e: width (5/4/2/2 para ascii/CJK/emoji/ZWJ),
 wrap (height/width), truncate con elipsis, ui.block (width 6/height 2), caps, y
 G22 (`fg="accent"` → EINVAL).
 
@@ -1797,7 +1797,7 @@ width no-número), no-suspende fuera de task.
 
 `CGO_ENABLED=0 go build`/`go vet`/`gofmt -l` limpios; `CGO_ENABLED=1 go test
 -race -timeout 120s -count=2 ./internal/...` verde, sin flaky (no regresiona
-S01–S22). Binario `nu -e` confirma e2e: doc completo (height 5, width 23), fence
+S01–S22). Binario `enu -e` confirma e2e: doc completo (height 5, width 23), fence
 incompleto (height 1), theme `fg="accent"` → rechazado (G22).
 
 **Sin hallazgos:** §10 bastó. Puntero ▶ avanza a **S24** (`nu.text.highlight`,
@@ -1887,7 +1887,7 @@ text_test.go): Go height/estilo, desconocido→plano, `.height` legible, sin-opt
 
 `CGO_ENABLED=0 go build`/`go vet`/`gofmt -l` limpios; `CGO_ENABLED=1 go test
 -race -timeout 120s -count=2 ./internal/...` verde, sin flaky (no regresiona
-S01–S23). Binario `nu -e` confirma e2e: go (height 3), desconocido → plano
+S01–S23). Binario `enu -e` confirma e2e: go (height 3), desconocido → plano
 (height 2), `opts.theme` no-string → `EINVAL`.
 
 **Sin hallazgos:** §10 bastó. Puntero ▶ avanza a **S25** (`nu.text.diff`).
@@ -1982,7 +1982,7 @@ aplicados al render).
 
 `CGO_ENABLED=0 go build`/`go vet`/`gofmt -l` limpios; `CGO_ENABLED=1 go test
 -race -timeout 120s -count=2 ./internal/...` verde, sin flaky (no regresiona
-S01–S24). Binario `nu -e` confirma e2e: cambio en medio → 1 hunk
+S01–S24). Binario `enu -e` confirma e2e: cambio en medio → 1 hunk
 (context/context/del/add/context), block.height = 6, rangos old/new 1,4; `a==b`
 → 0 hunks; `a` vacío → old_count 0 / new_count 2; `opts` no-tabla → `EINVAL`.
 
@@ -2107,7 +2107,7 @@ task; resultado expuesto por global tras `waitIdle`), `TestReTypeMismatch`
 
 `CGO_ENABLED=0 go build`/`go vet`/`gofmt -l` limpios; `CGO_ENABLED=1 go test
 -race -timeout 120s -count=2 ./internal/...` verde, sin flaky (no regresiona
-S01–S25). Binario `nu -e` confirma e2e: match con grupos (12-34/12/34), grupo
+S01–S25). Binario `enu -e` confirma e2e: match con grupos (12-34/12/34), grupo
 nombrado, no-match→nil, find_all que reconstruye por `s:sub`, replace
 `${b}-${a}`, backreference→`EINVAL`.
 
@@ -2213,7 +2213,7 @@ sin pintar pantalla.
 
 `CGO_ENABLED=0 go build`/`go vet`/`gofmt -l` limpios; `CGO_ENABLED=1 go test
 -race -timeout 120s -count=2 ./internal/...` verde, sin flaky (no regresiona
-S01–S26). Binario `nu -e` confirma e2e. **APILevel sigue en 1.**
+S01–S26). Binario `enu -e` confirma e2e. **APILevel sigue en 1.**
 
 **CP-6 verde → `[x] Fase 5`.** Puntero ▶ avanza a **S28** (SPIKE ADR-007, abre
 Fase 6).
@@ -2229,7 +2229,7 @@ aquí van las decisiones de diseño del spike que no son de espec.
 
 El spike construye una versión **mínima e interna** de lo que S29 expondrá como
 `nu.ui` (celdas, regiones, blit, diff→ANSI), pero **no se cuelga del global
-`nu`**: vive en `internal/runtime/spike_compositor.go` (la primitiva) y
+`enu`**: vive en `internal/runtime/spike_compositor.go` (la primitiva) y
 `spike_shim.go` (el puente a Lua, registrado solo desde los tests vía
 `registerSpikeShim`, NUNCA desde `registerNu`). Así el veto se mide sin congelar
 nada ni ampliar la superficie sagrada (api.md intacto, APILevel sigue en 1). S29
@@ -2460,7 +2460,7 @@ api.md (APILevel sigue en 1). Decisiones:
 
 ### GATING HEADLESS (G20, la decisión central)
 
-§9/G20: sin TTY interactivo (`nu -e`, CI, salida redirigida) el módulo `nu.ui`
+§9/G20: sin TTY interactivo (`enu -e`, CI, salida redirigida) el módulo `nu.ui`
 **directamente NO EXISTE**, y la detección es `nu.has("ui")` (nunca probar-y-capturar),
 el mismo modelo que las caps de los workers ("la superficie no concedida no está").
 Lo implementé así:
@@ -2469,7 +2469,7 @@ Lo implementé así:
   cuelga `nu.ui` del global ni se construye el compositor (`rt.ui = nil` vía
   `maybeUIState`); `armPainter`/`stopPainter`/`Close` ya toleraban `rt.ui == nil`.
 - **`uiActive` lo decide `New`:** `WithForceUI(active)` manda (precedencia, `forceUISet`);
-  sin ella, `detectTTY()`. Así el binario `nu` (que llama `runtime.New()` sin Options)
+  sin ella, `detectTTY()`. Así el binario `enu` (que llama `runtime.New()` sin Options)
   aplica el gating real, y los tests fuerzan la UI.
 - **`detectTTY()` exige stdout Y stdin TTY** (`golang.org/x/term.IsTerminal`): una UI a
   pantalla completa escribe el render (stdout) y lee teclas (stdin); si cualquiera está
@@ -2539,7 +2539,7 @@ especificados. `nu.has` per-runtime es implementación, no cambia la firma `nu.h
 
 ## S33 — pantalla de runtime desnudo (api.md §14, G21; cierra Fase 6, CP-7 manual)
 
-Cuando nu arranca con un TTY interactivo y NINGÚN plugin activo, el kernel pinta —ANTES
+Cuando enu arranca con un TTY interactivo y NINGÚN plugin activo, el kernel pinta —ANTES
 de correr Lua de producto— una pantalla FIJA hecha solo de sus capacidades: versión +
 nivel de API (`nu.version`), rutas de config y de plugins (`config.dir`, `pluginDirs`),
 catálogo de extensiones embebidas DISPONIBLES (`embeddedNames`, embed.go) y las acciones
@@ -2559,7 +2559,7 @@ dentro de `Boot`: `main` (sin `-e`) consulta `rt.BareScreenActive()` y, si proce
 pinta y vuelca las líneas; si no, sigue el arranque canónico de siempre. Así NINGÚN test
 de S01–S32 que llama `rt.Boot()` directamente cambia de comportamiento (Boot sigue
 cargando plugins + init del usuario + `core:ready`): la pantalla es una decisión del
-binario, que es donde vive el TTY. Sin TTY (`nu` sin `-e` en CI) → `BareScreenActive`
+binario, que es donde vive el TTY. Sin TTY (`enu` sin `-e` en CI) → `BareScreenActive`
 es false → se imprime el uso (arranca desnudo), confirmado con el binario.
 
 ### Acciones: activar → escribir nu.toml → continuar Boot (sin red)
@@ -2602,7 +2602,7 @@ por tests automáticos (`bare_screen_test.go`):
 - **Preservar config**: escribir `enabled` conserva `dirs`, `watchdog` y claves/secciones
   ajenas; el resultado es un `nu.toml` válido.
 - **nu.toml mal formado** no se sobrescribe (EINVAL, fichero intacto).
-- **No regresión**: `nu -e` headless sigue funcionando; `nu` sin `-e` sin TTY imprime el uso.
+- **No regresión**: `enu -e` headless sigue funcionando; `enu` sin `-e` sin TTY imprime el uso.
 
 QUEDA PENDIENTE de un humano con TTY (CP-7 manual): la interacción de TECLADO para elegir
 una acción, el streaming visible token a token, y el resize/paste VISIBLES. El render de la
@@ -2886,7 +2886,7 @@ emiten eventos en S36, pero queda reservado por convención).
    contexto del loop del agente. Es coherente con el resto de la API (IO = ⏸) y no requiere
    primitiva nueva.
 
-2. **`providers.toml` ausente = registro vacío, no error.** Un nu recién instalado sin
+2. **`providers.toml` ausente = registro vacío, no error.** Un enu recién instalado sin
    modelos configurados debe arrancar limpio; `list()` devuelve `[]`. Se distingue `ENOENT`
    (ausente → vacío) de un fallo de IO real (`EACCES`/`EIO`, se propaga) por el `code` del
    error estructurado de `nu.fs.read`.
@@ -3558,7 +3558,7 @@ build/vet/gofmt/race-count=2 verdes, se commitea y pushea SIN demora.
 
 ## S43 — Extensión oficial `chat` (UI del harness sobre toolkit + agente; streaming markdown); CP-11 (chat.md)
 
-Octava extensión de la Fase 8 y la cara visible de nu. **Lua puro sobre la API congelada**
+Octava extensión de la Fase 8 y la cara visible de enu. **Lua puro sobre la API congelada**
 (ADR-003): el core NO sabe lo que es un chat; es una extensión oficial sin privilegio que
 consume la API pública del agente (agente.md), el toolkit de widgets (S42) y el bus de
 eventos —una UI de terceros podría hacer lo mismo—. Plugin embebido
@@ -3740,7 +3740,7 @@ interactiva si la tiene, y el patrón de arranque en TTY (`nu.has("ui")`, suscri
 `core:ready`); el repl puede activarse SOLO (sin el harness), igual que el chat se activa solo.
 S45 (CLI): el azúcar `--continue` se apoya en `agent.session{resume}` (G18) que el chat ya
 consume; el chat es el consumidor interactivo del agente que el CLI complementa en modo headless
-(`nu -e`, `--auto-permissions`). El contrato de eventos `agent:*` que el chat consume es estable
+(`enu -e`, `--auto-permissions`). El contrato de eventos `agent:*` que el chat consume es estable
 para cualquier otra UI/observador.
 
 **Nota de proceso.** Tras código + tests + docs (puntero a S44, tablero, bitácora, esta
@@ -3852,16 +3852,16 @@ del core (no acuña código propio; no le hizo falta). **Sin hallazgos `G##`.**
 
 ### Lo que reusará S45 (CLI, el último eslabón de la Fase 8)
 
-S45 = **superficie CLI** (cuestión abierta nº5 de arquitectura): flags de `nu -e`,
+S45 = **superficie CLI** (cuestión abierta nº5 de arquitectura): flags de `enu -e`,
 `--auto-permissions`, headless, códigos de salida, azúcar `--continue` sobre
 `agent.session{resume}` (G18). Lo que hereda: `repl.eval` como evaluador de una línea sin TTY
-(el `nu -e` ya evalúa por `EvalString`/Go; el repl es su contraparte interactiva). El patrón de
-"activable solo en TTY vs. lógica headless" (G20/G21) que el CLI replica para `nu -e`. Con S45 se
+(el `enu -e` ya evalúa por `EvalString`/Go; el repl es su contraparte interactiva). El patrón de
+"activable solo en TTY vs. lógica headless" (G20/G21) que el CLI replica para `enu -e`. Con S45 se
 CIERRA la Fase 8 (todas las extensiones oficiales).
 
 ## S45 — Superficie CLI (flags, --auto-permissions, --continue/G18, códigos de salida); cierra la Fase 8 y el plan (arquitectura nº5)
 
-**Qué es.** El ÚLTIMO eslabón del plan: la superficie de línea de comandos del binario `nu`.
+**Qué es.** El ÚLTIMO eslabón del plan: la superficie de línea de comandos del binario `enu`.
 Cierra la cuestión abierta nº5 de [arquitectura.md](arquitectura.md), la Fase 8 y el plan
 entero (45/45). Vive en `main.go` (el binario), **NO en la API sagrada `nu.*`** (api.md): es la
 interfaz del ejecutable, no superficie Lua. El core sigue sin saber lo que es un agente
@@ -3903,7 +3903,7 @@ los contratos por pertenecer a la superficie CLI; aquí se decide: reanuda la se
 del proyecto (cwd). "Más reciente" = `sessions.list(cwd)` ordenando los ids descendente (ordenan
 lexicográfico = temporal, sesiones.md §2/§7) y tomando el primero, que se pasa como `resume` a
 `agent.session{...}`. `--continue` sin sesiones previas → EAGENT accionable (código 1), no una
-sesión nueva muda. El proyecto es `nu.fs.cwd()` (donde se lanzó `nu`).
+sesión nueva muda. El proyecto es `nu.fs.cwd()` (donde se lanzó `enu`).
 
 **Decisión 5 — flags.** `-e '<lua>'` (de S01, consolidado); `-p '<prompt>'` (turno de agente
 headless; imprime el texto final del asistente a stdout); `--auto-permissions` (→
@@ -3933,7 +3933,7 @@ no llega como `error` de Go sino como el valor Lua. Invariante 🔒 de S02 intac
 reescribe el code).
 
 **Tests** (`main_test.go`, package main, HERMÉTICO): `runWith` sobre un Runtime con dirs de
-prueba y headless. `nu -e` éxito (0) + error estructurado (1, stderr con code, nada en stdout) +
+prueba y headless. `enu -e` éxito (0) + error estructurado (1, stderr con code, nada en stdout) +
 sintaxis (1); agente con `--auto-permissions` (write_file CONCEDIDO, 0, fichero creado) vs sin él
 (DENEGADO, 3, stderr nombra `--auto-permissions`/`allow`, fichero NO creado); read_file (solo
 lectura) sin auto-permissions → 0; `--continue` reanuda la MÁS RECIENTE (3 sesiones montadas; el
