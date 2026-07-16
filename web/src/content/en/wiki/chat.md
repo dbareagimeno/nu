@@ -50,14 +50,17 @@ session indefinitely.
 | `agent:delta` (thinking) | Reasoning block **collapsed by default**, expandable; dimmed style. |
 | `agent:tool.start/progress/end` | **Collapsible** tool block: header with name + summarized args; `progress` live; on completion, folded result if it's long. |
 | `agent:message` | Seals the message (replaces the deltas with the final render). |
-| `agent:error` | Error block with the structured code and, if `retryable`, a retry action. |
+| `agent:error` | Error block with the structured code (`[code] message`) and, if `retryable`, a retry action: the `(/retry to retry)` hint over the `/retry` builtin → `Session:retry()` (G43). |
+| `agent:retry` | Dimmed note "retrying (n/m) in Xs…" while the engine waits out the backoff (G42). |
 | `agent:permission.asked` | Modal dialog (§5), FIFO-queued if one is already visible. |
 | `agent:compact` | Visual mark of "history compacted above". |
 
 > ✅ **Implemented** ([pospuesto.md](pospuesto.md) **P27**). Chat also consumes
 > `agent:tool.progress` (live progress under the tool in progress) and
 > `agent:compact` (the "history compacted above" mark, already emitted by the
-> agent with **P25**).
+> agent with **P25**). With G42/G43 it also consumes `agent:retry` (the
+> backoff note) and the full `agent:error` payload (`[code] message` + the
+> `/retry` hint).
 
 **Pluggable renderers**: a plugin can register the render for its tool's
 result — `chat.renderer(tool_name, fn(result, width) -> Block)`. This way the
@@ -101,14 +104,16 @@ Builtins (registered with this same function — dogfooding):
 `/sessions` (picker from the listing in [sesiones.md](sesiones.md) §7,
 resumes via `agent.session{ resume = id }`), `/fork`, `/compact`,
 `/permissions` (view and edit the session's policy), `/think` (view and
-change reasoning, ADR-016), `/help`, `/quit`.
+change reasoning, ADR-016), `/retry` (re-runs the turn after an error,
+`Session:retry`, G43), `/help`, `/quit`.
 
 > ✅ **Implemented** ([pospuesto.md](pospuesto.md) **P28**). Besides
 > `/model`, `/sessions`, `/compact`, `/clear`, `/help`, `/quit`, chat ships
 > `/fork` (forks with `Session:fork` and continues on the branch via
 > `Chat:switch_session`), `/permissions` (view and edit the policy:
-> `allow|deny <pattern>`, `mode ask|auto`) and `/think`
-> (`off|adaptive|budget <N>`, via `Session:set_thinking`, ADR-016).
+> `allow|deny <pattern>`, `mode ask|auto`), `/think`
+> (`off|adaptive|budget <N>`, via `Session:set_thinking`, ADR-016) and
+> `/retry` (re-runs the failed turn via `Session:retry`, G43).
 
 ## 5. Permission dialog
 

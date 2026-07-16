@@ -9,7 +9,7 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 52 registradas, 52 resueltas, 0 abiertas** (G53–G56 añadidas
+**Estado: 54 registradas, 54 resueltas, 0 abiertas** (G53–G56 añadidas
 2026-07-16 desde la auditoría de seguridad
 ([auditoria-seguridad-2026-07-16.md](audits/auditoria-seguridad-2026-07-16.md)):
 grietas de diseño de SEC-02/03/04/07 —semántica de emparejamiento de permisos,
@@ -34,9 +34,13 @@ de los workers— resuelta y **construida** el 2026-07-13 con la opción (a),
 marca worker-safe por snippet de preludio; G46 —el replay de `event`—
 resuelta y **construida** el 2026-07-13 con la opción (a) más la (c):
 precedencia `opts > transcript > agent.toml` y allow/deny reaplicados en
-orden. Los números G42–G43 están **reservados**: los
-usa la rama `claude/ux-producto-pulido` (retry con backoff y `agent:error`
-estructurado), aún sin fusionar. G41 añadida 2026-07-03 desde la
+orden. G42–G43 añadidas 2026-07-08 desde la auditoría de arquitectura
+post-M17
+([informe-arquitectura-2026-07-08.md](audits/informe-arquitectura-2026-07-08.md))
+— dos promesas de contrato que la implementación no cumplía y ningún registro
+recogía: el reintento con backoff de agente.md §2 no existía en el motor (G42)
+y `agent:error` descartaba el `code`/`retryable` que chat.md necesita para su
+acción de reintento (G43); resueltas el mismo día. G41 añadida 2026-07-03 desde la
 construcción — un handler que escribía en un upvalue de una task suspendida
 "perdía" la escritura: bug de gopher-lua en el desenrollado de `pcall`,
 blindado en el kernel el mismo día; G38-G40
@@ -1046,6 +1050,30 @@ La implementación hizo el mejor argumento a favor: el dato **existía y se desc
 **Aguas arriba (verificado 2026-07-03).** No está arreglado en gopher-lua: la v1.1.2 que este proyecto fija en `go.mod` es la **última release publicada**, `state.go` en master no se toca desde diciembre de 2023, y el bug está reportado como [issue #448](https://github.com/yuin/gopher-lua/issues/448) ("bug: pcall affecting function upvalues"), **abierto desde julio de 2023** sin respuesta. El blindaje del kernel es por tanto necesario indefinidamente; si algún día upstream lo cierra, el disparador para retirar el blindaje es que los tests `TestG41*` pasen con él desactivado tras el upgrade.
 
 **Blindaje.** `upvalues_g41_test.go`: la repro mínima, pcalls anidados (el agujero del flag no-apilado de upstream), el caso real (handler + task suspendida + error previo capturado), la frontera del cierre (lo vivo por debajo sigue enlazado; lo muerto por encima cierra con su valor, no con el nil del registry truncado), el aborto con cleanup (la interacción con S16) y la no-capturabilidad del aborto (§1.3 intacta). Suite completa verde también bajo `-race`. Candidato a PR aguas arriba: el fix limpio en gopher-lua sería que la recuperación de `PCall` cierre desde su `base` (como `luaF_close`), en vez del par actual sobre-cierre-en-raise / ningún-cierre-con-handler.
+
+## G42 · El reintento con backoff prometido por agente.md §2 no existe en el motor — `agente.md` §2/§4/§10 — **RESUELTO**
+
+**Resolución** (aplicada en [agente.md](agente.md) §2 —párrafo "Reintentos"—, §4 —evento `retry` en la lista de notificaciones— y §10 —`max_retries`/`retry_base_ms`—): el motor reintenta la **apertura del stream** (paso 3 del turno), y solo eso. Cuatro piezas:
+
+1. Si `adapter.stream` lanza un error con `detail.retryable = true` (la marca que [providers.md](providers.md) §3 obliga al adaptador a poner: 429, 5xx, cortes de red), el motor espera con backoff exponencial (`retry_base_ms · 2^(intento−1)`; por defecto 1 s → 2 s → 4 s) y reintenta, hasta `max_retries` reintentos (por defecto 3, configurable por `opts` y `agent.toml` con la precedencia estándar de §10). Agotados, el error propaga tal cual — con su `retryable` intacto, que G43 lleva hasta la UI para el reintento manual.
+2. **Solo la apertura.** Un fallo a mitad de stream no se reintenta nunca: los deltas ya emitidos están pintados por la UI y reintentar duplicaría contenido. Es además la frontera natural — los adaptadores detectan el status HTTP al abrir el stream, así que los errores retryables nacen casi todos ahí; lo que muere a mitad de stream es otra clase de fallo y propaga como error del turno.
+3. Cada espera se anuncia con la notificación `agent:retry { session, attempt, max_retries, delay_ms, code, message }` (§4), para que una UI no muestre siete segundos de nada. El backoff duerme con `enu.task.sleep`: es un punto de suspensión normal, así que un `Session:cancel` durante la espera aborta el turno como siempre (S08), sin caso especial.
+4. El subagente en modo worker (§9) aplica la misma política — hereda `max_retries`/`retry_base_ms` del padre en su `init` — pero sin evento: los workers no tienen bus (ADR-004).
+
+**Problema.** agente.md §2 prometía: *"Errores del adaptador con `retryable = true`: reintento con backoff exponencial y límite configurable — la política vive aquí, nunca en el adaptador"*. Los tres adaptadores cumplían su mitad (marcaban `retryable` en 429/5xx: `adapter_anthropic.lua`, `adapter_openai_compat.lua`, `adapter_gemini.lua`), pero el motor llamaba a `adapter.stream` sin ningún envoltorio de reintento (`agent/init.lua`, `subagent_worker.lua`): un `EPROVIDER` retryable propagaba igual que uno permanente hasta el `pcall` de `_turn_loop`, que cerraba el turno con `agent:error`. Un rate-limit pasajero — el pan de cada día contra APIs de LLM — mataba el turno entero. Aflorada en la auditoría de arquitectura post-M17 ([informe-arquitectura-2026-07-08.md](audits/informe-arquitectura-2026-07-08.md), H-1); no estaba ni resuelta ni pospuesta: una grieta silenciosa entre contrato e implementación.
+
+**Impacto.** Robustez de todo turno contra errores transitorios del proveedor (el caso más frecuente de fallo en producción); también los subagentes, que sin esto fallaban el job entero por un 429.
+
+## G43 · `agent:error` descarta el `code` y el `retryable` que chat.md promete pintar — `agente.md` §2/§4 · `chat.md` §2/§4 — **RESUELTO**
+
+**Resolución** (aplicada en [agente.md](agente.md) §2 —`Session:retry()` en la firma y párrafo "Reintento manual"— y §4 —payload de la garantía de error visible—, y [chat.md](chat.md) §2/§4): el mismo principio que G40 — el dato existía y se descartaba en la frontera; la prosa es presentación, no el portador. Dos piezas:
+
+1. El payload de `agent:error` lleva el error estructurado completo: `{ session, message, code?, retryable?, detail? }` (cambio aditivo: nadie que leyera `message` se rompe). `retryable` se alza de `detail.retryable` como campo de primer nivel porque es la señal que toda UI necesita para decidir si ofrece reintento.
+2. `Session:retry() ⏸ -> Message` entra en el contrato: re-ejecuta el turno sobre el historial vigente **sin anexar mensaje nuevo** — exactamente lo que necesita la acción de reintento tras un error (el mensaje del usuario ya está en el historial; un `send` lo duplicaría). Mismo contrato de espera que `send` (future del mensaje final); `EINVAL` con un turno en vuelo, la sesión cerrada o el historial vacío. Chat lo consume: el bloque de error pinta `[code] mensaje` y, si `retryable`, la pista `(/retry para reintentar)`; `/retry` entra en los builtins de chat.md §4.
+
+**Problema.** chat.md §2 prometía: *"`agent:error` | Bloque de error con el código estructurado y, si `retryable`, acción de reintento"*. Pero `Session:_turn_loop` solo extraía `message` y `code` del error capturado (el `detail` — y con él `retryable` — se perdía), y el handler del chat solo usaba `p.message`: ni el dato llegaba, ni existía interacción alguna de reintento. Aflorada en la misma auditoría que G42; son gemelas — G42 sin G43 deja a la UI ciega cuando los reintentos automáticos se agotan.
+
+**Impacto.** Toda UI que consuma `agent:error` (chat, orquestadores headless, telemetría): sin el `code` no se distingue un 401 accionable de un timeout, y sin `retryable` no hay acción de reintento que ofrecer.
 
 ## G44 · El scheduler no se bombea fuera de los `Eval`: el modo interactivo no ejecuta tasks y los timers de fondo mueren en cada quiescencia — `api.md` §3 / `modelo-ejecucion.md` — **RESUELTO**
 

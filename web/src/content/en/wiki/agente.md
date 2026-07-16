@@ -30,6 +30,7 @@ agent.session(opts) ⏸ -> Session   -- suspending IO: writer lock and, with res
           resume?: string }                          -- id: reopens instead of creating
 
 Session:send(content: string|Block[]) ⏸ -> Message  -- runs the full turn
+Session:retry() ⏸ -> Message                         -- re-runs the turn after an error (G43)
 Session:cancel()                                     -- cancels the turn in progress
 Session:fork(at?: integer, opts?: table) ⏸ -> Session -- forks and re-homes; copies the prefix (G39; sesiones.md §5)
 Session:compact() ⏸                                  -- manual compaction
@@ -127,9 +128,26 @@ each model understands is resolved by the adapter using the `thinking`
 data from `providers.toml` (a model with dialect `"none"` ignores the
 request). A `request.pre` hook can fine-tune `thinking` per turn.
 
-Adapter errors with `retryable = true`: retried with exponential backoff
-and a configurable limit — the policy lives here, never in the adapter
-(providers.md §3.3).
+**Retries (G42)**: if **opening** the stream (step 3) throws an error with
+`detail.retryable = true` (the adapter's mark, [providers.md](providers.md)
+§3: 429, 5xx, network drops), the engine waits with exponential backoff
+(`retry_base_ms · 2^(attempt−1)`; 1 s → 2 s → 4 s by default) and retries up
+to `max_retries` times (§10) — the policy lives here, never in the adapter.
+Each wait is announced as `agent:retry` (§4) and sleeps at a normal
+suspension point: a `cancel` during the backoff aborts the turn as always. A
+failure **mid-stream** is never retried — the deltas already emitted are
+painted and retrying would duplicate content; it propagates as a turn error.
+Once retries are exhausted, the error propagates with its `retryable`
+intact: the UI can offer the manual retry. The worker-mode subagent (§9)
+applies the same policy (it inherits `max_retries`/`retry_base_ms` in its
+`init`), without the event — workers have no bus.
+
+**Manual retry (G43)**: `Session:retry()` re-runs the turn over the current
+history **without appending a new message** — the path for a UI's retry
+action after an `agent:error` (the user's message is already in the history;
+a `send` would duplicate it). Same waiting contract as `send` (future of the
+final message); `EINVAL` with a turn in flight, the session closed, or an
+empty history.
 
 ## 3. Tools
 
@@ -162,8 +180,9 @@ Two mechanisms, deliberately separate:
 **Notifications** (fire-and-forget, core bus `enu.events`, namespace
 `agent:`): `session.start`, `session.end`, `turn.start`, `turn.end`,
 `delta`, `message`, `tool.start`, `tool.progress`, `tool.end`, `compact`,
-`error`, `permission.asked`, `permission.denied` (G40, §5). For painting,
-logging, observing. *(The `compact` event will only be emitted once
+`error`, `retry` (G42: `{ attempt, max_retries, delay_ms, code, message }`,
+one per backoff wait), `permission.asked`, `permission.denied` (G40, §5). For
+painting, logging, observing. *(The `compact` event will only be emitted once
 automatic compaction exists: [pospuesto.md](pospuesto.md) (P25).)* The
 `agent:` namespace is not reserved by the core (the core doesn't know
 about agents, ADR-003): it's the `agent` plugin's namespace, protected by
@@ -172,7 +191,8 @@ plugin-name uniqueness like any other (G26, [api.md](api.md) §4).
 **Guaranteed visible error.** Any turn failure —the adapter/provider throws
 (e.g. HTTP 401 from a missing or invalid API key, network down), a
 `request.pre` hook vetoes, or `max_turns` is exhausted— is ALWAYS emitted
-as `agent:error` (with `message` and, if it carries one, `code`) before
+as `agent:error` (with the full structured error: `message` and, if it
+carries them, `code`, `retryable` and `detail` — G43) before
 closing the turn. The turn's body runs under `pcall`, so an error never
 silently kills the task: the UI paints it and `Session:send` returns (it
 doesn't hang). The only exception is a `Session:cancel` (S08 abort, not
@@ -375,7 +395,8 @@ Sub:cancel()
 
 ## 10. Configuration
 
-`config.dir()/agent.toml`: default model, `max_turns`, compaction
+`config.dir()/agent.toml`: default model, `max_turns`,
+`max_retries`/`retry_base_ms` (stream-opening retries, G42), compaction
 threshold and model, **default reasoning** (`[thinking]` with `mode` and
 `budget`, ADR-016), session retention policy ([P10](pospuesto.md)), global
 permissions. Precedence is the standard one: defaults < global <

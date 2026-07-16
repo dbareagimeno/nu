@@ -92,12 +92,42 @@ local function consume_stream(iter)
   return done, usage
 end
 
+-- stream_with_retry(adapter, request, config, max_retries, retry_base_ms) -> iter.
+-- Misma política que el motor del estado principal (G42, agente.md §2): reintenta
+-- SOLO la apertura del stream ante un error tabla con `detail.retryable == true`,
+-- con backoff exponencial `retry_base_ms · 2^(intento−1)`, hasta `max_retries`. La
+-- ÚNICA diferencia con el padre: SIN evento `agent:retry` — los workers no tienen
+-- bus (`enu.events` no existe aquí, ADR-004/§16). Agotados los reintentos o error no
+-- retryable / no tabla, relanza tal cual (el padre lo reporta como error al recv).
+-- El consumo del stream queda FUERA (un fallo a mitad de stream no se reintenta).
+local function stream_with_retry(adapter, request, config, max_retries, retry_base_ms)
+  local attempt = 0
+  while true do
+    local ok, iter = pcall(adapter.stream, request, config)
+    if ok then
+      return iter
+    end
+    local err = iter
+    local retryable = type(err) == "table" and type(err.detail) == "table"
+      and err.detail.retryable == true
+    if not retryable or attempt >= max_retries then
+      error(err) -- relanza tal cual: preserva la tabla estructurada
+    end
+    attempt = attempt + 1
+    enu.task.sleep(retry_base_ms * (2 ^ (attempt - 1)))
+  end
+end
+
 -- run_turn(init) -> digest. El LOOP del subagente, idéntico en forma al de S39
 -- (Session:send) pero con la ejecución de tools DELEGADA al padre por mensajes.
 local function run_turn(init)
   local resolved = providers.resolve(init.model)
   local adapter = resolved.adapter
   local config = resolved.config
+  -- Reintentos de la apertura del stream heredados del padre (G42), con los mismos
+  -- defaults que el motor (agente.md §2): 3 reintentos, base 1 s.
+  local max_retries = init.max_retries or 3
+  local retry_base_ms = init.retry_base_ms or 1000
 
   -- persist(message, usage, model): manda un Message al padre para que lo anexe al
   -- transcript hijo (A-21). El worker no persiste directamente (sin `fs.write`); el
@@ -143,7 +173,7 @@ local function run_turn(init)
       thinking    = init.thinking,
     }
 
-    local iter = adapter.stream(request, config)
+    local iter = stream_with_retry(adapter, request, config, max_retries, retry_base_ms)
     local done, usage = consume_stream(iter)
     local assistant = done.message
     history[#history + 1] = assistant

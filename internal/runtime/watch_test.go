@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -410,6 +411,63 @@ func TestWatchReloadReleasesHandle(t *testing.T) {
 	h.eval(`_pw:stop()`)
 	if got := countOwnerHandles(h, "P"); got != 0 {
 		t.Fatalf("tras stop del watcher, P debe quedar en 0 handles (untrack); hay %d", got)
+	}
+}
+
+// TestWatchConcurrentDeliveries (auditoría post-M17): varios watchers vivos
+// entregando lotes desde GOROUTINES DE FONDO DISTINTAS mientras el estado principal
+// también trabaja (la task ancla de waitFor entra a la VM desde el driver). El mutex
+// de la Instance (`mu`, con `slotMu` para el par ranura+Eval de EmitEvent) es la
+// única barrera que serializa esas entradas concurrentes a la VM: este test, corrido
+// bajo `-race` como el resto de la suite, delata cualquier "optimización" que lo
+// debilite. No afirma orden ni conteo exacto de lotes (eso ya lo cubren los otros
+// tests de S15): solo que TODOS los watchers entregan y ninguna entrada corre una
+// carrera.
+func TestWatchConcurrentDeliveries(t *testing.T) {
+	h := newHarness(t)
+	const nw = 4
+	dirs := make([]string, nw)
+	for i := range dirs {
+		dirs[i] = t.TempDir()
+	}
+
+	// nw watchers con debounce corto, cada uno con su contador propio: lotes
+	// pequeños y frecuentes maximizan el solape de las entregas.
+	for i, d := range dirs {
+		h.eval(`
+			c` + itoa(i) + ` = 0
+			_w` + itoa(i) + ` = enu.fs.watch(` + luaStr(d) + `, { debounce_ms = 15 }, function(events)
+				c` + itoa(i) + ` = c` + itoa(i) + ` + 1
+			end)
+		`)
+	}
+
+	// Ráfagas concurrentes: una goroutine Go por directorio, varias rondas separadas
+	// por más que el debounce para que cada watcher cierre y entregue VARIOS lotes,
+	// con las goroutines de deliver de los nw watchers compitiendo por mu/slotMu.
+	// Las escrituras son best-effort (no se puede t.Fatalf fuera de la goroutine del
+	// test); un fallo real lo delataría el waitFor de abajo.
+	var wg sync.WaitGroup
+	for _, d := range dirs {
+		wg.Add(1)
+		go func(d string) {
+			defer wg.Done()
+			for round := 0; round < 5; round++ {
+				for f := 0; f < 3; f++ {
+					_ = os.WriteFile(filepath.Join(d, "r"+itoa(round)+"f"+itoa(f)+".txt"), []byte("x"), 0o644)
+				}
+				time.Sleep(40 * time.Millisecond)
+			}
+		}(d)
+	}
+	wg.Wait()
+
+	// Todos los watchers deben haber entregado al menos un lote (la condición corre
+	// dentro del estado principal, intercalada con las entregas pendientes).
+	waitFor(h, `return c0 >= 1 and c1 >= 1 and c2 >= 1 and c3 >= 1`)
+
+	for i := 0; i < nw; i++ {
+		h.eval(`_w` + itoa(i) + `:stop()`)
 	}
 }
 

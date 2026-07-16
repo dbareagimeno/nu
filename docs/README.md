@@ -45,6 +45,9 @@ Auditorías puntuales del repo: cada informe lleva su fecha en el nombre, se
 cierra enrutando sus hallazgos al flujo canónico (G##/P##) y no vuelve a
 editarse salvo para anotar ese cierre. Aquí aterrizan las auditorías futuras.
 
+- [audits/informe-arquitectura-2026-07-08.md](audits/informe-arquitectura-2026-07-08.md) —
+  análisis de arquitectura post-M17 (H-1…H-16); H-1/H-2 enrutados como G42/G43,
+  cierre anotado en su nota de archivo.
 - [audits/auditoria-2026-07-12.md](audits/auditoria-2026-07-12.md) — auditoría
   integral (A-01…A-42); cerrada el 2026-07-14 sin A-## pendientes.
 

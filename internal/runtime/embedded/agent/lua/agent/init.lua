@@ -32,6 +32,14 @@ local M = {}
 -- modelo. Una sesión puede subirlo/bajarlo por `opts.max_turns`.
 local DEFAULT_MAX_TURNS = 32
 
+-- Reintentos de la apertura del stream por defecto (G42, agente.md §2/§10): ante un
+-- error transitorio del provider (429/5xx/cortes de red que el adaptador marca
+-- `detail.retryable`) el motor reintenta con backoff exponencial
+-- `retry_base_ms · 2^(intento−1)`: 1 s → 2 s → 4 s con los defaults. Precedencia
+-- estándar de §10 (opts > agent.toml > default), igual que `max_turns`.
+local DEFAULT_MAX_RETRIES = 3
+local DEFAULT_RETRY_BASE_MS = 1000
+
 -- ---------------------------------------------------------------------------
 -- Errores estructurados de la extensión (EAGENT, agente.md / ADR-009).
 -- ---------------------------------------------------------------------------
@@ -417,7 +425,8 @@ end
 
 -- load_config() -> tabla lee `config.dir()/agent.toml` (agente.md §10) de forma
 -- perezosa y cacheada. Ausente → defaults. Mal formado → EAGENT accionable. Solo
--- lee los campos v1 que esta sesión usa: `model`, `max_turns`, `permissions`.
+-- lee los campos v1 que esta sesión usa: `model`, `max_turns`, `max_retries`,
+-- `retry_base_ms` (reintentos de la apertura del stream, G42), `permissions`.
 local config_cache = nil
 local function load_config()
   if config_cache ~= nil then
@@ -935,6 +944,42 @@ function Session:send(content)
   return res.message
 end
 
+-- Session:retry() ⏸ -> Message (agente.md §2 "Reintento manual", G43). Re-ejecuta
+-- el turno sobre el HISTORIAL VIGENTE, SIN anexar mensaje nuevo — el camino de la
+-- acción de reintento de una UI tras un `agent:error` (el mensaje del usuario ya
+-- está en el historial; un `send` lo DUPLICARÍA). Reutiliza la maquinaria de `send`
+-- (task propia del turno + future del mensaje final) pero sin encolar contenido: en
+-- vez de un item en la cola —que `_drain_queue` anexaría como mensaje de usuario—,
+-- inscribe su waiter DIRECTO en `waiters`, que `_finish_turn` resuelve con el
+-- mensaje final igual que a un `send`. `EINVAL` accionable si hay turno en vuelo, la
+-- sesión está cerrada, o el historial está vacío (no hay nada que reintentar).
+function Session:retry()
+  if self.closed then
+    einval("no se puede reintentar: la sesión está cerrada")
+  end
+  if self.turn_active then
+    einval("no se puede reintentar: hay un turno en vuelo (espera a que termine o cancélalo)")
+  end
+  if #self.history == 0 then
+    einval("no se puede reintentar: el historial está vacío (no hay turno que re-ejecutar)")
+  end
+
+  self.turn_active = true
+  self._turn_done = false
+  self.waiters = {}
+  -- Waiter directo (sin cola): no hay contenido nuevo que inyectar, solo esperar el
+  -- mensaje final de este turno re-ejecutado.
+  local item = { fut = enu.task.future() }
+  self.waiters[#self.waiters + 1] = item
+  self.turn_task = enu.task.spawn(function() self:_turn_loop() end)
+
+  local res = item.fut:await()
+  if res.canceled then
+    return nil
+  end
+  return res.message
+end
+
 -- Session:_drain_queue() inyecta los mensajes encolados (G4): los anexa al
 -- historial/store como mensajes de usuario y mueve sus futures a `waiters` (para
 -- que resuelvan con el mensaje final de ESTE turno). Se llama al inicio de cada
@@ -989,6 +1034,45 @@ function Session:_finish_turn(canceled)
   end
 end
 
+-- stream_with_retry(session, adapter, request, provider_config) -> iter. Envuelve
+-- SOLO la APERTURA del stream (agente.md §2 paso 3, G42): la política de reintento
+-- vive aquí, nunca en el adaptador (providers.md §3 solo MARCA `detail.retryable`).
+-- Si `adapter.stream` lanza un error tabla con `detail.retryable == true` y quedan
+-- reintentos, espera con backoff exponencial (`retry_base_ms · 2^(intento−1)`),
+-- anuncia `agent:retry` y reintenta hasta `session.max_retries` veces. El backoff
+-- duerme con `enu.task.sleep`: un punto de suspensión normal, así que un
+-- `Session:cancel` durante la espera aborta el turno como siempre (S08). Agotados
+-- los reintentos —o un error no retryable / no tabla— relanza el error TAL CUAL,
+-- preservando la tabla (y su `retryable`, que G43 lleva hasta la UI). OJO: el
+-- CONSUMO del stream queda FUERA de este envoltorio: un fallo a mitad de stream ya
+-- pintó deltas y reintentar duplicaría contenido, así que propaga sin reintento.
+local function stream_with_retry(session, adapter, request, provider_config)
+  local attempt = 0
+  while true do
+    local ok, iter = pcall(adapter.stream, request, provider_config)
+    if ok then
+      return iter
+    end
+    local err = iter
+    local retryable = type(err) == "table" and type(err.detail) == "table"
+      and err.detail.retryable == true
+    if not retryable or attempt >= session.max_retries then
+      error(err) -- relanza tal cual: preserva la tabla estructurada (code/detail/retryable)
+    end
+    attempt = attempt + 1
+    local delay = session.retry_base_ms * (2 ^ (attempt - 1))
+    -- Un `agent:retry` por cada espera (§4): la UI no muestra segundos de nada.
+    emit(session.handle.id, "retry", {
+      attempt     = attempt,
+      max_retries = session.max_retries,
+      delay_ms    = delay,
+      code        = (type(err) == "table" and err.code) or nil,
+      message     = (type(err) == "table" and err.message) or tostring(err),
+    })
+    enu.task.sleep(delay)
+  end
+end
+
 -- Session:_turn_loop() es el cuerpo del turno (agente.md §2), corriendo en la
 -- task propia de la sesión. Registra su `cleanup` para cerrar limpio ante un
 -- aborto (P22), drena la cola (G4/P23) y autocompacta al rebasar el umbral (P25).
@@ -1013,9 +1097,16 @@ function Session:_turn_loop()
     self:_finish_turn(false)
     return
   end
+  -- El payload de `agent:error` lleva el error estructurado COMPLETO (G43): la UI
+  -- necesita `code` (distinguir un 401 accionable de un timeout) y `retryable`
+  -- (decidir si ofrece el reintento manual, `Session:retry`). `retryable` se ALZA
+  -- de `detail.retryable` a campo de primer nivel (la señal que toda UI mira). Es
+  -- un cambio aditivo: quien solo leía `message` sigue funcionando.
   local msg = (type(turn_err) == "table" and turn_err.message) or tostring(turn_err)
   local code = (type(turn_err) == "table" and turn_err.code) or nil
-  emit(self.handle.id, "error", { message = msg, code = code })
+  local detail = (type(turn_err) == "table" and turn_err.detail) or nil
+  local retryable = (type(detail) == "table" and detail.retryable) or nil
+  emit(self.handle.id, "error", { message = msg, code = code, retryable = retryable, detail = detail })
   self:_finish_turn(false)
 end
 
@@ -1110,8 +1201,9 @@ function Session:_run_turn_body()
     end
     request = hooked or request
 
-    -- Llama al adaptador y consume el stream (agente.md §2 pasos 3-4).
-    local iter = adapter.stream(request, provider_config)
+    -- Llama al adaptador y consume el stream (agente.md §2 pasos 3-4). La APERTURA
+    -- (paso 3) va envuelta en reintento con backoff (G42); el CONSUMO (paso 4) no.
+    local iter = stream_with_retry(self, adapter, request, provider_config)
     local done = consume_stream(self, iter)
 
     local assistant = done.message
@@ -1589,6 +1681,9 @@ function M.session(opts)
     history          = {},
     permissions      = normalize_permissions(opts.permissions, cfg),
     max_turns        = opts.max_turns or cfg.max_turns or DEFAULT_MAX_TURNS,
+    -- Reintentos de la apertura del stream (G42): precedencia estándar §10.
+    max_retries      = opts.max_retries or cfg.max_retries or DEFAULT_MAX_RETRIES,
+    retry_base_ms    = opts.retry_base_ms or cfg.retry_base_ms or DEFAULT_RETRY_BASE_MS,
     max_tokens       = opts.max_tokens,
     temperature      = opts.temperature,
     thinking         = thinking,

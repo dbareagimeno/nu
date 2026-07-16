@@ -30,6 +30,7 @@ agent.session(opts) ⏸ -> Session   -- IO suspendiente: lock de escritor y, con
           resume?: string }                          -- id: reabre en vez de crear
 
 Session:send(content: string|Block[]) ⏸ -> Message  -- ejecuta el turno completo
+Session:retry() ⏸ -> Message                         -- re-ejecuta el turno tras un error (G43)
 Session:cancel()                                     -- cancela el turno en curso
 Session:fork(at?: integer, opts?: tabla) ⏸ -> Session -- bifurca y re-aloja; copia el prefijo (G39; sesiones.md §5)
 Session:compact() ⏸                                  -- compactación manual
@@ -125,9 +126,26 @@ resuelve el adaptador con el dato `thinking` del `providers.toml` (un modelo de
 dialecto `"none"` ignora la petición). Un hook `request.pre` puede afinar el
 `thinking` por turno.
 
-Errores del adaptador con `retryable = true`: reintento con backoff
-exponencial y límite configurable — la política vive aquí, nunca en el
-adaptador (providers.md §3.3).
+**Reintentos (G42)**: si la **apertura** del stream (paso 3) lanza un error
+con `detail.retryable = true` (la marca del adaptador,
+[providers.md](providers.md) §3: 429, 5xx, cortes de red), el motor espera con
+backoff exponencial (`retry_base_ms · 2^(intento−1)`; 1 s → 2 s → 4 s por
+defecto) y reintenta hasta `max_retries` veces (§10) — la política vive aquí,
+nunca en el adaptador. Cada espera se anuncia como `agent:retry` (§4) y duerme
+en un punto de suspensión normal: un `cancel` durante el backoff aborta el
+turno como siempre. Un fallo **a mitad de stream** no se reintenta nunca — los
+deltas ya emitidos están pintados y reintentar duplicaría contenido; propaga
+como error del turno. Agotados los reintentos, el error propaga con su
+`retryable` intacto: la UI puede ofrecer el reintento manual. El subagente en
+worker (§9) aplica la misma política (hereda `max_retries`/`retry_base_ms` en
+su `init`), sin evento — los workers no tienen bus.
+
+**Reintento manual (G43)**: `Session:retry()` re-ejecuta el turno sobre el
+historial vigente **sin anexar mensaje nuevo** — el camino de la acción de
+reintento de una UI tras un `agent:error` (el mensaje del usuario ya está en
+el historial; un `send` lo duplicaría). Mismo contrato de espera que `send`
+(future del mensaje final); `EINVAL` con un turno en vuelo, la sesión cerrada
+o el historial vacío.
 
 ## 3. Tools
 
@@ -194,7 +212,8 @@ Dos mecanismos, deliberadamente separados:
 **Notificaciones** (fire-and-forget, bus del core `enu.events`, namespace
 `agent:`): `session.start`, `session.end`, `turn.start`, `turn.end`,
 `delta`, `message`, `tool.start`, `tool.progress`, `tool.end`, `compact`,
-`error`, `permission.asked`, `permission.denied` (G40, §5). Para pintar, loggear, observar. *(El evento
+`error`, `retry` (G42: `{ attempt, max_retries, delay_ms, code, message }`,
+uno por cada espera de backoff), `permission.asked`, `permission.denied` (G40, §5). Para pintar, loggear, observar. *(El evento
 `compact` solo se emitirá cuando exista la compactación automática:
 [pospuesto.md](pospuesto.md) (P25).)* El namespace
 `agent:` no es una reserva del core (el core no sabe de agentes, ADR-003):
@@ -204,7 +223,8 @@ plugin como cualquier otro (G26, [api.md](api.md) §4).
 **Garantía de error visible.** Cualquier fallo del turno —el adaptador/provider
 lanza (p. ej. HTTP 401 por API key ausente o inválida, red caída), un hook
 `request.pre` veta, o se agota `max_turns`— se emite SIEMPRE como `agent:error`
-(con `message` y, si lo trae, `code`) antes de cerrar el turno. El cuerpo del turno
+(con el error estructurado completo: `message` y, si los trae, `code`,
+`retryable` y `detail` — G43) antes de cerrar el turno. El cuerpo del turno
 corre bajo `pcall`, así que un error nunca mata la task en silencio: la UI lo pinta
 y `Session:send` retorna (no se cuelga). La única excepción es un `Session:cancel`
 (aborto S08, no capturable por `pcall`): no es un error, así que cierra el turno
@@ -472,8 +492,9 @@ Sub:cancel()
 
 ## 10. Configuración
 
-`config.dir()/agent.toml`: modelo por defecto, `max_turns`, umbral y modelo
-de compactación, **razonamiento por defecto** (`[thinking]` con `mode` y
+`config.dir()/agent.toml`: modelo por defecto, `max_turns`,
+`max_retries`/`retry_base_ms` (reintentos de la apertura del stream, G42),
+umbral y modelo de compactación, **razonamiento por defecto** (`[thinking]` con `mode` y
 `budget`, ADR-016), política de retención de sesiones ([P10](pospuesto.md)),
 permisos globales, herencia de secretos de la tool `bash` (`[tools.bash]
 inherit_secrets`, §3 — G55). La precedencia es la estándar: defaults < global <

@@ -9,7 +9,7 @@ resolution is applied to the affected documents and the entry moves to
 that is what we decided not to decide yet; this is holes that v1 does
 need closed.
 
-**Status: 48 recorded, 48 resolved, 0 open** (G52 added
+**Status: 50 recorded, 50 resolved, 0 open** (G52 added
 2026-07-14 from A-38 of the comprehensive audit — `Ws:send` with no binary path and
 `Ws:recv` without distinguishing the frame type — resolved by addition to `api.md`
 §8, API level 2→3; G44–G51
@@ -22,9 +22,13 @@ surface of workers— resolved and **built** on 2026-07-13 with option (a),
 worker-safe mark via preamble snippet; G46 —the `event` replay—
 resolved and **built** on 2026-07-13 with option (a) plus (c):
 precedence `opts > transcript > agent.toml` and allow/deny reapplied in
-order. Numbers G42–G43 are **reserved**: they are
-used by branch `claude/ux-producto-pulido` (retry with backoff and structured
-`agent:error`), still unmerged. G41 added 2026-07-03 from
+order. G42–G43 added 2026-07-08 from the post-M17 architecture
+analysis
+([informe-arquitectura-2026-07-08.md](audits/informe-arquitectura-2026-07-08.md))
+— two contract promises the implementation didn't keep and no registry
+recorded: the backoff retry of agente.md §2 didn't exist in the engine (G42)
+and `agent:error` dropped the `code`/`retryable` that chat.md needs for its
+retry action (G43); resolved the same day. G41 added 2026-07-03 from
 construction — a handler that wrote to an upvalue of a suspended task
 "lost" the write: a gopher-lua bug in `pcall` unwinding,
 shielded in the kernel the same day; G38-G40
@@ -1434,6 +1438,30 @@ abort's non-capturability (§1.3 intact). Full suite green under `-race` too.
 Candidate for an upstream PR: the clean fix in gopher-lua would be for
 `PCall`'s recovery to close from its `base` (like `luaF_close`), instead of
 the current pair of over-closing-on-raise / no-closure-with-handler.
+
+## G42 · The backoff retry promised by agente.md §2 doesn't exist in the engine — `agente.md` §2/§4/§10 — **RESOLVED**
+
+**Resolution** (applied in [agente.md](agente.md) §2 —"Retries" paragraph—, §4 —`retry` event in the notification list— and §10 —`max_retries`/`retry_base_ms`—): the engine retries the **opening of the stream** (step 3 of the turn), and only that. Four pieces:
+
+1. If `adapter.stream` throws an error with `detail.retryable = true` (the mark [providers.md](providers.md) §3 obliges the adapter to set: 429, 5xx, network drops), the engine waits with exponential backoff (`retry_base_ms · 2^(attempt−1)`; by default 1 s → 2 s → 4 s) and retries, up to `max_retries` retries (3 by default, configurable via `opts` and `agent.toml` with §10's standard precedence). Once exhausted, the error propagates as is — with its `retryable` intact, which G43 carries all the way to the UI for the manual retry.
+2. **Only the opening.** A mid-stream failure is never retried: the deltas already emitted have been painted by the UI and retrying would duplicate content. It's also the natural boundary — adapters detect the HTTP status when opening the stream, so retryable errors are almost all born there; whatever dies mid-stream is another class of failure and propagates as a turn error.
+3. Each wait is announced with the `agent:retry { session, attempt, max_retries, delay_ms, code, message }` notification (§4), so a UI doesn't show seven seconds of nothing. The backoff sleeps with `enu.task.sleep`: a normal suspension point, so a `Session:cancel` during the wait aborts the turn as always (S08), no special case.
+4. The worker-mode subagent (§9) applies the same policy — it inherits `max_retries`/`retry_base_ms` from its parent in its `init` — but without the event: workers have no bus (ADR-004).
+
+**Problem.** agente.md §2 promised: *"Adapter errors with `retryable = true`: retry with exponential backoff and a configurable limit — the policy lives here, never in the adapter"*. The three adapters kept their half (they marked `retryable` on 429/5xx: `adapter_anthropic.lua`, `adapter_openai_compat.lua`, `adapter_gemini.lua`), but the engine called `adapter.stream` with no retry wrapper at all (`agent/init.lua`, `subagent_worker.lua`): a retryable `EPROVIDER` propagated just like a permanent one up to `_turn_loop`'s `pcall`, which closed the turn with `agent:error`. A transient rate-limit — everyday life against LLM APIs — killed the whole turn. Surfaced by the post-M17 architecture analysis ([informe-arquitectura-2026-07-08.md](audits/informe-arquitectura-2026-07-08.md), H-1); it was neither resolved nor postponed: a silent crack between contract and implementation.
+
+**Impact.** Robustness of every turn against transient provider errors (the most frequent failure in production); also subagents, which without this failed the whole job on a single 429.
+
+## G43 · `agent:error` drops the `code` and the `retryable` that chat.md promises to paint — `agente.md` §2/§4 · `chat.md` §2/§4 — **RESOLVED**
+
+**Resolution** (applied in [agente.md](agente.md) §2 —`Session:retry()` in the signature and the "Manual retry" paragraph— and §4 —payload of the visible-error guarantee—, and [chat.md](chat.md) §2/§4): the same principle as G40 — the data existed and was dropped at the boundary; prose is presentation, not the carrier. Two pieces:
+
+1. The `agent:error` payload carries the full structured error: `{ session, message, code?, retryable?, detail? }` (an additive change: no one reading `message` breaks). `retryable` is lifted from `detail.retryable` to a first-level field because it's the signal every UI needs to decide whether to offer a retry.
+2. `Session:retry() ⏸ -> Message` enters the contract: it re-runs the turn over the current history **without appending a new message** — exactly what a retry action needs after an error (the user's message is already in the history; a `send` would duplicate it). Same waiting contract as `send` (future of the final message); `EINVAL` with a turn in flight, the session closed, or an empty history. Chat consumes it: the error block paints `[code] message` and, if `retryable`, the `(/retry to retry)` hint; `/retry` joins the builtins of chat.md §4.
+
+**Problem.** chat.md §2 promised: *"`agent:error` | Error block with the structured code and, if `retryable`, a retry action"*. But `Session:_turn_loop` only extracted `message` and `code` from the caught error (the `detail` — and with it `retryable` — was lost), and chat's handler only used `p.message`: neither did the data arrive, nor did any retry interaction exist. Surfaced by the same analysis as G42; they're twins — G42 without G43 leaves the UI blind once the automatic retries run out.
+
+**Impact.** Every UI consuming `agent:error` (chat, headless orchestrators, telemetry): without the `code` you can't tell an actionable 401 from a timeout, and without `retryable` there's no retry action to offer.
 
 ## G44 · The scheduler isn't pumped outside `Eval` calls: interactive mode doesn't run tasks and background timers die on every quiescence — `api.md` §3 / `modelo-ejecucion.md` — **RESOLVED**
 
