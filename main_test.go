@@ -7,11 +7,11 @@ package main
 // Estrategia: en vez de lanzar el proceso (os/exec) y un binario con su propio
 // `~/.config`, se ejercita el núcleo testeable del CLI —`runWith(rt, opts)`— sobre
 // un Runtime construido con dirs de PRUEBA (config/data temporales) y las
-// extensiones `providers`/`sessions`/`agent` activadas por `nu.toml`. Es HERMÉTICO:
+// extensiones `providers`/`sessions`/`agent` activadas por `enu.toml`. Es HERMÉTICO:
 // sin red (el adaptador de provider es un STUB registrado desde Lua, como CP-10) y
 // sin tocar el entorno real. Lo que se blinda (criterio de hecho de S45):
 //
-//   - `nu -e '<lua>'` evalúa sin TTY y devuelve el código de salida correcto
+//   - `enu -e '<lua>'` evalúa sin TTY y devuelve el código de salida correcto
 //     (0 en éxito; 1 en error de ejecución, con stderr coherente);
 //   - un turno de agente headless con `--auto-permissions` (la tool sensible se
 //     concede) vs SIN él (permiso DENEGADO → código 3, agente.md §5, G20);
@@ -25,7 +25,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dbareagimeno/nu/internal/runtime"
+	"github.com/dbareagimeno/enu/internal/runtime"
 )
 
 // providersTomlToolStub declara un provider cuyo adaptador "toolstub" lo registra
@@ -84,17 +84,17 @@ providers.register_adapter("toolstub", {
 })
 `
 
-// bootCLI arranca un Runtime HEADLESS (WithForceUI(false): nu.has("ui")=false, el
-// caso G20) con providers+sessions+agent activadas por `nu.toml` y dirs de prueba
+// bootCLI arranca un Runtime HEADLESS (WithForceUI(false): enu.has("ui")=false, el
+// caso G20) con providers+sessions+agent activadas por `enu.toml` y dirs de prueba
 // conocidos. Devuelve el runtime, el data_dir (para inspeccionar el JSONL) y el
 // config_dir. Registra ya el adaptador "toolstub" desde Lua (como el CP-10).
 func bootCLI(t *testing.T) (*runtime.Runtime, string, string) {
 	t.Helper()
 	cfg := t.TempDir()
 	dataDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(cfg, "nu.toml"),
+	if err := os.WriteFile(filepath.Join(cfg, "enu.toml"),
 		[]byte("[plugins]\nenabled = [\"providers\", \"sessions\", \"agent\"]\n"), 0o644); err != nil {
-		t.Fatalf("write nu.toml: %v", err)
+		t.Fatalf("write enu.toml: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(cfg, "providers.toml"), []byte(providersTomlToolStub), 0o644); err != nil {
 		t.Fatalf("write providers.toml: %v", err)
@@ -152,15 +152,15 @@ func readAll(r *os.File) string {
 	return sb.String()
 }
 
-// --- `nu -e` (eval headless) + códigos de salida ---------------------------------
+// --- `enu -e` (eval headless) + códigos de salida ---------------------------------
 
-// TestCLIEvalSuccess: `nu -e '<lua>'` evalúa sin TTY, imprime los valores de retorno
+// TestCLIEvalSuccess: `enu -e '<lua>'` evalúa sin TTY, imprime los valores de retorno
 // a stdout y sale con 0.
 func TestCLIEvalSuccess(t *testing.T) {
 	rt, _, _ := bootCLI(t)
 	var code int
 	stdout, stderr := captureOutput(t, func() {
-		code = runWith(rt, cliOptions{eval: "return 1 + 1, nu.version.api"})
+		code = runWith(rt, cliOptions{eval: "return 1 + 1, enu.version.api"})
 	})
 	if code != exitOK {
 		t.Fatalf("código de salida: got %d, want %d (stderr=%q)", code, exitOK, stderr)
@@ -171,7 +171,7 @@ func TestCLIEvalSuccess(t *testing.T) {
 	}
 }
 
-// TestCLIEvalRuntimeErrorExit: `nu -e` con un chunk que LANZA un error estructurado
+// TestCLIEvalRuntimeErrorExit: `enu -e` con un chunk que LANZA un error estructurado
 // del core sale con código 1 y deja el error en stderr (no en stdout). Blinda que un
 // error de ejecución headless tiene código != 0 coherente.
 func TestCLIEvalRuntimeErrorExit(t *testing.T) {
@@ -192,6 +192,31 @@ func TestCLIEvalRuntimeErrorExit(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "ENOENT") {
 		t.Fatalf("stderr no nombra el código de error: %q", stderr)
+	}
+}
+
+// TestCLIEvalUserStringErrorExit_A40: A-40. `enu -e` con un `error("ENOENT: ...", 0)`
+// de código de USUARIO (un string cuyo prefijo coincide con un code reservado) sigue
+// saliendo con código 1 y dejando su texto en stderr. El apaño anterior lo habría
+// reclasificado como error estructurado del core parseando "CODE: mensaje"; el arreglo
+// no cambia el código de salida del `-e` (todo fallo de ejecución es 1) pero blinda que
+// el string del usuario no se disfraza de error del core en la frontera del CLI. La
+// contraparte estructurada (exit 1 con el code en stderr) la cubre
+// TestCLIEvalRuntimeErrorExit.
+func TestCLIEvalUserStringErrorExit_A40(t *testing.T) {
+	rt, _, _ := bootCLI(t)
+	var code int
+	stdout, stderr := captureOutput(t, func() {
+		code = runWith(rt, cliOptions{eval: `error("ENOENT: no encontré X", 0)`})
+	})
+	if code != exitError {
+		t.Fatalf("código de salida: got %d, want %d (stderr=%q)", code, exitError, stderr)
+	}
+	if strings.TrimSpace(stdout) != "" {
+		t.Fatalf("un error no debe escribir a stdout; got %q", stdout)
+	}
+	if !strings.Contains(stderr, "no encontré X") {
+		t.Fatalf("stderr no conserva el texto del usuario: %q", stderr)
 	}
 }
 
@@ -289,7 +314,7 @@ return "ok"`
 	}
 }
 
-// TestCLIAgentAutoPermissions: `nu -p '<...>' --auto-permissions` ejecuta el turno y
+// TestCLIAgentAutoPermissions: `enu -p '<...>' --auto-permissions` ejecuta el turno y
 // la tool sensible (write_file) se CONCEDE (modo auto, agente.md §5), así que el
 // turno termina OK (código 0) e imprime el texto final a stdout. El fichero se crea.
 func TestCLIAgentAutoPermissions(t *testing.T) {
@@ -320,7 +345,7 @@ func TestCLIAgentAutoPermissions(t *testing.T) {
 	}
 }
 
-// TestCLIAgentPermissionDeniedExit3: `nu -p '<...>'` SIN --auto-permissions: la tool
+// TestCLIAgentPermissionDeniedExit3: `enu -p '<...>'` SIN --auto-permissions: la tool
 // sensible (write_file) se DENIEGA en headless (agente.md §5, G20). El CLI sale con
 // código 3 (distinto de 1) y stderr menciona --auto-permissions / allow. El fichero
 // NO se crea. El turno en sí NO se rompe (el modelo recibe el error y responde).
@@ -440,12 +465,12 @@ func TestCLIContinueResumesMostRecent(t *testing.T) {
 	repo := t.TempDir()
 	registerWriteStub(t, rt, repo) // el stub pedirá write_file; con --auto-permissions se concede
 
-	// El proyecto del `--continue` es el cwd del PROCESO (lo que `nu.fs.cwd()`
-	// devuelve), no `repo`: el driver del CLI resuelve la sesión por `nu.fs.cwd()`.
+	// El proyecto del `--continue` es el cwd del PROCESO (lo que `enu.fs.cwd()`
+	// devuelve), no `repo`: el driver del CLI resuelve la sesión por `enu.fs.cwd()`.
 	// Creamos las sesiones de prueba para ESE cwd, para que `--continue` las vea.
-	cwdRes, err := rt.EvalString("return nu.fs.cwd()")
+	cwdRes, err := rt.EvalString("return enu.fs.cwd()")
 	if err != nil {
-		t.Fatalf("nu.fs.cwd: %v", err)
+		t.Fatalf("enu.fs.cwd: %v", err)
 	}
 	procCwd := strings.TrimSpace(cwdRes[0])
 
@@ -453,10 +478,10 @@ func TestCLIContinueResumesMostRecent(t *testing.T) {
 	// now_ms + sufijo; las creamos en orden, así la última es la más reciente). Las
 	// cerramos para soltar el lock (si no, reanudar la más reciente chocaría con su
 	// propio lock). Va por EvalTaskString porque `sessions.open` registra un
-	// `nu.task.cleanup` (que exige estar en una task, §3).
+	// `enu.task.cleanup` (que exige estar en una task, §3).
 	createSessions := `
 local sessions = require("sessions")
-local cwd = nu.fs.cwd()
+local cwd = enu.fs.cwd()
 local ids = {}
 for i = 1, 3 do
   local s = sessions.open({ cwd = cwd })
@@ -582,10 +607,10 @@ func fileSize(t *testing.T, path string) int64 {
 	return fi.Size()
 }
 
-// --- `nu --default-config` (onramp sin TTY, ADR-015/G33) --------------------------
+// --- `enu --default-config` (onramp sin TTY, ADR-015/G33) --------------------------
 
-// TestCLIDefaultConfigPersistent: `nu --default-config` SOLO (sin acción headless)
-// escribe el conjunto de producto en `nu.toml`, informa a stdout dónde, y sale con 0.
+// TestCLIDefaultConfigPersistent: `enu --default-config` SOLO (sin acción headless)
+// escribe el conjunto de producto en `enu.toml`, informa a stdout dónde, y sale con 0.
 // Ejercita `runDefaultConfig(rt)` con un Runtime de dirs de prueba (sin tocar el HOME
 // real). Blinda la pieza "onramp persistente sin TTY" de G33.
 func TestCLIDefaultConfigPersistent(t *testing.T) {
@@ -599,7 +624,7 @@ func TestCLIDefaultConfigPersistent(t *testing.T) {
 		t.Fatalf("código: got %d, want %d (stderr=%q)", code, exitOK, stderr)
 	}
 	// stdout nombra el fichero escrito y el siguiente paso (accionable).
-	if !strings.Contains(stdout, "nu.toml") || !strings.Contains(stdout, "nu -p") {
+	if !strings.Contains(stdout, "enu.toml") || !strings.Contains(stdout, "enu -p") {
 		t.Fatalf("stdout debería nombrar el fichero y el siguiente paso; got %q", stdout)
 	}
 	// G35/ADR-017: el mensaje es honesto sobre la API key (no la promesa engañosa
@@ -610,16 +635,16 @@ func TestCLIDefaultConfigPersistent(t *testing.T) {
 	if !strings.Contains(stdout, "agent.toml") || !strings.Contains(stdout, "providers.toml") {
 		t.Fatalf("stdout debería reportar las plantillas creadas; got %q", stdout)
 	}
-	// El `nu.toml` quedó con el conjunto de producto (sonda providers) y SIN example.
-	data, err := os.ReadFile(filepath.Join(cfg, "nu.toml"))
+	// El `enu.toml` quedó con el conjunto de producto (sonda providers) y SIN example.
+	data, err := os.ReadFile(filepath.Join(cfg, "enu.toml"))
 	if err != nil {
-		t.Fatalf("nu.toml no se escribió: %v", err)
+		t.Fatalf("enu.toml no se escribió: %v", err)
 	}
 	if !strings.Contains(string(data), "providers") {
-		t.Fatalf("plugins.enabled no nombra el conjunto de producto; nu.toml:\n%s", data)
+		t.Fatalf("plugins.enabled no nombra el conjunto de producto; enu.toml:\n%s", data)
 	}
 	if strings.Contains(string(data), "example") {
-		t.Fatalf("el conjunto persistido no debe incluir example; nu.toml:\n%s", data)
+		t.Fatalf("el conjunto persistido no debe incluir example; enu.toml:\n%s", data)
 	}
 	// G35: las plantillas de config de agente quedaron en disco y son usables.
 	agentData, err := os.ReadFile(filepath.Join(cfg, "agent.toml"))
@@ -634,13 +659,13 @@ func TestCLIDefaultConfigPersistent(t *testing.T) {
 	}
 }
 
-// TestCLIDefaultConfigPersistentMalformedExit1: `nu --default-config` ante un `nu.toml`
+// TestCLIDefaultConfigPersistentMalformedExit1: `enu --default-config` ante un `enu.toml`
 // mal formado NO lo sobrescribe y sale con código 1 (error de ejecución), con stderr
 // accionable. Blinda que el modo persistente no destruye config del usuario.
 func TestCLIDefaultConfigPersistentMalformedExit1(t *testing.T) {
 	cfg := t.TempDir()
 	bad := "esto no es toml = = [[[\n"
-	if err := os.WriteFile(filepath.Join(cfg, "nu.toml"), []byte(bad), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cfg, "enu.toml"), []byte(bad), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	rt := runtime.New(runtime.WithDataDir(t.TempDir()), runtime.WithConfigDir(cfg), runtime.WithForceUI(false))
@@ -654,21 +679,21 @@ func TestCLIDefaultConfigPersistentMalformedExit1(t *testing.T) {
 	if strings.TrimSpace(stdout) != "" {
 		t.Fatalf("un fallo no debe escribir a stdout; got %q", stdout)
 	}
-	if !strings.Contains(stderr, "nu.toml") {
-		t.Fatalf("stderr debería ser accionable y nombrar nu.toml; got %q", stderr)
+	if !strings.Contains(stderr, "enu.toml") {
+		t.Fatalf("stderr debería ser accionable y nombrar enu.toml; got %q", stderr)
 	}
 	// El fichero roto sigue intacto.
-	data, _ := os.ReadFile(filepath.Join(cfg, "nu.toml"))
+	data, _ := os.ReadFile(filepath.Join(cfg, "enu.toml"))
 	if string(data) != bad {
-		t.Fatalf("el nu.toml mal formado NO debe sobrescribirse; quedó:\n%s", data)
+		t.Fatalf("el enu.toml mal formado NO debe sobrescribirse; quedó:\n%s", data)
 	}
 }
 
-// TestCLIDefaultConfigEphemeral: `nu --default-config -e '<lua>'` activa el conjunto de
-// producto SOLO para ese proceso (sin escribir `nu.toml`) y ejecuta el `-e`. Como `run`
+// TestCLIDefaultConfigEphemeral: `enu --default-config -e '<lua>'` activa el conjunto de
+// producto SOLO para ese proceso (sin escribir `enu.toml`) y ejecuta el `-e`. Como `run`
 // (no `runWith`) es quien construye el runtime efímero, este test ejercita el camino
 // equivalente: un Runtime con `WithEnabledPlugins(OfficialProductSet)` + dirs de prueba,
-// y comprueba que tras `runWith(-e)` el `nu.toml` NO existe y el conjunto está activo.
+// y comprueba que tras `runWith(-e)` el `enu.toml` NO existe y el conjunto está activo.
 func TestCLIDefaultConfigEphemeral(t *testing.T) {
 	cfg := t.TempDir()
 	names, err := runtime.OfficialProductSet()
@@ -686,7 +711,7 @@ func TestCLIDefaultConfigEphemeral(t *testing.T) {
 	var code int
 	stdout, stderr := captureOutput(t, func() {
 		// Cuenta las extensiones activas vía la API pública.
-		code = runWith(rt, cliOptions{eval: `local n=0 for _,p in ipairs(nu.plugin.list()) do if p.enabled then n=n+1 end end return n`})
+		code = runWith(rt, cliOptions{eval: `local n=0 for _,p in ipairs(enu.plugin.list()) do if p.enabled then n=n+1 end end return n`})
 	})
 	if code != exitOK {
 		t.Fatalf("código: got %d, want %d (stderr=%q)", code, exitOK, stderr)
@@ -694,8 +719,8 @@ func TestCLIDefaultConfigEphemeral(t *testing.T) {
 	if got, want := strings.TrimSpace(stdout), fmt.Sprint(len(names)); got != want {
 		t.Fatalf("esperaba %s extensiones de producto activas; got %q", want, got)
 	}
-	// NO se escribió `nu.toml` (efímero = solo memoria).
-	if _, err := os.Stat(filepath.Join(cfg, "nu.toml")); !os.IsNotExist(err) {
-		t.Fatalf("el modo efímero NO debe escribir nu.toml; err=%v", err)
+	// NO se escribió `enu.toml` (efímero = solo memoria).
+	if _, err := os.Stat(filepath.Join(cfg, "enu.toml")); !os.IsNotExist(err) {
+		t.Fatalf("el modo efímero NO debe escribir enu.toml; err=%v", err)
 	}
 }

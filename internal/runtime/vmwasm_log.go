@@ -1,7 +1,7 @@
 package runtime
 
-// Catálogo de nu.log sobre el backend wasm (M13b, §15). Contraparte de log.go:
-// nu.log.debug/info/warn/error(fmt, ...) y print (alias de info). El formateo
+// Catálogo de enu.log sobre el backend wasm (M13b, §15). Contraparte de log.go:
+// enu.log.debug/info/warn/error(fmt, ...) y print (alias de info). El formateo
 // (string.format multi-arg, tostring de un solo arg) se hace en Lua —su semántica
 // exacta de directivas—; el HostFn recibe el string final y lo escribe con el
 // logger del Runtime (best-effort: un fallo de disco no se propaga, §15).
@@ -15,7 +15,7 @@ package runtime
 // lectura del `ownerStack` es single-thread, sin candado (ADR-004).
 
 import (
-	"github.com/dbareagimeno/nu/internal/vmwasm"
+	"github.com/dbareagimeno/enu/internal/vmwasm"
 )
 
 func registerLogWasm(p *vmwasm.Pool, rt *Runtime) {
@@ -32,16 +32,16 @@ func registerLogWasm(p *vmwasm.Pool, rt *Runtime) {
 
 	// Wrapper Lua: formatea los args y llama al primitivo del nivel. print = info.
 	p.AddPreludioW(`
-nu.log = nu.log or {}
+enu.log = enu.log or {}
 local function __logfmt(...)
   local n = select("#", ...)
   if n == 0 then return "" end
   if n == 1 then local a = ...; return tostring(a) end
   return string.format(...)
 end
-function nu.log.debug(...) nu.log._debug(__logfmt(...)) end
-function nu.log.info(...) nu.log._info(__logfmt(...)) end
-function nu.log.warn(...) nu.log._warn(__logfmt(...)) end
-function nu.log.error(...) nu.log._error(__logfmt(...)) end
-print = nu.log.info`, "log._debug", "log._info", "log._warn", "log._error")
+function enu.log.debug(...) enu.log._debug(__logfmt(...)) end
+function enu.log.info(...) enu.log._info(__logfmt(...)) end
+function enu.log.warn(...) enu.log._warn(__logfmt(...)) end
+function enu.log.error(...) enu.log._error(__logfmt(...)) end
+print = enu.log.info`, "log._debug", "log._info", "log._warn", "log._error")
 }

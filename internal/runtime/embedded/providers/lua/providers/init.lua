@@ -3,17 +3,17 @@
 -- Implementa el contrato de [providers.md](../../../../../docs/providers.md):
 --
 --   1. **Lector del registro TOML** (§1): carga `providers.toml` de
---      `nu.config.dir()`, lo decodifica con `nu.toml.decode` y construye un
+--      `enu.config.dir()`, lo decodifica con `enu.toml.decode` y construye un
 --      registro de providers y modelos resoluble por `"proveedor/id-o-alias"`.
 --   2. **Contrato del adaptador** (§3): `register_adapter` valida la *forma* que
 --      un adaptador debe cumplir; `resolve` empareja un modelo con su adaptador
 --      y una `ProviderConfig` ya cocinada (base_url + api_key del entorno + extra
 --      + ModelInfo).
 --   3. **`approx_tokens`** (§4, G23): heurística ~4 bytes/token, Lua puro. Vivía
---      en el core como `nu.text.approx_tokens` y salió de él (G23): "token" es
+--      en el core como `enu.text.approx_tokens` y salió de él (G23): "token" es
 --      vocabulario de ESTA extensión.
 --
--- Todo sobre la API pública (api.md): `nu.toml`, `nu.fs`, `nu.config.dir`,
+-- Todo sobre la API pública (api.md): `enu.toml`, `enu.fs`, `enu.config.dir`,
 -- `require`, `error` estructurado (ADR-009). NINGÚN privilegio de kernel.
 --
 -- Código de error de la extensión: `EPROVIDER` (providers.md §3; las extensiones
@@ -134,9 +134,9 @@ end
 -- ---------------------------------------------------------------------------
 
 -- registry_path() -> string. Ruta de `providers.toml` (providers.md §1: "vive en
--- nu.config.dir()").
+-- enu.config.dir()").
 local function registry_path()
-  return nu.config.dir() .. "/providers.toml"
+  return enu.config.dir() .. "/providers.toml"
 end
 
 -- build_index construye, a partir del TOML decodificado, un índice plano de
@@ -200,8 +200,8 @@ end
 
 -- load_registry carga y cachea el registro. Perezoso (no toca el disco hasta la
 -- primera resolución). Un `providers.toml` AUSENTE es válido y da un registro
--- vacío (un nu recién arrancado sin modelos configurados no es un error): se
--- distingue ENOENT de un fallo de IO real con el código del error de `nu.fs`.
+-- vacío (un enu recién arrancado sin modelos configurados no es un error): se
+-- distingue ENOENT de un fallo de IO real con el código del error de `enu.fs`.
 -- Un TOML mal formado SÍ es error accionable (EPROVIDER) que nombra el fichero.
 local function load_registry()
   if registry ~= nil then
@@ -209,9 +209,9 @@ local function load_registry()
   end
   local path = registry_path()
 
-  local ok, content = pcall(nu.fs.read, path)
+  local ok, content = pcall(enu.fs.read, path)
   if not ok then
-    -- `nu.fs.read` lanza estructurado (api.md §5). ENOENT: fichero ausente =>
+    -- `enu.fs.read` lanza estructurado (api.md §5). ENOENT: fichero ausente =>
     -- registro vacío. Cualquier otro error (EACCES, EIO) se propaga.
     if type(content) == "table" and content.code == "ENOENT" then
       registry = build_index(nil)
@@ -220,7 +220,7 @@ local function load_registry()
     error(content)
   end
 
-  local okd, decoded = pcall(nu.toml.decode, content)
+  local okd, decoded = pcall(enu.toml.decode, content)
   if not okd then
     eprovider(string.format("providers.toml mal formado (%s): %s", path,
       (type(decoded) == "table" and decoded.message) or tostring(decoded)))
@@ -269,7 +269,7 @@ function M.resolve(ref)
   -- local). No es error aquí: el adaptador decide si la necesita.
   local api_key = nil
   if type(prov.api_key_env) == "string" and prov.api_key_env ~= "" then
-    api_key = nu.sys.env(prov.api_key_env)
+    api_key = enu.sys.env(prov.api_key_env)
   end
 
   -- ModelInfo cocinado para el adaptador: el id tal y como lo espera el provider

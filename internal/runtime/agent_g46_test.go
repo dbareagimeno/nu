@@ -68,7 +68,7 @@ func TestAgentG46ResumeReaplicaEventos(t *testing.T) {
 	// Cambios repetidos a propósito: el replay debe quedarse con el último.
 	h.eval(`
 		out1, errc1, SID, MODEL1 = nil, nil, nil, nil
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local ok, e = pcall(function()
 				local agent = require("agent")
 				` + registerToolStub + `
@@ -95,7 +95,7 @@ func TestAgentG46ResumeReaplicaEventos(t *testing.T) {
 	// Reanudación con los opts CALLADOS: el transcript manda sobre agent.toml.
 	h.eval(`
 		out2, errc2, MODEL2, THINK2, ALLOW2, DENY2 = nil, nil, nil, nil, nil, nil
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local ok, e = pcall(function()
 				local agent = require("agent")
 				local s = agent.session{ cwd = "` + repo + `", resume = SID }
@@ -121,7 +121,7 @@ func TestAgentG46ResumeReaplicaEventos(t *testing.T) {
 	// reaplican igual (no son "dato repetible" que un opts pise).
 	h.eval(`
 		out3, errc3, MODEL3, THINK3, ALLOW3, DENY3 = nil, nil, nil, nil, nil, nil
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local ok, e = pcall(function()
 				local agent = require("agent")
 				local s = agent.session{ cwd = "` + repo + `", resume = SID,

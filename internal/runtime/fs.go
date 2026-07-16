@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-// `nu.fs` — sistema de ficheros (api.md §5, sesión S14). Primitivas de IO de
+// `enu.fs` — sistema de ficheros (api.md §5, sesión S14). Primitivas de IO de
 // disco, **todas ⏸ salvo `cwd`** (que es síncrona y [W]): se construyen sobre el
 // puente `suspend` del scheduler (S04, ADR-011) —sueltan el token, hacen el IO
 // **bloqueante** en una goroutine de fondo que **jamás toca Lua**, y al volver
@@ -45,7 +45,7 @@ const (
 )
 
 // fsState es el estado de sesión del submódulo `fs`: hoy, solo el directorio
-// temporal propio (`nu.fs.tmpdir`, §5). Se crea **perezosamente** la primera vez
+// temporal propio (`enu.fs.tmpdir`, §5). Se crea **perezosamente** la primera vez
 // que `tmpdir` se invoca (no todas las sesiones lo necesitan) y se **reutiliza**
 // en las siguientes; `Close` lo borra recursivamente. El candado protege la
 // creación perezosa: las primitivas ⏸ corren su IO en goroutines de fondo, así
@@ -134,7 +134,7 @@ func createExclTemp(dir string, perm os.FileMode) (string, *os.File, error) {
 		if _, err := rand.Read(suffix[:]); err != nil {
 			return "", nil, err
 		}
-		name := filepath.Join(dir, ".nu-fs-"+hex.EncodeToString(suffix[:])+".tmp")
+		name := filepath.Join(dir, ".enu-fs-"+hex.EncodeToString(suffix[:])+".tmp")
 		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
 		if err != nil {
 			if os.IsExist(err) {
@@ -196,7 +196,7 @@ func (s *fsState) ensureTmpdir() (string, error) {
 	if s.tmpdir != "" {
 		return s.tmpdir, nil
 	}
-	dir, err := os.MkdirTemp("", "nu-session-*")
+	dir, err := os.MkdirTemp("", "enu-session-*")
 	if err != nil {
 		return "", err
 	}

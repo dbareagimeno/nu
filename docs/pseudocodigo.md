@@ -18,7 +18,7 @@ return {
   caps = { tools = true, images = true, thinking = true, system = true, usage = true },
 
   stream = function(req, provider)
-    local s = nu.http.stream{
+    local s = enu.http.stream{
       url = provider.base_url .. "/v1/messages",
       method = "POST",
       headers = {
@@ -26,14 +26,14 @@ return {
         ["anthropic-version"] = "2023-06-01",
         ["content-type"] = "application/json",
       },
-      body = nu.json.encode(to_wire(req)),          -- canónico → dialecto
+      body = enu.json.encode(to_wire(req)),          -- canónico → dialecto
       idle_timeout_ms = 60000,                       -- [HALLAZGO H2]
     }
 
     if s.status >= 400 then
       local body = {}
       for chunk in s:chunks() do body[#body + 1] = chunk end
-      local err = nu.json.decode(table.concat(body))
+      local err = enu.json.decode(table.concat(body))
       error({ code = "EPROVIDER", message = err.error.message,
               detail = { status = s.status,
                          retryable = s.status == 429 or s.status >= 500 } })
@@ -43,7 +43,7 @@ return {
     local assembling = new_message_assembler()       -- Lua puro
     return function()                                 -- iterator<Event>
       for sse in s:events() do                        -- ⏸ api.md §8
-        local d = nu.json.decode(sse.data)
+        local d = enu.json.decode(sse.data)
         if d.type == "content_block_delta" and d.delta.type == "text_delta" then
           assembling:push_text(d.index, d.delta.text)
           return { type = "text", text = d.delta.text }
@@ -66,26 +66,26 @@ return {
 }
 ```
 
-Veredicto: se escribe entero con `nu.http.stream` + `s:events()` +
-`nu.json`. Único roce: el timeout de inactividad ([H2](#hallazgos)).
+Veredicto: se escribe entero con `enu.http.stream` + `s:events()` +
+`enu.json`. Único roce: el timeout de inactividad ([H2](#hallazgos)).
 
 ## Escenario 2: el turno del agente (agente.md §2) y la espera de permisos
 
 ```lua
 -- extensión agent (núcleo del loop, simplificado)
 function Session:send(content)
-  self:append{ t = "message", ts = nu.sys.now_ms(),
+  self:append{ t = "message", ts = enu.sys.now_ms(),
                message = { role = "user", content = as_blocks(content) } }
 
   while true do
     local req = run_hook_chain("request.pre", self:assemble_request(), self.ctx)
-    local msg = with_retries(function()              -- backoff: nu.task.sleep
+    local msg = with_retries(function()              -- backoff: enu.task.sleep
       return consume_stream(self, req)               -- escenario 1 + agent:delta
     end)
 
-    self:append{ t = "message", ts = nu.sys.now_ms(),
+    self:append{ t = "message", ts = enu.sys.now_ms(),
                  message = msg, usage = self.last_usage, model = self.model }
-    nu.events.emit("agent:message", { session = self.id, message = msg })
+    enu.events.emit("agent:message", { session = self.id, message = msg })
 
     local calls = tool_calls_in(msg)
     if #calls == 0 then return msg end
@@ -105,9 +105,9 @@ function Session:run_tool(call)
   end
   if verdict == nil and self.permissions.mode == "ask" then
     if not interactive() then return denied("headless")  end   -- default deny
-    local fut = nu.task.future()                     -- [HALLAZGO H1]
+    local fut = enu.task.future()                     -- [HALLAZGO H1]
     pending_asks[call.id] = fut
-    nu.events.emit("agent:permission.asked", { id = call.id, call = call })
+    enu.events.emit("agent:permission.asked", { id = call.id, call = call })
     verdict = fut:await()                            -- ⏸ hasta respond()
   end
   if verdict.deny then return denied(verdict.deny) end
@@ -139,7 +139,7 @@ agent.tool{
   schema = { type = "object", properties = { command = { type = "string" } } },
   permissions = { default = "ask" },                 -- muta: pide permiso
   handler = function(args, ctx)
-    local p = nu.proc.spawn({ "sh", "-c", args.command }, { cwd = ctx.cwd })
+    local p = enu.proc.spawn({ "sh", "-c", args.command }, { cwd = ctx.cwd })
     local out = {}
     while true do
       local line = p:read_line("stdout")             -- ⏸
@@ -158,40 +158,47 @@ agent.tool{
 Veredicto: limpio. `read_line` + `progress` dan streaming de salida en vivo
 sin nada nuevo.
 
+*Nota posterior: G55 (2026-07-16, de SEC-04) invirtió el default de entorno
+que este sketch ilustra — la tool `bash` del contrato monta el entorno del
+hijo **sin** los secretos del provider (`providers.secret_env_vars()`,
+[agente.md](agente.md) §3); lo mismo vale para el `enu.proc.spawn(argv, {})`
+del cliente MCP del escenario 8. Ambos sketches reflejan el estado previo a
+esa resolución: no los copies como plantilla de lanzamiento de subprocesos.*
+
 ## Escenario 4: subagente en worker con proxy de tools (agente.md §9)
 
 ```lua
 -- Lado principal: lanzar y atender el proxy
 function Session:spawn_worker_sub(opts)
-  local w = nu.worker.spawn("agent.sub_loop", { caps = opts.caps })
+  local w = enu.worker.spawn("agent.sub_loop", { caps = opts.caps })
   w:on_message(function(m)
     if m.type == "tool" then
-      nu.task.spawn(function()
+      enu.task.spawn(function()
         local result = self:run_tool(m.call)         -- pipeline completo (§2)
         w:send{ type = "tool_result", id = m.call.id, result = result }
       end)
     elseif m.type == "delta" then
-      nu.events.emit("agent:delta", { sub = m.sub_id, text = m.text })
+      enu.events.emit("agent:delta", { sub = m.sub_id, text = m.text })
     end
   end)
   w:send{ type = "start", opts = strip_to_json(opts) }   -- solo datos
   return wrap_sub(w)
 end
 
--- Lado worker (agent/sub_loop.lua): sin nu.ui, sin nu.events
+-- Lado worker (agent/sub_loop.lua): sin enu.ui, sin enu.events
 local adapter = require("providers.adapters.anthropic")  -- [HALLAZGO H3]
-local start = nu.worker.parent.recv()                    -- ⏸
+local start = enu.worker.parent.recv()                    -- ⏸
 for _ = 1, start.opts.max_turns do
   for ev in adapter.stream(req, cfg) do
     if ev.type == "text" then
-      nu.worker.parent.send{ type = "delta", text = ev.text }
+      enu.worker.parent.send{ type = "delta", text = ev.text }
     elseif ev.type == "done" then msg = ev.message end
   end
   local calls = tool_calls_in(msg)
   if #calls == 0 then break end
   for _, call in ipairs(calls) do
-    nu.worker.parent.send{ type = "tool", call = call }
-    local r = nu.worker.parent.recv()                    -- ⏸ resultado del proxy
+    enu.worker.parent.send{ type = "tool", call = call }
+    local r = enu.worker.parent.recv()                    -- ⏸ resultado del proxy
     append_result(req, call, r.result)
   end
 end
@@ -202,34 +209,34 @@ Roce: el worker necesita `require` de módulos Lua de plugins (el adaptador)
 y la especificación no decía explícitamente que el loader resuelve dentro
 de workers ([H3](#hallazgos)).
 
-## Escenario 5: un picker difuso sobre `nu.ui` crudo (api.md §9 y §11)
+## Escenario 5: un picker difuso sobre `enu.ui` crudo (api.md §9 y §11)
 
 Sin toolkit (no está especificado a propósito): esto valida que la
 primitiva basta para construirlo.
 
 ```lua
 function fuzzy_picker(title)
-  local size = nu.ui.size()
-  local reg = nu.ui.region{ x = 4, y = 2, w = size.w - 8, h = 20, z = 100 }
-  local fut, query, files, sel = nu.task.future(), "", {}, 1   -- [H1] otra vez
+  local size = enu.ui.size()
+  local reg = enu.ui.region{ x = 4, y = 2, w = size.w - 8, h = 20, z = 100 }
+  local fut, query, files, sel = enu.task.future(), "", {}, 1   -- [H1] otra vez
 
-  nu.task.spawn(function()
-    files = nu.search.files(nu.fs.cwd())             -- ⏸ respeta .gitignore
+  enu.task.spawn(function()
+    files = enu.search.files(enu.fs.cwd())             -- ⏸ respeta .gitignore
     repaint()
   end)
 
   local function repaint()
-    local ranked = nu.search.fuzzy(query, files, { max = 18 })  -- síncrono
+    local ranked = enu.search.fuzzy(query, files, { max = 18 })  -- síncrono
     local lines = { { { text = title .. " " .. query, style = { bold = true } } } }
     for i, m in ipairs(ranked) do
       lines[#lines + 1] = { { text = files[m.index],
                               style = i == sel and { reverse = true } or {} } }
     end
-    reg:clear(); reg:blit(0, 0, nu.ui.block(lines))
-    reg:cursor(nu.text.width(title) + 1 + nu.text.width(query), 0)
+    reg:clear(); reg:blit(0, 0, enu.ui.block(lines))
+    reg:cursor(enu.text.width(title) + 1 + enu.text.width(query), 0)
   end
 
-  local input = nu.ui.on_input(function(ev)          -- tope de la pila
+  local input = enu.ui.on_input(function(ev)          -- tope de la pila
     if ev.type ~= "key" then return true end
     if ev.key == "escape" then fut:set(nil)
     elseif ev.key == "enter" then fut:set(current_selection())
@@ -259,9 +266,9 @@ agent.tool{
   schema = { type = "object", properties = { filter = { type = "string" } } },
   permissions = { default = "allow" },               -- solo lee y ejecuta tests
   handler = function(args, ctx)
-    local r = nu.proc.run({ "pytest", "-q", args.filter or "." },
+    local r = enu.proc.run({ "pytest", "-q", args.filter or "." },
                           { cwd = ctx.cwd, timeout_ms = 120000 })
-    return nu.json.decode(parse_summary(r.stdout))   -- tabla estructurada
+    return enu.json.decode(parse_summary(r.stdout))   -- tabla estructurada
   end,
 }
 
@@ -271,7 +278,7 @@ chat.renderer("run_tests", function(result, width)
     lines[#lines + 1] = { { text = "✗ " .. t.name, style = { fg = "error" } } }
   end
   lines[#lines + 1] = { { text = result.passed .. " passed", style = { fg = "ok" } } }
-  return nu.ui.block(lines)
+  return enu.ui.block(lines)
 end)
 
 chat.command{
@@ -294,23 +301,23 @@ componen un plugin real sin tocar nada interno.
 
 ## Hallazgos
 
-**H1 — Falta una primitiva de rendez-vous (`nu.task.future`).** Apareció
+**H1 — Falta una primitiva de rendez-vous (`enu.task.future`).** Apareció
 tres veces (espera de permisos, picker modal, y en general "una task espera
 un valor que otro código producirá"). Sin ella, el patrón sería polling con
 `task.sleep`. Resolución: añadir a [api.md](api.md) §3
-`nu.task.future() -> Future`, con `Future:set(v)` (síncrono, una sola vez)
+`enu.task.future() -> Future`, con `Future:set(v)` (síncrono, una sola vez)
 y `Future:await() -> v ⏸` (varios pueden esperar; si ya está resuelto,
 retorna inmediato).
 
 **H2 — Timeout de inactividad en streams.** `timeout_ms` razonablemente
 cubre hasta recibir cabeceras, pero un SSE puede quedarse mudo para
-siempre. Resolución: `opts.idle_timeout_ms` en `nu.http.stream` (lanza
+siempre. Resolución: `opts.idle_timeout_ms` en `enu.http.stream` (lanza
 `ETIMEOUT` si pasan N ms sin bytes).
 
 **H3 — `require` dentro de workers.** El escenario 4 necesita cargar el
 módulo del adaptador en el worker. Resolución: aclarar en [api.md](api.md)
 §13 que las rutas de `require` del loader (módulos Lua de plugins) están
-disponibles en workers; lo que no existe es la API `nu.plugin` (ciclo de
+disponibles en workers; lo que no existe es la API `enu.plugin` (ciclo de
 vida).
 
 Ningún otro punto de los seis escenarios requirió inventar API. Con H1-H3
@@ -343,8 +350,8 @@ local ok, result = pcall(tool.handler, args, ctx)
 
 -- GRIETA B [F2]: el handler de bash tenía un proceso vivo:
 handler = function(args, ctx)
-  local p = nu.proc.spawn({ "sh", "-c", args.command }, { cwd = ctx.cwd })
-  nu.task.cleanup(function() p:kill() end)   -- ← NO EXISTÍA; sin esto, el
+  local p = enu.proc.spawn({ "sh", "-c", args.command }, { cwd = ctx.cwd })
+  enu.task.cleanup(function() p:kill() end)   -- ← NO EXISTÍA; sin esto, el
   ...                                         --   aborto deja el proceso huérfano
 end
 -- Lo mismo el picker del escenario 5: si la task que lo llama se aborta,
@@ -363,13 +370,13 @@ end
 local M = { pending = {}, next_id = 0 }
 
 function M.connect(argv)
-  M.proc = nu.proc.spawn(argv, {})
-  nu.task.spawn(function()                       -- task lectora permanente
-    nu.task.cleanup(function() M.proc:kill() end) -- [F1/F2] otra vez
+  M.proc = enu.proc.spawn(argv, {})
+  enu.task.spawn(function()                       -- task lectora permanente
+    enu.task.cleanup(function() M.proc:kill() end) -- [F1/F2] otra vez
     while true do
       local line = M.proc:read_line("stdout")    -- ⏸
       if line == nil then return M.reconnect() end
-      local msg = nu.json.decode(line)
+      local msg = enu.json.decode(line)
       local fut = M.pending[msg.id]               -- correlación por id:
       if fut then M.pending[msg.id] = nil; fut:set(msg) end  -- futures ✓ (H1)
     end
@@ -378,14 +385,14 @@ end
 
 function M.request(method, params)                -- concurrente sin fricción
   M.next_id = M.next_id + 1
-  local fut = nu.task.future()
+  local fut = enu.task.future()
   M.pending[M.next_id] = fut
-  M.proc:write(nu.json.encode{ jsonrpc = "2.0", id = M.next_id,
+  M.proc:write(enu.json.encode{ jsonrpc = "2.0", id = M.next_id,
                                method = method, params = params } .. "\n") -- ⏸
   return fut:await()                              -- ⏸
 end
 
--- Apagado limpio: nu.events.on("core:shutdown", function() M.proc:kill() end) ✓
+-- Apagado limpio: enu.events.on("core:shutdown", function() M.proc:kill() end) ✓
 -- Arranque: connect() NO se llama al cargar el módulo (guía §1), sino en el
 -- primer uso o en core:ready. ✓
 ```
@@ -399,7 +406,7 @@ Un subagente en worker emite `delta` por cada token; el principal va lento
 (pintando). ¿Qué pasa con la cola de mensajes?
 
 ```lua
-nu.worker.parent.send{ type = "delta", text = ev.text }
+enu.worker.parent.send{ type = "delta", text = ev.text }
 -- La especificación no decía NADA del tamaño de la cola ni de qué pasa al
 -- llenarse [F3]. Sin límite: memoria sin cota (el mismo agujero que ya
 -- cerramos en streams §8). Con límite y error: ¿el worker revienta por ir
@@ -414,8 +421,8 @@ Quiere: desactivar la extensión oficial `chat`, cargar la suya, y que sus
 keymaps ganen a los de cualquier plugin.
 
 ```lua
--- 1. ¿Desactivar chat? No había mecanismo [F4]: nu.plugin.list() muestra
---    "enabled" pero nada lo gobierna. → nu.toml del usuario:
+-- 1. ¿Desactivar chat? No había mecanismo [F4]: enu.plugin.list() muestra
+--    "enabled" pero nada lo gobierna. → enu.toml del usuario:
 --      [plugins]
 --      disabled = ["chat"]
 
@@ -427,7 +434,7 @@ keymaps ganen a los de cualquier plugin.
 --    reciente gane → el usuario tiene la última palabra por construcción,
 --    sin mecanismo especial de prioridades.
 
--- 3. Su chat alternativo: agent.* + nu.events "agent:*" + toolkit — todo
+-- 3. Su chat alternativo: agent.* + enu.events "agent:*" + toolkit — todo
 --    público (ya validado en rondas previas). ✓
 ```
 
@@ -437,7 +444,7 @@ Cada `agent:delta` añade texto al mensaje en curso; ¿re-renderizar el
 markdown del mensaje entero por cada token es cuadrático? Respuesta: el
 repintado va coalescido a ~30 ms (ADR-007), así que el patrón correcto es
 re-renderizar el mensaje en curso **una vez por tick de pintado**, no por
-delta — y `nu.text.markdown` sobre unos pocos KB en Go son microsegundos.
+delta — y `enu.text.markdown` sobre unos pocos KB en Go son microsegundos.
 No es grieta de API; es un patrón que debe estar escrito en la guía
 ([F5](#hallazgos-ronda-2)).
 
@@ -446,11 +453,11 @@ No es grieta de API; es un patrón que debe estar escrito en la guía
 ## Hallazgos (ronda 2)
 
 **F1 — La cancelación no puede ser un error capturable, y faltaba
-`nu.task.cleanup`.** Si el aborto (por `cancel()` o por watchdog) se
+`enu.task.cleanup`.** Si el aborto (por `cancel()` o por watchdog) se
 entrega como error normal, cualquier `pcall` del ecosistema lo captura y
 el programa sigue como si nada (escenario 7). Resolución en
 [api.md](api.md) §1.3 y §3: el aborto desenrolla la task **sin pasar por
-`pcall`**, y `nu.task.cleanup(fn)` registra liberadores LIFO que corren
+`pcall`**, y `enu.task.cleanup(fn)` registra liberadores LIFO que corren
 siempre (éxito, error o aborto) — el `defer` de esta casa.
 
 **F2 — Vida de los recursos ligada a la task.** Procesos, regiones y
@@ -467,11 +474,11 @@ Desde handlers síncronos: `task.spawn` como siempre.
 **F4 — Arranque y gobierno de plugins sin especificar.** No había forma de
 desactivar un plugin ni orden de carga definido (¿quién gana un keymap?).
 Resolución en [api.md](api.md) §14: fichero de configuración del runtime
-`config.dir()/nu.toml` (`plugins.disabled`, presupuesto del watchdog) y
+`config.dir()/enu.toml` (`plugins.disabled`, presupuesto del watchdog) y
 orden canónico **core → plugins → init.lua del usuario → `core:ready`** —
 el usuario gana por ir último, sin sistema de prioridades.
 *Nota posterior: ADR-010 invirtió el defecto — las extensiones oficiales
-se distribuyen **inactivas** y `nu.toml` gobierna la activación, no la
+se distribuyen **inactivas** y `enu.toml` gobierna la activación, no la
 desactivación. El `plugins.disabled` de este hallazgo y del escenario 10
 refleja el estado previo a esa ADR.*
 
@@ -491,7 +498,7 @@ resolverse una a una.
 
 ```lua
 -- El picker del escenario 5, con el terminal a 120 columnas:
-local reg = nu.ui.region{ x = 4, y = 2, w = nu.ui.size().w - 8, h = 20, z = 100 }
+local reg = enu.ui.region{ x = 4, y = 2, w = enu.ui.size().w - 8, h = 20, z = 100 }
 -- El usuario encoge el terminal a 60 columnas. ¿Y ahora qué?
 --   · La región tiene w = 112 sobre una pantalla de 60: ¿se recorta? ¿error?
 --     La spec define el clipping de blit DENTRO de la región, pero no qué
@@ -503,21 +510,21 @@ local reg = nu.ui.region{ x = 4, y = 2, w = nu.ui.size().w - 8, h = 20, z = 100 
 ## Escenario 13: el ciclo de desarrollo del autor de plugins
 
 ```lua
--- Edito mi plugin y quiero probarlo SIN reiniciar nu:
-nu.plugin.reload("mi-plugin")   -- ← no existe
+-- Edito mi plugin y quiero probarlo SIN reiniciar enu:
+enu.plugin.reload("mi-plugin")   -- ← no existe
 -- Y aunque existiera: require cachea módulos; re-ejecutar init.lua
 -- duplicaría tools, comandos, keymaps y hooks (no hay des-registro masivo).
 -- Todos los registros devuelven handle (Sub, Keymap, Hook...), pero nadie
 -- los rastrea por plugin → no se puede deshacer "todo lo de mi-plugin".
--- Hoy la única vía es reiniciar nu en cada iteración.               [G2]
--- (Mismo agujero menor: editar providers.toml o nu.toml en caliente.)
+-- Hoy la única vía es reiniciar enu en cada iteración.               [G2]
+-- (Mismo agujero menor: editar providers.toml o enu.toml en caliente.)
 ```
 
 ## Escenario 14: dos sesiones de agente en la misma UI
 
 ```lua
 -- Un subagente en marcha + la sesión principal, ambos emitiendo:
-nu.events.emit("agent:delta", { text = ev.text })        -- ¿de QUIÉN es?
+enu.events.emit("agent:delta", { text = ev.text })        -- ¿de QUIÉN es?
 -- Los contratos no OBLIGAN a llevar session_id en cada payload agent:*;
 -- chat.md tampoco dice que filtre. Dos turnos concurrentes mezclarían
 -- deltas en el mismo bloque.                                        [G3]
@@ -533,8 +540,8 @@ session:send("otra cosa")   -- ¿EBUSY? ¿se encola? ¿cancela y reemplaza?
 ## Escenario 15: la misma sesión reanudada en dos terminales
 
 ```lua
--- Terminal A: nu --continue  → abre sessions/proy/2026-...jsonl
--- Terminal B: nu --continue  → ¡abre EL MISMO fichero!
+-- Terminal A: enu --continue  → abre sessions/proy/2026-...jsonl
+-- Terminal B: enu --continue  → ¡abre EL MISMO fichero!
 -- Dos procesos haciendo fs.append intercalado sobre un JSONL: corrupción
 -- silenciosa (líneas entrelazadas). sesiones.md no contempla lock alguno.
 --                                                                   [G5]
@@ -544,7 +551,7 @@ session:send("otra cosa")   -- ¿EBUSY? ¿se encola? ¿cancela y reemplaza?
 
 ```lua
 -- Quiero un subagente auditor: que lea TODO, que no escriba NADA.
-local w = nu.worker.spawn("auditor", { caps = { "fs", "text", "search" } })
+local w = enu.worker.spawn("auditor", { caps = { "fs", "text", "search" } })
 -- caps concede MÓDULOS ENTEROS: "fs" incluye write, remove, rename...
 -- No existe "fs de solo lectura" ni caps por función o por ruta. La
 -- granularidad módulo-entero se queda corta justo en el caso estrella
@@ -554,7 +561,7 @@ local w = nu.worker.spawn("auditor", { caps = { "fs", "text", "search" } })
 ## Escenario 17: flecos detectados sin escenario propio
 
 ```lua
--- a) nu.fs.watch(path, fn): ¿recursivo o un solo path? ¿respeta
+-- a) enu.fs.watch(path, fn): ¿recursivo o un solo path? ¿respeta
 --    .gitignore? (vigilar node_modules/ = ráfaga infinita) ¿coalesce
 --    ráfagas (git checkout toca 5000 ficheros)?                     [G7]
 
@@ -582,12 +589,12 @@ repo, y el interior de los workers. Hallazgos G10-G16, sin resolver, a
 ## Escenario 18: el bus de eventos bajo reentrada
 
 ```lua
-nu.events.on("agent:message", function(p)
-  nu.events.emit("mi-plugin:resumen", digest(p))   -- emit DENTRO de un emit
+enu.events.on("agent:message", function(p)
+  enu.events.emit("mi-plugin:resumen", digest(p))   -- emit DENTRO de un emit
 end)
-nu.events.on("agent:message", function(p)
+enu.events.on("agent:message", function(p)
   sub:cancel()                                     -- ¿y si cancela una sub
-  otra = nu.events.on("agent:message", g)          --  o suscribe NUEVOS
+  otra = enu.events.on("agent:message", g)          --  o suscribe NUEVOS
 end)                                               --  durante el despacho?
 -- ¿El emit anidado despacha en profundidad (recursión) o se encola?
 -- ¿Un handler recién suscrito ve el evento EN CURSO? ¿Y uno cancelado
@@ -599,9 +606,9 @@ end)                                               --  durante el despacho?
 
 ```lua
 -- La tool bash hace cat de un PNG por error:
-local r = nu.proc.run({ "cat", "logo.png" }, {})
+local r = enu.proc.run({ "cat", "logo.png" }, {})
 return r.stdout   -- bytes arbitrarios → tool_result → tres fronteras JSON:
--- 1) nu.json.encode hacia el provider: JSON exige UTF-8 válido. ¿Lanza?
+-- 1) enu.json.encode hacia el provider: JSON exige UTF-8 válido. ¿Lanza?
 --    ¿Reemplaza? ¿Silencio?
 -- 2) la entrada `message` del transcript JSONL: igual.
 -- 3) un Worker:send con ese resultado: "JSON-able"... ¿lo es?
@@ -616,7 +623,7 @@ return r.stdout   -- bytes arbitrarios → tool_result → tres fronteras JSON:
 [providers.corp]
 adapter  = "openai-compat"
 base_url = "https://llm.interna.corp"   -- CA corporativa autofirmada
--- nu.http no tiene opciones TLS: ni ca_file, ni insecure, ni proxy
+-- enu.http no tiene opciones TLS: ni ca_file, ni insecure, ni proxy
 -- explícito (¿se respeta HTTPS_PROXY del entorno? sin especificar).
 -- El caso anunciado no se puede configurar.                         [G12]
 ```
@@ -626,7 +633,7 @@ base_url = "https://llm.interna.corp"   -- CA corporativa autofirmada
 ```lua
 -- Un adaptador para un plan de suscripción (no API key): OAuth device flow
 -- sí es escribible (http.request en bucle de polling + abrir URL con
--- nu.proc). Pero el flujo con callback localhost NO: no existe primitiva
+-- enu.proc). Pero el flujo con callback localhost NO: no existe primitiva
 -- de servidor/listener HTTP. ¿Y dónde guarda el adaptador el refresh
 -- token? (¿plugins/<nombre>/? ¿en claro?) Sin convención.           [G13]
 ```
@@ -634,12 +641,12 @@ base_url = "https://llm.interna.corp"   -- CA corporativa autofirmada
 ## Escenario 22: el repo malicioso (modelo de confianza)
 
 ```lua
--- nu se abre en un repo clonado de internet. El repo trae:
---   .nu/skills/inocente/SKILL.md   → se inyecta su índice en el system
+-- enu se abre en un repo clonado de internet. El repo trae:
+--   .enu/skills/inocente/SKILL.md   → se inyecta su índice en el system
 --                                     prompt (agente §6-§7) SIN preguntar
---   .nu/agent.toml                 → ¡puede traer allow = ["bash:*"]!
+--   .enu/agent.toml                 → ¡puede traer allow = ["bash:*"]!
 --                                     (precedencia: proyecto > global)
--- Resultado: clonar un repo y abrir nu ya es ejecutar la voluntad del
+-- Resultado: clonar un repo y abrir enu ya es ejecutar la voluntad del
 -- repo. Mismo problema con descripciones de tools de servidores MCP de
 -- terceros (texto no confiable inyectado al modelo). No hay modelo de
 -- confianza: ni trust-on-first-use, ni qué config del repo se honra sin
@@ -650,8 +657,8 @@ base_url = "https://llm.interna.corp"   -- CA corporativa autofirmada
 
 ```lua
 -- worker con task [W]: ¿el worker tiene su PROPIO scheduler/event loop?
-nu.task.spawn(...)   -- ¿múltiples tasks dentro de un worker? ¿timers?
-nu.task.race(...)    -- (el escenario 4 ya lo asumió para multiplexar
+enu.task.spawn(...)   -- ¿múltiples tasks dentro de un worker? ¿timers?
+enu.task.race(...)    -- (el escenario 4 ya lo asumió para multiplexar
                      --  stream y cancelación... sin que estuviera escrito)
 -- ¿Aplica watchdog dentro del worker? ¿Con qué presupuesto?        [G15]
 
@@ -660,7 +667,7 @@ nu.task.race(...)    -- (el escenario 4 ya lo asumió para multiplexar
 -- escrituras al mismo path — last-write-wins silencioso.            [G16]
 ```
 
-Menores anotados al pasar: rotación del fichero de `nu.log`
+Menores anotados al pasar: rotación del fichero de `enu.log`
 (→ [P20](pospuesto.md)); propiedad de los `Timer` (¿mueren con la task?
 → convención `cleanup`); restricciones de versión en `requires` (se
 pliega a [P4](pospuesto.md) cuando se reabra).
@@ -672,7 +679,7 @@ pliega a [P4](pospuesto.md) cuando se reabra).
 Pregunta del stress test: si la extensión oficial `agent` existe, ¿puede
 **otro** plugin construir encima loops deterministas de agentes y correrlos
 en paralelo, usando solo el contrato público ([agente.md](agente.md)) +
-`nu.task` + `nu.worker`? Misma regla de siempre. Dos ejes que tirar de los
+`enu.task` + `enu.worker`? Misma regla de siempre. Dos ejes que tirar de los
 extremos: **determinismo** (un loop reproducible en su control de flujo) y
 **paralelismo** (N agentes a la vez). Fuera de alcance a propósito: el
 no-determinismo del *muestreo* del modelo (temperatura/seed) es territorio
@@ -729,7 +736,7 @@ de retorno — lo anoto sin elevarlo a hallazgo.
 
 ```lua
 local seen = {}
-nu.events.on("agent:tool.end", function(p)
+enu.events.on("agent:tool.end", function(p)
   if p.session == s.id and p.tool == "run_tests" then seen[#seen+1] = p.result end
 end)
 ```
@@ -745,14 +752,14 @@ abrir 50 streams y comerme un 429), semántica *allSettled* (un fallo no
 mata a los demás), y resultados **alineados con la entrada**.
 
 ```lua
--- Semáforo construido SOLO con nu.task.future (como el picker construyó el
+-- Semáforo construido SOLO con enu.task.future (como el picker construyó el
 -- modal): valida otra vez que la primitiva basta.
 local function semaphore(n)
   local free, waiters = n, {}
   return {
     acquire = function()                              -- ⏸
       if free > 0 then free = free - 1; return end
-      local f = nu.task.future(); waiters[#waiters + 1] = f; f:await()
+      local f = enu.task.future(); waiters[#waiters + 1] = f; f:await()
     end,
     release = function()
       local w = table.remove(waiters, 1)
@@ -767,7 +774,7 @@ function fan_out(root, territories, limit)
   for i, terr in ipairs(territories) do
     fns[i] = function()
       sem.acquire()                                   -- ⏸ respeta el límite
-      nu.task.cleanup(sem.release)                    -- libera en éxito/error/aborto (F1)
+      enu.task.cleanup(sem.release)                    -- libera en éxito/error/aborto (F1)
       local ok, res = pcall(function()
         return root:spawn{                            -- task por defecto (§9)
           permissions = recortar(root.permissions, terr),   -- nunca amplía (§11)
@@ -777,19 +784,19 @@ function fan_out(root, territories, limit)
       return { ok = ok, value = res }                 -- allSettled: jamás relanza
     end
   end
-  return nu.task.all(fns)                             -- ⏸ espera a todos  [HALLAZGO G27]
+  return enu.task.all(fns)                             -- ⏸ espera a todos  [HALLAZGO G27]
 end
 ```
 
 Esto **es paralelismo real donde importa**: cada `spawn{}:run()` corre como
-task y se suspende en su `nu.http.stream` al LLM; mientras una espera, las
+task y se suspende en su `enu.http.stream` al LLM; mientras una espera, las
 otras avanzan, y las goroutines de red van de verdad en paralelo (§9, el caso
 caliente de [modelo-ejecucion.md](modelo-ejecucion.md)). El `pcall` por rama
 me da el *allSettled* que `task.all` no ofrece de fábrica (solo trae
 fail-fast: "si una lanza, cancela el resto y relanza"). El semáforo de
 `future` me da el límite de concurrencia sin API nueva.
 
-**[HALLAZGO G27] — `nu.task.all` no promete alinear resultados con
+**[HALLAZGO G27] — `enu.task.all` no promete alinear resultados con
 entradas.** La firma dice `(fns) -> any[]` y "espera a todas", pero **no**
 que `out[i]` corresponda a `fns[i]` (las tasks terminan en cualquier orden).
 Para una orquestación determinista esto es justo lo que se necesita
@@ -810,7 +817,7 @@ paralelo, cada uno con sus 3 obreros en paralelo.
 ```lua
 local lider = root:spawn{ worker = true, caps = agent.caps.FS_RO }  -- loop en worker (§9)
 -- ...y dentro del líder (que corre en el worker) quiero su propio fan-out:
---   nu.worker.spawn(...)   → NO existe dentro de un worker (P11): sin anidar.
+--   enu.worker.spawn(...)   → NO existe dentro de un worker (P11): sin anidar.
 --   sub-obreros como tasks dentro del worker → el worker SÍ tiene scheduler
 --     propio (G15), concurren por IO. Pero sus tool calls: el sub_loop del
 --     líder ya proxya las suyas al principal (§9); un segundo nivel necesita
@@ -866,7 +873,7 @@ respuesta correcta es serializar.
 
 ## Hallazgos (ronda 5)
 
-**G27 — `nu.task.all` debe garantizar resultados alineados con los inputs.**
+**G27 — `enu.task.all` debe garantizar resultados alineados con los inputs.**
 Único hallazgo nuevo de mecanismo. Sin orden posicional especificado, una
 orquestación paralela determinista no puede correlacionar resultado con
 entrada sin acarrear el índice a mano. Resolución propuesta: semántica
@@ -883,46 +890,46 @@ tensión determinismo↔paralelo se reduce a estado mutable compartido, con
 remedio ya nombrado (G16 + `opts.cwd`, §27).
 
 Patrones para la guía (sin cambio de API): compactación mecánica vía hook
-`compact` para loops reproducibles (§24); semáforo de `nu.task.future` para
+`compact` para loops reproducibles (§24); semáforo de `enu.task.future` para
 acotar la concurrencia de un fan-out (§25); *allSettled* envolviendo cada
 rama en `pcall` antes de `task.all` (§25); worktree por subagente para
 aislar escrituras paralelas (§27).
 
 ---
 
-# Ronda 6: reconstruir un harness estilo claude-code sobre `nu.ui`
+# Ronda 6: reconstruir un harness estilo claude-code sobre `enu.ui`
 
 Pregunta del stress test: ¿se puede montar la TUI de un harness de coding
-(estilo claude-code) **entera** sobre `nu.ui` crudo + el contrato de
+(estilo claude-code) **entera** sobre `enu.ui` crudo + el contrato de
 [chat.md](chat.md)? La respuesta corta es que `chat.md` ya *es* ese harness;
 así que esta ronda no reescribe lo ya validado (transcript, modales, slash,
 statusline — escenario 5 cubrió el picker modal) sino que tortura lo que
 `chat.md` da por hecho: el **scrollback** del transcript, el **cursor real**
 del editor multilínea, el **spinner en vivo**, y el **ratón** sobre bloques
-colapsables. Ahí salen tres grietas, todas de `nu.ui` §9. Hallazgos G28-G30
+colapsables. Ahí salen tres grietas, todas de `enu.ui` §9. Hallazgos G28-G30
 al final.
 
 ## Escenario 28: las tres zonas y el scrollback del transcript
 
 ```lua
--- plugins/cc-ui/init.lua — una UI estilo coding-harness sobre nu.ui
+-- plugins/cc-ui/init.lua — una UI estilo coding-harness sobre enu.ui
 local function layout()
-  local s = nu.ui.size()
+  local s = enu.ui.size()
   return {
-    transcript = nu.ui.region{ x = 0, y = 0,       w = s.w, h = s.h - 4 },
-    input      = nu.ui.region{ x = 0, y = s.h - 4, w = s.w, h = 3,  z = 10 },
-    status     = nu.ui.region{ x = 0, y = s.h - 1, w = s.w, h = 1,  z = 10 },
+    transcript = enu.ui.region{ x = 0, y = 0,       w = s.w, h = s.h - 4 },
+    input      = enu.ui.region{ x = 0, y = s.h - 4, w = s.w, h = 3,  z = 10 },
+    status     = enu.ui.region{ x = 0, y = s.h - 1, w = s.w, h = 1,  z = 10 },
   }
 end
 
 -- El transcript es un Block alto (todo el historial renderizado) que se
 -- "asoma" por la región vía un offset vertical. Scroll = re-blit con otro y.
-local scroll, doc = 0, nu.ui.block({})           -- doc.height puede ser >> región
+local scroll, doc = 0, enu.ui.block({})           -- doc.height puede ser >> región
 local function repaint_transcript(reg)
   reg:clear()
   reg:blit(0, -scroll, doc)                       -- [HALLAZGO G28] ¿blit acepta y<0?
 end
-nu.events.on("ui:resize", function() relayout() end)   -- G1: tu región, tu resize
+enu.events.on("ui:resize", function() relayout() end)   -- G1: tu región, tu resize
 ```
 
 Veredicto: sale, salvo una grieta de especificación. `Region:blit`
@@ -936,14 +943,14 @@ y es la operación central de cualquier transcript con scroll. **[G28]**
 ```lua
 local buf, cur = "", 0                            -- texto y caret (índice de byte)
 local function redraw_input(reg)
-  local wrapped = nu.text.wrap(buf, reg.w)        -- Block; .height conocido
+  local wrapped = enu.text.wrap(buf, reg.w)        -- Block; .height conocido
   if wrapped.height + 1 ~= reg.h then reg:resize(reg.w, wrapped.height + 1) end
   reg:clear(); reg:blit(0, 0, wrapped)
-  local cx, cy = caret_to_cell(buf, cur, reg.w)   -- nu.text.width por grafema
+  local cx, cy = caret_to_cell(buf, cur, reg.w)   -- enu.text.width por grafema
   reg:cursor(cx, cy)                               -- cursor real del terminal
 end
 
-nu.ui.on_input(function(ev)
+enu.ui.on_input(function(ev)
   if ev.type == "paste" then
     local ins = ev.text or ev.path                 -- [G30] imagen → ruta, como @
     buf = insert(buf, cur, ins); cur = cur + #ins
@@ -957,35 +964,35 @@ nu.ui.on_input(function(ev)
 end)
 ```
 
-Veredicto: sale entero. `nu.text.wrap` da la altura para crecer la caja,
+Veredicto: sale entero. `enu.text.wrap` da la altura para crecer la caja,
 `Region:cursor` coloca el caret real, y los popups `@`/`/` son el picker del
 escenario 5 reutilizado. El único trabajo feo es `caret_to_cell` (índice de
-byte → celda con `nu.text.width`), pero eso es del toolkit, no API que falte.
+byte → celda con `enu.text.width`), pero eso es del toolkit, no API que falte.
 Pegar una imagen aparece aquí como **ruta** (G30, abajo).
 
 ## Escenario 30: el spinner "Thinking…" en vivo con `esc` para interrumpir
 
 ```lua
 local function thinking_indicator(session)
-  local t0  = nu.sys.mono_ms()
-  local reg = nu.ui.region{ x = 0, y = spin_y, w = 40, h = 1 }
+  local t0  = enu.sys.mono_ms()
+  local reg = enu.ui.region{ x = 0, y = spin_y, w = 40, h = 1 }
   local frame = 0
-  local timer = nu.task.every(80, function()       -- handler síncrono, repinta
+  local timer = enu.task.every(80, function()       -- handler síncrono, repinta
     frame = frame + 1
-    local secs = math.floor((nu.sys.mono_ms() - t0) / 1000)
+    local secs = math.floor((enu.sys.mono_ms() - t0) / 1000)
     local toks = providers.approx_tokens(session.usage)   -- vocabulario de producto
-    reg:blit(0, 0, nu.ui.block({{
+    reg:blit(0, 0, enu.ui.block({{
       { text = SPIN[frame % #SPIN + 1] .. " Thinking… ", style = { italic = true } },
       { text = secs .. "s · " .. toks .. " tok · esc to interrupt",
         style = { fg = "#808080" } },
     }}))
   end)
-  nu.task.cleanup(function() timer:stop(); reg:destroy() end)   -- F1/F2: muere con el turno
+  enu.task.cleanup(function() timer:stop(); reg:destroy() end)   -- F1/F2: muere con el turno
 end
 -- esc → Session:cancel() (chat.md §3); el cleanup mata timer y región.
 ```
 
-Veredicto: limpio. `nu.task.every` anima, `mono_ms` cuenta, `cleanup`
+Veredicto: limpio. `enu.task.every` anima, `mono_ms` cuenta, `cleanup`
 garantiza que el spinner muere con el turno aunque lo aborten — es el patrón
 F5 (repintar coalescido, no por delta).
 
@@ -993,7 +1000,7 @@ F5 (repintar coalescido, no por delta).
 
 ```lua
 -- Clicar la cabecera de un bloque de tool para plegarlo:
-nu.ui.on_input(function(ev)
+enu.ui.on_input(function(ev)
   if ev.type == "mouse" then
     -- ev.x, ev.y vienen en coordenadas de PANTALLA; el bloque vive en
     -- coordenadas LOCALES de la región del transcript, desplazado por el
@@ -1042,10 +1049,10 @@ pantalla, pospuesto). Aplicada a [api.md](api.md) §9.3.
 
 Confirmaciones (sin API nueva): las tres zonas, el editor multilínea con
 cursor real, los popups `@`/`/`, el spinner en vivo y los renderers de tools
-se montan **enteros** sobre `nu.ui` + el contrato de `chat`. La conclusión de
+se montan **enteros** sobre `enu.ui` + el contrato de `chat`. La conclusión de
 la pregunta que abrió la ronda se sostiene: la TUI de un harness de coding no
 "sale del core" — el core da el sustrato y `chat.md` ya es ese harness. Las
-únicas grietas (G28, G29) son de **ergonomía de `nu.ui`**, no de mecanismo
+únicas grietas (G28, G29) son de **ergonomía de `enu.ui`**, no de mecanismo
 que falte.
 
 
@@ -1120,11 +1127,11 @@ en [problemas.md](problemas.md#g34) (G34). Es la primera grieta nacida de
 
 Pregunta del stress test: si la **unidad de trabajo es la rama/worktree** y la
 coordinación viaja por git (o por un broker externo), ¿puede un tercero montar
-con solo el contrato público una malla de nodos `nu -e` headless que ejecutan
+con solo el contrato público una malla de nodos `enu -e` headless que ejecutan
 **specs declarativas en dos capas** (Role reutilizable + Job instancia),
 soportan **fork-como-replicación** (local y entre máquinas) y colocan al humano
 en las fronteras que importan (los Roles y los merges, nunca el torrente de
-turnos)? La hipótesis dura de la ronda es **pull-only**: nu solo actúa de
+turnos)? La hipótesis dura de la ronda es **pull-only**: enu solo actúa de
 cliente — sin listener, P1/P19 siguen dormidos. Fuera de alcance, como en la
 Ronda 5: el no-determinismo del *muestreo* del modelo (territorio de
 [providers.md](providers.md); el "replay adapter" del escenario 27 sigue siendo
@@ -1152,15 +1159,15 @@ hash = "b52f..."    # git hash-object: cuando el sustrato es git, git es el hash
 ```
 
 ```lua
--- plugins/fleet/node.lua — corre con `nu -e node.lua` en cada máquina: el motor
+-- plugins/fleet/node.lua — corre con `enu -e node.lua` en cada máquina: el motor
 -- headless es gratis por diseño (agente.md §1); default deny sin supervisión (§5).
 local agent = require("agent")
 
 -- El claim es un CAS distribuido SIN servidor propio: crear una ref en el
 -- remoto es atómico — si otro nodo la creó antes, el push se rechaza.
 local function claim(job_id)
-  local r = nu.proc.run({ "git", "push", "origin",
-                          "HEAD:refs/nu/claims/" .. job_id })          -- ⏸
+  local r = enu.proc.run({ "git", "push", "origin",
+                          "HEAD:refs/enu/claims/" .. job_id })          -- ⏸
   return r.code == 0                               -- perdiste la carrera = code ≠ 0 ✓
 end
 
@@ -1169,14 +1176,14 @@ end
 -- aquí es heartbeat: re-empujar la claim-ref con un commit {hostname, ts}
 -- usando --force-with-lease (CAS otra vez: solo late quien posee el claim), y
 -- re-claim por staleness con umbral generoso (relojes de pared distintos:
--- nu.sys.now_ms() no está sincronizado entre nodos). Expresable entero con
--- nu.proc; es un PATRÓN para la guía, no API que falte.
+-- enu.sys.now_ms() no está sincronizado entre nodos). Expresable entero con
+-- enu.proc; es un PATRÓN para la guía, no API que falte.
 
 local function run_job(job, role)
-  local wt = nu.fs.tmpdir() .. "/" .. job.id                           -- ⏸
-  nu.proc.run({ "git", "worktree", "add", wt, job.base })              -- ⏸
-  nu.task.cleanup(function()
-    nu.proc.run({ "git", "worktree", "remove", "--force", wt })
+  local wt = enu.fs.tmpdir() .. "/" .. job.id                           -- ⏸
+  enu.proc.run({ "git", "worktree", "add", wt, job.base })              -- ⏸
+  enu.task.cleanup(function()
+    enu.proc.run({ "git", "worktree", "remove", "--force", wt })
   end)
 
   local s = agent.session{                 -- spec→opts es una FUNCIÓN PURA: todos
@@ -1189,12 +1196,12 @@ local function run_job(job, role)
   -- Presupuesto DURO en el driver, no en la fe: send() corre el turno entero,
   -- así que el tope de coste se vigila por eventos (atribución G3) y se corta
   -- con cancel — mismo reparto que max_turns, que ya es opt.
-  local sub = nu.events.on("agent:message", function(p)
+  local sub = enu.events.on("agent:message", function(p)
     if p.session == s.id and s.usage.cost_usd > role.budget.max_cost_usd then
       s:cancel()                                   -- P22; cierra como cancelado (§4)
     end
   end)
-  nu.task.cleanup(function() sub:cancel() end)
+  enu.task.cleanup(function() sub:cancel() end)
 
   local msg = s:send(job.prompt)                                       -- ⏸
   commit_and_push(wt, job.branch)          -- la RAMA es el resultado; el merge es
@@ -1212,8 +1219,8 @@ end
 ```
 
 Veredicto: el nodo entero — claim atómico, heartbeat, worktree, spec→sesión,
-presupuesto duro, rama-resultado — se escribe con `nu.proc` + `nu.fs` +
-`nu.toml` + el contrato de `agent`. Una sola grieta y es de especificación:
+presupuesto duro, rama-resultado — se escribe con `enu.proc` + `enu.fs` +
+`enu.toml` + el contrato de `agent`. Una sola grieta y es de especificación:
 la ruta del transcript es inencontrable para el tercero al que el contrato
 invita a leerla. **[G38]**
 
@@ -1254,14 +1261,14 @@ for i, nudge in ipairs(NUDGES) do
     return { id = v.id, dir = worktree(i) }
   end
 end
-local variants = nu.task.all(fns)          -- ⏸ K streams en paralelo real,
+local variants = enu.task.all(fns)          -- ⏸ K streams en paralelo real,
                                            -- resultados alineados con inputs ✓ (G27)
 
 -- Torneo. Primera línea SIEMPRE determinista: un humano no debería ver nada
 -- que una máquina podía rechazar.
 local alive = {}
 for i, v in ipairs(variants) do
-  local t = nu.proc.run({ "pytest", "-q" }, { cwd = v.dir })           -- ⏸
+  local t = enu.proc.run({ "pytest", "-q" }, { cwd = v.dir })           -- ⏸
   if t.code == 0 then alive[#alive + 1] = v end
 end
 -- Segunda línea: un juez LLM de solo lectura ordena las supervivientes.
@@ -1279,7 +1286,7 @@ que leer el transcript y contar — lo que vuelve a exigir localizar el fichero
 (G38, segunda mordida).
 
 Veredicto: el torneo se compone entero — fan-out de la Ronda 5, verificadores
-por `nu.proc`, juez de solo lectura, humano en el merge — salvo que **fork no
+por `enu.proc`, juez de solo lectura, humano en el merge — salvo que **fork no
 re-aloja**: sin `opts` (cwd/permisos/modelo por variante) y con `at` sin unidad
 definida, el fork-como-replicación se queda a un paso. **[G39]** (El plan B —
 subagentes frescos con el plan en el prompt — pierde justo lo que hacía valioso
@@ -1295,15 +1302,15 @@ el fork: la fidelidad del prefijo compartido y su caché.)
 --   ----------------
 --   role = "fixer"
 --   parent_branch = "fleet/J-0142"
---   parent_transcript = ".nu/transcript.jsonl"
+--   parent_transcript = ".enu/transcript.jsonl"
 --   fork_at = 12
 --   nudge = "los tests de parser pasan; arregla ahora los de lexer"
 
 -- Nodo B — importar una sesión ajena = COPIAR el fichero a su sitio. Esta es
 -- la promesa de P9 ("el formato JSONL es la API") puesta a prueba de verdad:
-local raw  = nu.fs.read(wt .. "/" .. job.parent_transcript)            -- ⏸
-local meta = nu.json.decode(first_line(raw))     -- {id, cwd, created, parent?} ✓ (§3)
-nu.fs.write(sessions_dir(cwd_B) .. "/" .. meta.id .. ".jsonl", raw)    -- ⏸
+local raw  = enu.fs.read(wt .. "/" .. job.parent_transcript)            -- ⏸
+local meta = enu.json.decode(first_line(raw))     -- {id, cwd, created, parent?} ✓ (§3)
+enu.fs.write(sessions_dir(cwd_B) .. "/" .. meta.id .. ".jsonl", raw)    -- ⏸
 --          ^^^^^^^^^^^^^^^^^^^
 --          otra vez: ¿cómo se llama el directorio del proyecto? El slug de
 --          sesiones.md §2 sin especificar, tercera mordida.       [G38]
@@ -1330,13 +1337,13 @@ Ninguna nueva — buena señal para el formato.
 ## Escenario 36: broker de contraste + la denegación como dato
 
 ```lua
--- (a) El MISMO nodo sobre el otro sustrato: un broker al que nu se conecta
+-- (a) El MISMO nodo sobre el otro sustrato: un broker al que enu se conecta
 -- SALIENTE (pull-only se mantiene; P1/P19 siguen dormidos).
-local ws = nu.ws.connect("wss://broker.example/fleet")                 -- ⏸
+local ws = enu.ws.connect("wss://broker.example/fleet")                 -- ⏸
 while true do
-  local job = nu.json.decode(ws:recv())          -- ⏸ claim y liveness: del broker
+  local job = enu.json.decode(ws:recv())          -- ⏸ claim y liveness: del broker
   local result = run_job(job.spec, job.role)     -- ⏸ el run_job del escenario 33,
-  ws:send(nu.json.encode(result))                -- ⏸ SIN TOCAR: la capa Role/Job
+  ws:send(enu.json.encode(result))                -- ⏸ SIN TOCAR: la capa Role/Job
 end                                              --   no sabe en qué sustrato viaja ✓
 -- Reparto honesto: git puro paga claim+liveness con CAS+heartbeat pero no
 -- añade infraestructura; el broker los regala pero es una pieza más que operar.
@@ -1350,14 +1357,14 @@ end                                              --   no sabe en qué sustrato v
 -- re-run barato (el job es idempotente: sha pineado). ¿Cómo recoge QUÉ se
 -- denegó? Torturemos las tres vías:
 
-nu.events.on("agent:permission.asked", function(p) end)
+enu.events.on("agent:permission.asked", function(p) end)
 -- ✗ no aplica: asked es el flujo interactivo; el deny de política ni pregunta
 
 agent.hook("permission", function(p) end)
 -- ✗ tampoco: el pipeline es deny → allow → hooks (§5) — un deny de la lista
 --   corta la cadena ANTES de llegar a los hooks; para ellos es invisible
 
-nu.events.on("agent:tool.end", function(p) end)
+enu.events.on("agent:tool.end", function(p) end)
 -- ✗ sin especificar siquiera si se emite para una call denegada (su handler
 --   nunca corrió), y su payload no lleva el patrón denegado
 
@@ -1413,11 +1420,11 @@ queda especificado también para denegaciones ([agente.md](agente.md) §4/§5).
 Detalle en [problemas.md](problemas.md#g40).
 
 Confirmaciones (sin API nueva): el **claim distribuido** es un push atómico de
-ref y el heartbeat un `--force-with-lease` — CAS dos veces, todo con `nu.proc`
+ref y el heartbeat un `--force-with-lease` — CAS dos veces, todo con `enu.proc`
 (§33); el **presupuesto duro** se vigila desde el driver con eventos (G3) +
 `Session:cancel`, mismo reparto que `max_turns` (§33); la spec **Role/Job es
 agnóstica al sustrato** — el mismo `run_job` corre sobre git puro y sobre un
-broker `nu.ws` saliente, y la hipótesis pull-only aguanta la ronda entera sin
+broker `enu.ws` saliente, y la hipótesis pull-only aguanta la ronda entera sin
 despertar P1/P19 (§36); el **fork distribuido es copiar un fichero** — P9 ("el
 formato es la API") sale reforzada de su primer test real (§35); y el torneo
 valida la **pirámide anti-slop**: verificadores deterministas → juez de solo

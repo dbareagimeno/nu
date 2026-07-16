@@ -1,8 +1,8 @@
-# Filosofía de nu
+# Filosofía de enu
 
 > *Un runtime de Lua orientado a terminal cuya killer app es un coding harness.*
 
-`nu` es un coding harness de CLI/TUI. Pero esa frase describe el producto, no el
+`enu` es un coding harness de CLI/TUI. Pero esa frase describe el producto, no el
 proyecto. El proyecto es un **kernel mínimo y un sistema de extensiones donde
 todo lo demás — incluido el propio agente — es una extensión**.
 
@@ -57,11 +57,11 @@ operación debería ser una primitiva.
 ### 5. Batteries included, pero no enchufadas (ADR-010)
 
 El binario distribuye las extensiones oficiales embebidas (`go:embed`),
-pero **ninguna se activa sola**: nu instalado es un runtime desnudo, y el
+pero **ninguna se activa sola**: enu instalado es un runtime desnudo, y el
 harness es una elección del usuario, no un hecho consumado. Enchufarlas es
 trivial pero **explícito**: con TTY, el primer arranque ofrece activar el
 conjunto oficial de una tecla; sin TTY (CI, Docker, scripts), el flag
-`nu --default-config` hace lo mismo de un comando (ADR-015). En ambos casos,
+`enu --default-config` hace lo mismo de un comando (ADR-015). En ambos casos,
 sin red — todo sale del binario — y a partir de ahí el agente funciona.
 Mismo modelo mental que Neovim: el programa no trae plugins activados. Y
 como siempre: esas extensiones no tienen ningún privilegio — se leen, se
@@ -81,7 +81,7 @@ debe ser deliberadamente pequeña y aburrida, y crecer solo por adición.
 | **Emacs / Textadept** | Kernel mínimo + el programa entero escrito en el lenguaje de extensión |
 | **El navegador / Luau** | El modelo de concurrencia: hilo principal determinista + workers explícitos + primitivas nativas paralelas |
 
-## Lo que nu no es
+## Lo que enu no es
 
 - No es un editor. No competimos con Neovim: no hay buffers gigantes que
   mantener resaltados a cada tecla.

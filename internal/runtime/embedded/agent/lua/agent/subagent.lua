@@ -8,7 +8,7 @@
 --     principal —comparte el registro de tools, los permisos y los hooks; barato—.
 --     Es, literalmente, una `agent.session` hija con `meta.parent` cuyo turno se
 --     ejecuta con el motor de S39.
---   - `worker = true`: el **loop** corre en un `nu.worker` (api.md §13) con `caps`
+--   - `worker = true`: el **loop** corre en un `enu.worker` (api.md §13) con `caps`
 --     RECORTADAS (G6/S34) —paralelismo real y la versión DURA del aislamiento: la
 --     superficie no concedida NO EXISTE dentro del worker (p. ej. sin `fs.write`
 --     ni `ui`)—. Pero los **handlers de tools se ejecutan en el estado principal
@@ -37,7 +37,7 @@
 -- En modo worker cruza la frontera como valor JSON-able (api.md §13: copiado, sin
 -- closures/Blocks): el worker manda datos digeridos, el padre los integra.
 --
--- ADR-003: Lua puro sobre la API pública (api.md §13 nu.worker + nu.task + nu.json)
+-- ADR-003: Lua puro sobre la API pública (api.md §13 enu.worker + enu.task + enu.json)
 -- + las extensiones providers/sessions. Sin privilegio de kernel.
 
 local M = {}
@@ -93,7 +93,7 @@ local function default_worker_caps(agent)
   local caps = {}
   for _, c in ipairs(agent.caps.FS_RO) do caps[#caps + 1] = c end
   for _, c in ipairs(agent.caps.SEARCH) do caps[#caps + 1] = c end
-  -- nu.task y nu.json son necesarios DENTRO del worker para correr el loop y
+  -- enu.task y enu.json son necesarios DENTRO del worker para correr el loop y
   -- serializar el digesto/los mensajes del proxy. Sin caps explícitas el worker
   -- tendría toda la API [W]; con caps recortadas hay que incluir lo que el loop usa.
   caps[#caps + 1] = "task"
@@ -129,7 +129,7 @@ local function normalize_caps(opts_caps, agent)
   for _, c in ipairs(opts_caps) do add(c) end
   -- Mínimos del loop (siempre): el worker debe poder orquestar (task), serializar
   -- (json) y resolver el modelo —`providers.resolve` lee `providers.toml` del disco
-  -- con `nu.fs.read`+`nu.toml.decode` desde `nu.config.dir`—; `log` para diagnósticos.
+  -- con `enu.fs.read`+`enu.toml.decode` desde `enu.config.dir`—; `log` para diagnósticos.
   add("task"); add("json"); add("toml"); add("config.dir"); add("log"); add("fs.read")
   return out
 end
@@ -193,7 +193,7 @@ function M.attach(agent)
     -- (los tests inyectan un stub require-able). Son NOMBRES DE MÓDULO (require).
     local adapter_modules = opts.adapter_modules or { "providers.adapter_anthropic" }
 
-    local w = nu.worker.spawn("agent.subagent_worker", { caps = caps })
+    local w = enu.worker.spawn("agent.subagent_worker", { caps = caps })
 
     return setmetatable({
       mode            = "worker",
@@ -228,13 +228,24 @@ function M.attach(agent)
       tool_defs = filtered
     end
 
-    -- Sesión hija de persistencia en el PADRE (transcript con meta.parent). El
-    -- worker no persiste; manda el digesto y el padre lo anexa. Se omite si el
-    -- padre es no_store (subagente in-memory para tests).
+    -- Sesión hija de persistencia en el PADRE (transcript con meta.parent, A-21).
+    -- El worker no tiene `fs.write` (caps FS_RO por defecto): NO puede persistir ni
+    -- tocar el lock (sesiones.md §6). Así que manda cada mensaje al padre con un
+    -- `{ kind="message" }` y el padre —que ya tiene el lock de la `proxy_session`—
+    -- lo anexa al transcript hijo (bucle de proxy, abajo). Se omite si el padre es
+    -- no_store (subagente in-memory para tests): la proxy_session no tiene store.
+    --
+    -- `system` y `thinking` los aporta la `proxy_session` (que ES la sesión hija con
+    -- todo resuelto igual que el modo task, A-22): su `_assemble_system` ya inyecta
+    -- el ÍNDICE DE SKILLS (filtrado por `opts.skills`, gated por confianza) sobre el
+    -- system base; su `thinking` ya aplica la precedencia opts < agent.toml. El
+    -- worker no re-descubre nada: recibe el system y el thinking ya cocinados.
+    local proxy = self.proxy_session
     w:send({
       kind        = "init",
       model       = self.opts.model or self.parent.model,
-      system      = self.opts.system,
+      system      = (proxy and proxy:_assemble_system()) or self.opts.system,
+      thinking    = proxy and proxy.thinking or nil,
       prompt      = prompt,
       tool_defs   = tool_defs,
       adapters    = self.adapter_modules,
@@ -259,6 +270,17 @@ function M.attach(agent)
           id = msg.id, name = msg.name, args = msg.args,
         })
         w:send({ kind = "tool_result", result = result })
+      elseif msg.kind == "message" then
+        -- Persistencia del transcript hijo (A-21, sesiones.md §7): el worker manda
+        -- cada Message conforme avanza (prompt del usuario, assistant de cada turno
+        -- con su usage/model, y los tool_result como mensaje de usuario) y el padre
+        -- lo anexa a la `proxy_session` —que tiene el lock (§6)—, en el mismo orden
+        -- y con la misma forma que el modo task. Sin store (no_store) no se persiste
+        -- (el worker sigue mandándolos; el padre los ignora). No se responde.
+        if self.proxy_session and self.proxy_session.store then
+          self.proxy_session.store:append_message(msg.message,
+            { usage = msg.usage, model = msg.model })
+        end
       elseif msg.kind == "done" then
         return msg.digest
       elseif msg.kind == "error" then

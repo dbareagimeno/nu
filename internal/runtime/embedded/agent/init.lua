@@ -5,7 +5,7 @@
 -- Eventos, ejecuta tool calls y re-pide hasta `done` sin tools), el registro de
 -- TOOLS, los PERMISOS (con error accionable al denegar), los HOOKS-MIDDLEWARE
 -- (`request.pre`/`tool.pre`/`tool.post`/`permission`, registro PROPIO de la
--- extensión, NO el bus `nu.events`) y los eventos `agent:*` (sí en el bus).
+-- extensión, NO el bus `enu.events`) y los eventos `agent:*` (sí en el bus).
 --
 -- ADR-003: el core NO sabe lo que es un agente; todo es Lua puro sobre la API
 -- pública congelada ([api.md](../../../../docs/api.md)) y sobre las extensiones

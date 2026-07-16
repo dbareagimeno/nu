@@ -11,11 +11,11 @@
 --      tool.post → tool_result) y VUELVE a pedir; termina cuando el modelo para
 --      sin tools o se agota `max_turns`.
 --   §3 Registro de TOOLS (`agent.tool`): nombre, descripción, schema, handler.
---   §4 HOOKS: notificaciones por el bus `nu.events` (`agent:*`, con atribución
+--   §4 HOOKS: notificaciones por el bus `enu.events` (`agent:*`, con atribución
 --      obligatoria `session`, G3) y MIDDLEWARE por registro propio (`agent.hook`,
 --      puntos `request.pre`/`tool.pre`/`tool.post`/`permission`/`compact`).
 --   §5 PERMISOS: pipeline `deny` → `allow` → hooks `permission` → ask/headless;
---      en headless (sin `nu.ui`, `nu.has("ui")`=false, G20) y sin respuesta:
+--      en headless (sin `enu.ui`, `enu.has("ui")`=false, G20) y sin respuesta:
 --      default DENY con error ACCIONABLE (nombra el patrón a añadir).
 --   §10 Configuración (`agent.toml`): modelo por defecto, `max_turns`, permisos.
 --
@@ -50,12 +50,12 @@ end
 
 -- Atribución obligatoria (G3, agente.md §4): TODO payload `agent:*` lleva
 -- `session` (id de la sesión emisora). El campo se pone en un ÚNICO sitio (este
--- helper) para no olvidarlo nunca. El bus es el del core (`nu.events`), namespace
+-- helper) para no olvidarlo nunca. El bus es el del core (`enu.events`), namespace
 -- `agent:` (el del plugin, no reserva del core, ADR-003).
 local function emit(session_id, name, payload)
   payload = payload or {}
   payload.session = session_id
-  nu.events.emit("agent:" .. name, payload)
+  enu.events.emit("agent:" .. name, payload)
 end
 
 -- ---------------------------------------------------------------------------
@@ -186,7 +186,7 @@ local function run_hooks(point, payload, ctx)
     if e.live then
       local ok, res = pcall(e.fn, payload, ctx)
       if not ok then
-        nu.log.warn("agent: hook %q lanzó y se ignora: %s", point,
+        enu.log.warn("agent: hook %q lanzó y se ignora: %s", point,
           (type(res) == "table" and res.message) or tostring(res))
       elseif type(res) == "table" and res.deny ~= nil then
         return nil, tostring(res.deny)
@@ -300,11 +300,11 @@ function M.permission.persist_allow(pattern)
   if type(pattern) ~= "string" or pattern == "" then
     einval("agent.permission.persist_allow espera un patrón (string no vacío)")
   end
-  local path = nu.config.dir() .. "/agent.toml"
+  local path = enu.config.dir() .. "/agent.toml"
   local cfg = {}
-  local ok, raw = pcall(nu.fs.read, path)
+  local ok, raw = pcall(enu.fs.read, path)
   if ok and type(raw) == "string" and raw ~= "" then
-    local okd, decoded = pcall(nu.toml.decode, raw)
+    local okd, decoded = pcall(enu.toml.decode, raw)
     if okd and type(decoded) == "table" then cfg = decoded end
   end
   cfg.permissions = cfg.permissions or {}
@@ -315,8 +315,8 @@ function M.permission.persist_allow(pattern)
     end
   end
   cfg.permissions.allow[#cfg.permissions.allow + 1] = pattern
-  nu.fs.mkdir(nu.config.dir())
-  nu.fs.write(path, nu.toml.encode(cfg))
+  enu.fs.mkdir(enu.config.dir())
+  enu.fs.write(path, enu.toml.encode(cfg))
   M.reload_config() -- la próxima sesión releerá la política global
 end
 
@@ -329,7 +329,7 @@ end
 --   5. nadie decidió:
 --        - default de la tool = "deny" → denegado;
 --        - mode = "auto" → concedido (explícito y ruidoso, amortiguador 3);
---        - mode = "ask" Y hay UI (`nu.has("ui")`, G20) → se emite
+--        - mode = "ask" Y hay UI (`enu.has("ui")`, G20) → se emite
 --          `agent:permission.asked` y se ESPERA la respuesta (future, sin timeout);
 --        - mode = "ask" SIN UI (headless, CI) → DEFAULT DENY (agente.md §5).
 -- Devuelve true (concedido) o (false, razon_accionable, denial). La razón nombra
@@ -392,7 +392,7 @@ local function check_permission(session, tool, args)
   -- mode = "ask". En headless (sin UI, G20) no hay quien responda: default DENY.
   -- Este es el `suggested` del bucle de escalado de la ronda 8: denegación →
   -- enmienda de la política → re-run.
-  if not nu.has("ui") then
+  if not enu.has("ui") then
     return false, "permiso requerido en modo headless (sin UI): " .. action,
       { tool = name, source = "headless", suggested = suggested }
   end
@@ -400,7 +400,7 @@ local function check_permission(session, tool, args)
   -- Hay UI: se pregunta y se ESPERA la respuesta (future, sin timeout, G3).
   ask_seq = ask_seq + 1
   local id = "ask-" .. session.handle.id .. "-" .. ask_seq
-  local fut = nu.task.future()
+  local fut = enu.task.future()
   pending_asks[id] = { future = fut, session = session.handle.id }
   emit(session.handle.id, "permission.asked", { id = id, tool = name, args = args, suggested = suggested })
   local granted = fut:await()
@@ -423,8 +423,8 @@ local function load_config()
   if config_cache ~= nil then
     return config_cache
   end
-  local path = nu.config.dir() .. "/agent.toml"
-  local ok, raw = pcall(nu.fs.read, path)
+  local path = enu.config.dir() .. "/agent.toml"
+  local ok, raw = pcall(enu.fs.read, path)
   if not ok then
     if type(raw) == "table" and raw.code == "ENOENT" then
       config_cache = {}
@@ -432,7 +432,7 @@ local function load_config()
     end
     error(raw)
   end
-  local okd, decoded = pcall(nu.toml.decode, raw)
+  local okd, decoded = pcall(enu.toml.decode, raw)
   if not okd then
     eagent(string.format("agent.toml mal formado (%s): %s", path,
       (type(decoded) == "table" and decoded.message) or tostring(decoded)))
@@ -449,7 +449,7 @@ end
 -- normalize_permissions(opts_perms, cfg) -> Permissions. Combina los permisos de
 -- la sesión (`opts.permissions`) con los globales de `agent.toml` (agente.md §10:
 -- defaults < global < sesión). El repo solo recorta (agente.md §11) — fuera del
--- alcance de S39, que no lee `.nu/agent.toml`; se documenta para S45.
+-- alcance de S39, que no lee `.enu/agent.toml`; se documenta para S45.
 local function normalize_permissions(opts_perms, cfg)
   local global = (cfg and cfg.permissions) or {}
   local sess = opts_perms or {}
@@ -513,7 +513,7 @@ local BASE_SYSTEM = "Eres un agente de codificación que opera sobre un reposito
 -- Confianza del contenido del repo: TOFU (agente.md §11.2, P24).
 -- ---------------------------------------------------------------------------
 
--- El contenido que el repo aporta al MODELO (`.nu/skills/`, `nu.md`) es de un
+-- El contenido que el repo aporta al MODELO (`.enu/skills/`, `enu.md`) es de un
 -- tercero (§11): solo se inyecta tras un sí explícito, recordado por repo en
 -- `data_dir/trust.json`. Sin decisión afirmativa (incluido headless), no se
 -- inyecta. El contenido del USUARIO (`config.dir()/skills/`) es suyo: confiable.
@@ -526,7 +526,7 @@ local function trust_slug(cwd)
 end
 
 local function trust_path()
-  return nu.config.data_dir() .. "/trust.json"
+  return enu.config.data_dir() .. "/trust.json"
 end
 
 local trust_cache = nil
@@ -534,9 +534,9 @@ local function load_trust()
   if trust_cache ~= nil then
     return trust_cache
   end
-  local ok, raw = pcall(nu.fs.read, trust_path())
+  local ok, raw = pcall(enu.fs.read, trust_path())
   if ok and type(raw) == "string" and raw ~= "" then
-    local okd, decoded = pcall(nu.json.decode, raw)
+    local okd, decoded = pcall(enu.json.decode, raw)
     if okd and type(decoded) == "table" then
       trust_cache = decoded
       return trust_cache
@@ -562,17 +562,17 @@ function M.trust.set(cwd, trusted)
   t[trust_slug(cwd)] = (trusted == true)
   trust_cache = t
   pcall(function()
-    nu.fs.mkdir(nu.config.data_dir())
-    nu.fs.write(trust_path(), nu.json.encode(t))
+    enu.fs.mkdir(enu.config.data_dir())
+    enu.fs.write(trust_path(), enu.json.encode(t))
   end)
 end
 
 -- agent.trust.has_repo_content(cwd) -> bool. ¿El repo trae algo inyectable
--- (`.nu/skills/` o `nu.md`)? Es lo que decide si hay que disparar el TOFU (§11.2):
+-- (`.enu/skills/` o `enu.md`)? Es lo que decide si hay que disparar el TOFU (§11.2):
 -- si no hay contenido, no se pregunta nada.
 function M.trust.has_repo_content(cwd)
-  if nu.fs.stat(cwd .. "/nu.md") ~= nil then return true end
-  if nu.fs.stat(cwd .. "/.nu/skills") ~= nil then return true end
+  if enu.fs.stat(cwd .. "/enu.md") ~= nil then return true end
+  if enu.fs.stat(cwd .. "/.enu/skills") ~= nil then return true end
   return false
 end
 
@@ -582,7 +582,7 @@ end
 
 -- split_skill_md(content) -> meta, body. Parte un SKILL.md en su frontmatter YAML
 -- (`name`, `description`) y su cuerpo. Compatible con el formato del ecosistema
--- (frontmatter entre `---`), decodificado con `nu.yaml` (api.md §12).
+-- (frontmatter entre `---`), decodificado con `enu.yaml` (api.md §12).
 local function split_skill_md(content)
   local fm, body = content:match("^%-%-%-%s*\r?\n(.-)\r?\n%-%-%-%s*\r?\n(.*)$")
   if fm == nil then
@@ -592,7 +592,7 @@ local function split_skill_md(content)
   if fm == nil then
     return nil, content
   end
-  local ok, meta = pcall(nu.yaml.decode, fm)
+  local ok, meta = pcall(enu.yaml.decode, fm)
   if not ok or type(meta) ~= "table" then
     return nil, body or ""
   end
@@ -602,14 +602,14 @@ end
 -- discover_skills_in(dir, source, out) anexa a `out` las skills de `dir` (cada
 -- subdirectorio con un `SKILL.md` válido). Tolera un `dir` ausente o ilegible.
 local function discover_skills_in(dir, source, out)
-  if nu.fs.stat(dir) == nil then return end
-  local ok, entries = pcall(nu.fs.list, dir)
+  if enu.fs.stat(dir) == nil then return end
+  local ok, entries = pcall(enu.fs.list, dir)
   if not ok or type(entries) ~= "table" then return end
   for _, ent in ipairs(entries) do
     if ent.is_dir then
       local skill_md = dir .. "/" .. ent.name .. "/SKILL.md"
-      if nu.fs.stat(skill_md) ~= nil then
-        local okr, raw = pcall(nu.fs.read, skill_md)
+      if enu.fs.stat(skill_md) ~= nil then
+        local okr, raw = pcall(enu.fs.read, skill_md)
         if okr and type(raw) == "string" then
           local meta = split_skill_md(raw)
           if type(meta) == "table" and type(meta.name) == "string" and meta.name ~= "" then
@@ -627,16 +627,16 @@ local function discover_skills_in(dir, source, out)
 end
 
 -- agent.skills.list(cwd) -> SkillInfo[] (agente.md §6). Descubre las skills del
--- USUARIO (`config.dir()/skills/`, siempre) y las del REPO (`<cwd>/.nu/skills/`,
+-- USUARIO (`config.dir()/skills/`, siempre) y las del REPO (`<cwd>/.enu/skills/`,
 -- solo si el repo es de confianza, §11.2). SkillInfo = { name, description, path,
 -- source = "user"|"repo" }.
 M.skills = {}
 function M.skills.list(cwd)
-  cwd = cwd or nu.fs.cwd()
+  cwd = cwd or enu.fs.cwd()
   local out = {}
-  discover_skills_in(nu.config.dir() .. "/skills", "user", out)
+  discover_skills_in(enu.config.dir() .. "/skills", "user", out)
   if M.trust.is_trusted(cwd) == true then
-    discover_skills_in(cwd .. "/.nu/skills", "repo", out)
+    discover_skills_in(cwd .. "/.enu/skills", "repo", out)
   end
   return out
 end
@@ -647,7 +647,7 @@ end
 local function load_skill_body(cwd, name)
   for _, s in ipairs(M.skills.list(cwd)) do
     if s.name == name then
-      local ok, raw = pcall(nu.fs.read, s.path)
+      local ok, raw = pcall(enu.fs.read, s.path)
       if ok and type(raw) == "string" then
         local _, body = split_skill_md(raw)
         return body
@@ -760,12 +760,12 @@ local function run_tool(session, call)
     ask = function(question)
       -- ask del handler: reusa el flujo de permisos en su versión genérica. En
       -- headless sin UI no hay respuesta → false (coherente con §5 default deny).
-      if not nu.has("ui") then
+      if not enu.has("ui") then
         return false
       end
       ask_seq = ask_seq + 1
       local id = "ask-" .. sid .. "-" .. ask_seq
-      local fut = nu.task.future()
+      local fut = enu.task.future()
       pending_asks[id] = { future = fut, session = sid }
       emit(sid, "permission.asked", { id = id, tool = call.name, question = tostring(question) })
       return fut:await()
@@ -833,7 +833,7 @@ local function consume_stream(session, iter)
 end
 
 -- ---------------------------------------------------------------------------
--- System prompt por sesión (agente.md §7, P24): base → índice de skills → nu.md
+-- System prompt por sesión (agente.md §7, P24): base → índice de skills → enu.md
 -- (tras TOFU) → opts.system. La INCLUSIÓN del contenido del repo se decide por
 -- confianza en CADA ensamblado (cheap: trust cacheado), sobre el descubrimiento
 -- capturado una vez al abrir la sesión.
@@ -866,12 +866,12 @@ function Session:_skills_index()
   return table.concat(lines, "\n")
 end
 
--- Session:_repo_context() -> string|nil. El `nu.md` del repo como contexto del
+-- Session:_repo_context() -> string|nil. El `enu.md` del repo como contexto del
 -- proyecto (§7), solo si el repo es de confianza (TOFU, §11.2).
 function Session:_repo_context()
   if type(self._nu_md) == "string" and self._nu_md ~= ""
       and M.trust.is_trusted(self.cwd) == true then
-    return "Contexto del proyecto (nu.md):\n\n" .. self._nu_md
+    return "Contexto del proyecto (enu.md):\n\n" .. self._nu_md
   end
   return nil
 end
@@ -918,14 +918,14 @@ function Session:send(content)
     eagent("la sesión está cerrada")
   end
   local blocks = normalize_user_blocks(content)
-  local item = { blocks = blocks, fut = nu.task.future() }
+  local item = { blocks = blocks, fut = enu.task.future() }
   self.queue[#self.queue + 1] = item
 
   if not self.turn_active then
     self.turn_active = true
     self._turn_done = false
     self.waiters = {}
-    self.turn_task = nu.task.spawn(function() self:_turn_loop() end)
+    self.turn_task = enu.task.spawn(function() self:_turn_loop() end)
   end
 
   local res = item.fut:await()
@@ -958,7 +958,7 @@ end
 -- Session:_finish_turn(canceled) cierra el turno UNA sola vez (idempotente):
 -- resuelve los futures de todos los `send` consumidos (`waiters`) y de los que
 -- quedaran sin inyectar (`queue`) con el mensaje final (o `canceled`). Lo invoca
--- el final normal del loop (canceled=false) Y el `nu.task.cleanup` del turno en
+-- el final normal del loop (canceled=false) Y el `enu.task.cleanup` del turno en
 -- un aborto (canceled=true, no capturable por pcall, S08): el guard `_turn_done`
 -- garantiza que solo la primera llamada resuelve.
 function Session:_finish_turn(canceled)
@@ -996,7 +996,7 @@ function Session:_turn_loop()
   -- Cierre garantizado pase lo que pase (éxito, error o `Session:cancel`): el
   -- aborto NO es capturable por pcall (S08), así que la resolución de los futures
   -- y el `turn.end` viven en el cleanup, no en un pcall del cuerpo.
-  nu.task.cleanup(function() self:_finish_turn(true) end)
+  enu.task.cleanup(function() self:_finish_turn(true) end)
 
   emit(self.handle.id, "turn.start", {})
   self._final_message = nil
@@ -1516,7 +1516,7 @@ function M.session(opts)
   local resolved0 = providers.resolve(model)
   local context_window = resolved0.config.model and resolved0.config.model.context
 
-  local cwd = opts.cwd or nu.fs.cwd()
+  local cwd = opts.cwd or enu.fs.cwd()
 
   -- Almacenamiento (agente.md §2 paso 1; sesiones.md). En S39 se persiste salvo
   -- `no_store` (tests in-memory). Reanudar pasa `resume` a sessions.open.
@@ -1689,13 +1689,13 @@ function M.session(opts)
     end
   end
 
-  -- Descubrimiento de skills + nu.md del repo (P24). Se captura UNA vez al abrir;
+  -- Descubrimiento de skills + enu.md del repo (P24). Se captura UNA vez al abrir;
   -- la INCLUSIÓN en el system prompt la decide la confianza (TOFU §11.2) en cada
   -- ensamblado. `opts.skills` (string[]) limita el índice visible (§6).
   do
     local user_skills, repo_skills = {}, {}
-    discover_skills_in(nu.config.dir() .. "/skills", "user", user_skills)
-    discover_skills_in(cwd .. "/.nu/skills", "repo", repo_skills)
+    discover_skills_in(enu.config.dir() .. "/skills", "user", user_skills)
+    discover_skills_in(cwd .. "/.enu/skills", "repo", repo_skills)
     if type(opts.skills) == "table" then
       local allow = {}
       for _, n in ipairs(opts.skills) do allow[n] = true end
@@ -1709,7 +1709,7 @@ function M.session(opts)
     end
     self._user_skills = user_skills
     self._repo_skills = repo_skills
-    local okmd, md = pcall(nu.fs.read, cwd .. "/nu.md")
+    local okmd, md = pcall(enu.fs.read, cwd .. "/enu.md")
     if okmd and type(md) == "string" then self._nu_md = md end
   end
 

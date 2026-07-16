@@ -1,7 +1,7 @@
 # La extensión oficial de chat: contrato
 
 Estado: **borrador para discusión**. Contrato de la extensión oficial
-`chat` — la cara visible de nu, lo que el usuario ve al arrancar. Como el
+`chat` — la cara visible de enu, lo que el usuario ve al arrancar. Como el
 resto de extensiones oficiales, **sin privilegios**: consume la API pública
 del agente ([agente.md](agente.md)), el toolkit de widgets (extensión
 oficial sobre [api.md](api.md) §9) y el bus de eventos. Una UI alternativa
@@ -45,7 +45,7 @@ indefinidamente.
 
 | Evento | Render |
 |---|---|
-| `agent:delta` | Texto en streaming al bloque del mensaje en curso (markdown vía `nu.text.markdown`, que es streaming-safe). |
+| `agent:delta` | Texto en streaming al bloque del mensaje en curso (markdown vía `enu.text.markdown`, que es streaming-safe). |
 | `agent:delta` (thinking) | Bloque de razonamiento **colapsado por defecto**, expandible; estilo atenuado. |
 | `agent:tool.start/progress/end` | Bloque de tool **colapsable**: cabecera con nombre + args resumidos; `progress` en vivo; al terminar, resultado plegado si es largo. |
 | `agent:message` | Sella el mensaje (sustituye los deltas por el render final). |
@@ -69,17 +69,17 @@ tool de diff pinta diffs con colores y la de tests pinta su tabla, sin que
   (borde redondeado, realce de foco) con un prompt `› `; la caja **crece y encoge**
   con el contenido (hasta un máximo). El **placeholder** (las pistas de uso) se ve
   aunque el editor tenga el foco (antes se ocultaba justo al arrancar). `enter` envía,
-  `shift+enter` (o `alt+enter` según terminal, vía `nu.ui.caps`) inserta línea.
+  `shift+enter` (o `alt+enter` según terminal, vía `enu.ui.caps`) inserta línea.
   Historial con `↑/↓` en el borde del editor. `esc` cancela el turno en curso
   (`Session:cancel()`); mientras corre, una fila de **actividad** con spinner lo
   señala ("Pensando…/Ejecutando <tool>… · esc para interrumpir").
 - **Menciones `@`**: abre picker difuso de ficheros del repo
-  (`nu.search.files` + `nu.search.fuzzy`); la mención inyecta la ruta y el
+  (`enu.search.files` + `enu.search.fuzzy`); la mención inyecta la ruta y el
   agente decide leerla (no se incrusta el contenido a ciegas).
   *(✅ Implementado: [pospuesto.md](pospuesto.md) **P26**, vía `chat.picker`.)*
 - **`/` al inicio**: autocompletado de comandos (§4) — `tab` abre el picker
   de comandos. *(✅ Implementado: **P29**.)*
-- Pegado multilínea correcto (evento `paste` de `nu.ui`).
+- Pegado multilínea correcto (evento `paste` de `enu.ui`).
 
 ## 4. Comandos slash
 
@@ -121,7 +121,12 @@ truncar lo peligroso: el comando entero, la ruta entera) y opciones:
   nunca al `agent.toml` del proyecto: sus `allow` se ignoran por el modelo
   de confianza ([agente.md](agente.md) §11). El patrón propuesto se
   muestra y es editable antes de aceptar (generalizar `bash:npm install` a
-  `bash:npm *` es decisión del humano, no de la UI).
+  `bash:npm *` es decisión del humano, no de la UI). Para un comando `bash`
+  **compuesto**, la propuesta es **un patrón por subcomando** — la calcula la
+  extensión `agent` y llega como lista en `suggested`; no el string
+  encadenado, que bajo la semántica de emparejamiento por subcomando
+  ([agente.md](agente.md) §5, G53) solo volvería a casar esa combinación
+  exacta; cada patrón propuesto es además auditable por separado.
   *(✅ Implementado: [pospuesto.md](pospuesto.md) **P29**. Tecla `s` = siempre
   (sesión), `g` = siempre (global, persiste a `agent.toml`). La edición inline del
   patrón antes de aceptar queda como pulido menor; v1 usa el patrón sugerido.)*
@@ -150,7 +155,7 @@ chat.statusline.add{ id, side: "left"|"right", priority, render: fn(ctx) -> Span
 
 ## 7. Keymaps y theming
 
-- Atajos por defecto registrados con `nu.ui.keymap`, todos remapeables por
+- Atajos por defecto registrados con `enu.ui.keymap`, todos remapeables por
   el usuario en su `init.lua` (la tabla de defaults es pública:
   `chat.keys`).
 - Colores únicamente **semánticos** del theme del toolkit (`accent`,
@@ -159,7 +164,7 @@ chat.statusline.add{ id, side: "left"|"right", priority, render: fn(ctx) -> Span
 
 ## 8. Arranque e interacción con el resto
 
-- `chat` solo se activa en TTY interactivo — el test es `nu.has("ui")`
+- `chat` solo se activa en TTY interactivo — el test es `enu.has("ui")`
   ([api.md](api.md) §9, G20); en headless ni se carga (la
   separación motor/UI de [agente.md](agente.md) §1 es la que lo permite).
 - **Bienvenida** ([ADR-018](adr.md)). Mientras la conversación está vacía, el
@@ -169,10 +174,10 @@ chat.statusline.add{ id, side: "left"|"right", priority, render: fn(ctx) -> Span
   (abajo) deja de ser la excepción.
 - **El chat posee la pantalla y al cerrarse apaga el binario** ([G36](problemas.md#g36)).
   El conjunto oficial (ADR-015) activa también `repl`, pero el repl **cede**: solo
-  auto-monta su UI si el chat no está activo (lo comprueba con `nu.plugin.list`, sin
+  auto-monta su UI si el chat no está activo (lo comprueba con `enu.plugin.list`, sin
   depender de chat). Y `Chat:quit` (y `ctrl+c`) emiten `core:shutdown`: salir del chat
   **apaga el runtime** en vez de dejar al usuario en una capa inferior (el REPL/intérprete).
-  Así `nu` con el conjunto oficial abre **una** TUI única; con solo `repl` activo
+  Así `enu` con el conjunto oficial abre **una** TUI única; con solo `repl` activo
   (G21), abre el REPL.
 - Crea la sesión inicial (`agent.session`) con la config resuelta
   (defaults < global < proyecto), o reanuda una existente
@@ -185,11 +190,11 @@ chat.statusline.add{ id, side: "left"|"right", priority, render: fn(ctx) -> Span
   **no muere al log**: monta una **UI mínima accionable y salible** que explica
   cómo configurar (`agent.toml`, `providers.toml`, la API key del entorno) y deja
   salir (`esc`/`q`/`ctrl+c` → `core:shutdown`). Un fallo **inesperado** (no de
-  config) se propaga como siempre. El onramp `nu --default-config` deja plantillas
+  config) se propaga como siempre. El onramp `enu --default-config` deja plantillas
   activas que evitan este camino en el primer arranque (ADR-017); la falta de
   **API key** no llega aquí (`providers.resolve` no falla sin ella): el error sale
   in-transcript como `agent:error` al primer turno.
-- No toca `nu.fs` ni `nu.proc` para lógica de agente: si `chat` necesita
+- No toca `enu.fs` ni `enu.proc` para lógica de agente: si `chat` necesita
   algo del dominio del agente que la API pública no da, la API pública del
   agente está incompleta — misma regla de siempre.
 
@@ -200,8 +205,10 @@ chat.statusline.add{ id, side: "left"|"right", priority, render: fn(ctx) -> Span
 | Comandos slash | `chat.command{}` |
 | Renderers de tool results | `chat.renderer(tool, fn)` |
 | Segmentos de statusline | `chat.statusline.add{}` |
-| Atajos | `nu.ui.keymap` + tabla `chat.keys` |
+| Atajos | `enu.ui.keymap` + tabla `chat.keys` |
 | Apariencia | themes del toolkit (semánticos) |
+
+<!-- enu:interno -->
 
 ## 10. Pospuesto
 
@@ -209,3 +216,5 @@ Splits / vista multi-sesión ([P14](pospuesto.md)), búsqueda dentro del
 transcript ([P15](pospuesto.md)), modo vim del editor de input
 ([P16](pospuesto.md)), render de imágenes en el transcript
 ([P6](pospuesto.md)).
+
+<!-- /enu:interno -->

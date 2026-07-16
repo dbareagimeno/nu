@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// Tests de S14 (api.md §5): `nu.fs`. Sesión 🔒 —la lógica clave a blindar
+// Tests de S14 (api.md §5): `enu.fs`. Sesión 🔒 —la lógica clave a blindar
 // (inventario del plan): **escritura atómica** (temporal+rename, sin residuo,
 // sobreescribe); **G17** `write{exclusive}` = `O_EXCL` → `EEXIST` sobre
 // existente, crea sobre inexistente; **`stat` de inexistente → `nil`**, NO lanza;
@@ -209,7 +209,7 @@ func withFsDir(h *harness) string {
 	return dir
 }
 
-// TestFsRoundTrip ejercita la superficie ⏸ completa de `nu.fs` de extremo a
+// TestFsRoundTrip ejercita la superficie ⏸ completa de `enu.fs` de extremo a
 // extremo por el puente real: write/read/append/stat/list/mkdir/remove/rename/
 // copy/tmpdir/cwd. Todo desde una task (las ⏸ exigen task) y autovalidado con
 // `assert`. Es el snippet de la Definition of Done §2 del plan.
@@ -219,42 +219,42 @@ func TestFsRoundTrip(t *testing.T) {
 
 	h.eval(`
 		ok = false
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local base = BASE()
 			local p = base .. "/f.txt"
 
 			-- write + read
-			nu.fs.write(p, "hola")
-			assert(nu.fs.read(p) == "hola", "read tras write")
+			enu.fs.write(p, "hola")
+			assert(enu.fs.read(p) == "hola", "read tras write")
 
 			-- write sobreescribe
-			nu.fs.write(p, "adios")
-			assert(nu.fs.read(p) == "adios", "write sobreescribe")
+			enu.fs.write(p, "adios")
+			assert(enu.fs.read(p) == "adios", "write sobreescribe")
 
 			-- append
-			nu.fs.append(p, "!")
-			assert(nu.fs.read(p) == "adios!", "append")
+			enu.fs.append(p, "!")
+			assert(enu.fs.read(p) == "adios!", "append")
 
 			-- stat de existente
-			local st = nu.fs.stat(p)
+			local st = enu.fs.stat(p)
 			assert(st ~= nil, "stat no-nil")
 			assert(st.size == 6, "stat.size")
 			assert(st.is_dir == false, "stat.is_dir false")
 			assert(type(st.mtime_ms) == "number", "stat.mtime_ms")
 
 			-- stat de inexistente -> nil, NO lanza
-			assert(nu.fs.stat(base .. "/no-existe") == nil, "stat inexistente nil")
+			assert(enu.fs.stat(base .. "/no-existe") == nil, "stat inexistente nil")
 
 			-- mkdir (con padres) + stat is_dir
 			local sub = base .. "/a/b/c"
-			nu.fs.mkdir(sub)
-			assert(nu.fs.stat(sub).is_dir == true, "mkdir crea dir")
+			enu.fs.mkdir(sub)
+			assert(enu.fs.stat(sub).is_dir == true, "mkdir crea dir")
 			-- mkdir idempotente
-			nu.fs.mkdir(sub)
+			enu.fs.mkdir(sub)
 
 			-- list
-			nu.fs.write(base .. "/x.txt", "1")
-			local entries = nu.fs.list(base)
+			enu.fs.write(base .. "/x.txt", "1")
+			local entries = enu.fs.list(base)
 			local names = {}
 			for _, e in ipairs(entries) do names[e.name] = e.is_dir end
 			assert(names["f.txt"] == false, "list ve f.txt")
@@ -262,39 +262,39 @@ func TestFsRoundTrip(t *testing.T) {
 			assert(names["a"] == true, "list ve dir a")
 
 			-- rename
-			nu.fs.rename(base .. "/x.txt", base .. "/y.txt")
-			assert(nu.fs.stat(base .. "/x.txt") == nil, "rename mueve origen")
-			assert(nu.fs.read(base .. "/y.txt") == "1", "rename conserva contenido")
+			enu.fs.rename(base .. "/x.txt", base .. "/y.txt")
+			assert(enu.fs.stat(base .. "/x.txt") == nil, "rename mueve origen")
+			assert(enu.fs.read(base .. "/y.txt") == "1", "rename conserva contenido")
 
 			-- copy
-			nu.fs.copy(base .. "/y.txt", base .. "/z.txt")
-			assert(nu.fs.read(base .. "/z.txt") == "1", "copy reproduce contenido")
-			assert(nu.fs.read(base .. "/y.txt") == "1", "copy no toca origen")
+			enu.fs.copy(base .. "/y.txt", base .. "/z.txt")
+			assert(enu.fs.read(base .. "/z.txt") == "1", "copy reproduce contenido")
+			assert(enu.fs.read(base .. "/y.txt") == "1", "copy no toca origen")
 
 			-- remove de fichero
-			nu.fs.remove(base .. "/z.txt")
-			assert(nu.fs.stat(base .. "/z.txt") == nil, "remove fichero")
+			enu.fs.remove(base .. "/z.txt")
+			assert(enu.fs.stat(base .. "/z.txt") == nil, "remove fichero")
 
 			-- remove de dir no vacío sin recursive -> error capturable
-			local okrm = pcall(function() nu.fs.remove(base .. "/a") end)
+			local okrm = pcall(function() enu.fs.remove(base .. "/a") end)
 			assert(okrm == false, "remove dir no vacío sin recursive lanza")
-			assert(nu.fs.stat(base .. "/a").is_dir == true, "el dir sigue ahí")
+			assert(enu.fs.stat(base .. "/a").is_dir == true, "el dir sigue ahí")
 
 			-- remove de dir con recursive -> borra el árbol
-			nu.fs.remove(base .. "/a", { recursive = true })
-			assert(nu.fs.stat(base .. "/a") == nil, "remove recursive borra el árbol")
+			enu.fs.remove(base .. "/a", { recursive = true })
+			assert(enu.fs.stat(base .. "/a") == nil, "remove recursive borra el árbol")
 
 			-- remove de inexistente -> no-op (no lanza)
-			nu.fs.remove(base .. "/jamas-existio")
+			enu.fs.remove(base .. "/jamas-existio")
 
 			-- tmpdir: propio de la sesión, reutilizado
-			local td1 = nu.fs.tmpdir()
-			local td2 = nu.fs.tmpdir()
+			local td1 = enu.fs.tmpdir()
+			local td2 = enu.fs.tmpdir()
 			assert(td1 == td2, "tmpdir reutiliza")
-			assert(nu.fs.stat(td1).is_dir == true, "tmpdir existe")
+			assert(enu.fs.stat(td1).is_dir == true, "tmpdir existe")
 
 			-- cwd: string no vacío (síncrona, [W])
-			assert(type(nu.fs.cwd()) == "string" and #nu.fs.cwd() > 0, "cwd")
+			assert(type(enu.fs.cwd()) == "string" and #enu.fs.cwd() > 0, "cwd")
 
 			ok = true
 		end)
@@ -310,7 +310,7 @@ func TestFsRoundTrip(t *testing.T) {
 }
 
 // residualTmp busca, recursivamente, algún fichero con el patrón del temporal de
-// `writeAtomic` (`.nu-fs-*.tmp`) que hubiera quedado sin renombrar. Devuelve el
+// `writeAtomic` (`.enu-fs-*.tmp`) que hubiera quedado sin renombrar. Devuelve el
 // primero que encuentre o "" si no hay ninguno.
 func residualTmp(t *testing.T, root string) string {
 	t.Helper()
@@ -319,7 +319,7 @@ func residualTmp(t *testing.T, root string) string {
 		if err != nil || info.IsDir() {
 			return nil
 		}
-		if strings.HasPrefix(filepath.Base(p), ".nu-fs-") && strings.HasSuffix(p, ".tmp") {
+		if strings.HasPrefix(filepath.Base(p), ".enu-fs-") && strings.HasSuffix(p, ".tmp") {
 			found = p
 		}
 		return nil
@@ -334,8 +334,8 @@ func TestFsReadMissingIsENOENT(t *testing.T) {
 	_ = withFsDir(h)
 	h.eval(`
 		err = nil
-		nu.task.spawn(function()
-			local okread, e = pcall(function() nu.fs.read(BASE() .. "/no-existe") end)
+		enu.task.spawn(function()
+			local okread, e = pcall(function() enu.fs.read(BASE() .. "/no-existe") end)
 			assert(okread == false, "read inexistente debe lanzar")
 			err = e
 		end)
@@ -351,15 +351,15 @@ func TestFsWriteExclusiveLua(t *testing.T) {
 	_ = withFsDir(h)
 	h.eval(`
 		code = nil
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local lock = BASE() .. "/session.lock"
-			nu.fs.write(lock, "owner-a", { exclusive = true })   -- crea
+			enu.fs.write(lock, "owner-a", { exclusive = true })   -- crea
 			local okw, e = pcall(function()
-				nu.fs.write(lock, "owner-b", { exclusive = true }) -- ya existe
+				enu.fs.write(lock, "owner-b", { exclusive = true }) -- ya existe
 			end)
 			assert(okw == false, "exclusive sobre existente debe lanzar (G17)")
 			code = e.code
-			assert(nu.fs.read(lock) == "owner-a", "el lock no se sobreescribe")
+			assert(enu.fs.read(lock) == "owner-a", "el lock no se sobreescribe")
 		end)
 	`)
 	h.expectEval(`return code`, "EEXIST")
@@ -371,12 +371,12 @@ func TestFsWriteExclusiveLua(t *testing.T) {
 // una task (se prueba en el round-trip, pero aquí confirmamos que no exige task).
 func TestFsOutsideTaskIsEINVAL(t *testing.T) {
 	h := newHarness(t)
-	se := h.evalErr(`nu.fs.read("/tmp/x")`)
+	se := h.evalErr(`enu.fs.read("/tmp/x")`)
 	if se.Code != CodeEINVAL {
 		t.Fatalf("fs.read fuera de task: got %q, want EINVAL", se.Code)
 	}
 	// cwd no es ⏸: corre en el chunk principal sin task y devuelve un string.
-	got := h.eval(`return nu.fs.cwd()`)
+	got := h.eval(`return enu.fs.cwd()`)
 	if len(got) != 1 || got[0] == "" {
 		t.Fatalf("cwd fuera de task debió devolver un string, got %v", got)
 	}

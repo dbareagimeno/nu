@@ -8,8 +8,8 @@ import (
 
 // Tests de G45 — la superficie [W] de api.md §16 llega COMPLETA a los workers.
 // Buena parte de esa superficie no son thunks del registro sino wrappers Lua de
-// extraPreludio (nu.log.*, nu.re.compile, nu.text.*, nu.proc.spawn, nu.ws.connect,
-// nu.http.stream, nu.search.grep); antes del arreglo, spawnWorker copiaba módulos
+// extraPreludio (enu.log.*, enu.re.compile, enu.text.*, enu.proc.spawn, enu.ws.connect,
+// enu.http.stream, enu.search.grep); antes del arreglo, spawnWorker copiaba módulos
 // y thunks pero nunca los wrappers, y todos esos módulos eran nil dentro del
 // worker. La lógica 🔒 a blindar:
 //
@@ -36,31 +36,31 @@ func TestWorkerG45ParidadSuperficieW(t *testing.T) {
 			if type(v) ~= "function" then mal[#mal+1] = nombre .. " ausente" end
 		end
 		-- Wrappers [W] de extraPreludio (la capa que G45 repara), por módulo de §16.
-		fn("nu.log.debug",     nu.log and nu.log.debug)
-		fn("nu.log.info",      nu.log and nu.log.info)
-		fn("nu.log.warn",      nu.log and nu.log.warn)
-		fn("nu.log.error",     nu.log and nu.log.error)
+		fn("enu.log.debug",     enu.log and enu.log.debug)
+		fn("enu.log.info",      enu.log and enu.log.info)
+		fn("enu.log.warn",      enu.log and enu.log.warn)
+		fn("enu.log.error",     enu.log and enu.log.error)
 		fn("print",            print)
-		fn("nu.re.compile",    nu.re and nu.re.compile)
-		fn("nu.text.wrap",     nu.text and nu.text.wrap)
-		fn("nu.text.markdown", nu.text and nu.text.markdown)
-		fn("nu.text.highlight",nu.text and nu.text.highlight)
-		fn("nu.text.diff",     nu.text and nu.text.diff)
-		fn("nu.proc.spawn",    nu.proc and nu.proc.spawn)
-		fn("nu.ws.connect",    nu.ws and nu.ws.connect)
-		fn("nu.http.stream",   nu.http and nu.http.stream)
-		fn("nu.search.grep",   nu.search and nu.search.grep)
+		fn("enu.re.compile",    enu.re and enu.re.compile)
+		fn("enu.text.wrap",     enu.text and enu.text.wrap)
+		fn("enu.text.markdown", enu.text and enu.text.markdown)
+		fn("enu.text.highlight",enu.text and enu.text.highlight)
+		fn("enu.text.diff",     enu.text and enu.text.diff)
+		fn("enu.proc.spawn",    enu.proc and enu.proc.spawn)
+		fn("enu.ws.connect",    enu.ws and enu.ws.connect)
+		fn("enu.http.stream",   enu.http and enu.http.stream)
+		fn("enu.search.grep",   enu.search and enu.search.grep)
 		-- Solo estado principal (§16): la copia discrimina, no cruza en bloque.
-		if nu.fs and nu.fs.watch ~= nil then mal[#mal+1] = "nu.fs.watch NO debe cruzar" end
-		if nu.events ~= nil then mal[#mal+1] = "nu.events NO debe cruzar" end
-		if nu.ui ~= nil then mal[#mal+1] = "nu.ui NO debe cruzar" end
-		nu.worker.parent.send(table.concat(mal, "; "))
+		if enu.fs and enu.fs.watch ~= nil then mal[#mal+1] = "enu.fs.watch NO debe cruzar" end
+		if enu.events ~= nil then mal[#mal+1] = "enu.events NO debe cruzar" end
+		if enu.ui ~= nil then mal[#mal+1] = "enu.ui NO debe cruzar" end
+		enu.worker.parent.send(table.concat(mal, "; "))
 	`)
 
 	h.eval(`
 		G45MAL, G45DONE = nil, false
-		nu.task.spawn(function()
-			local w = nu.worker.spawn("wmod")
+		enu.task.spawn(function()
+			local w = enu.worker.spawn("wmod")
 			G45MAL = w:recv()
 			w:terminate()
 			G45DONE = true
@@ -83,13 +83,13 @@ func TestWorkerG45WrappersOperativos(t *testing.T) {
 	escribirFicheroTest(t, filepath.Join(fixtures, "b.txt"), "solo paja\n")
 
 	h := workerHarness(t, `
-		local root = nu.worker.parent.recv()
+		local root = enu.worker.parent.recv()
 		local mal = {}
 
 		-- re.compile: la fusión array+nombradas de la tabla de capturas es la razón
 		-- de ser del wrapper (el wire no la cruza de una pieza). [1]=completo,
 		-- [2..]=grupos, más los nombrados por clave.
-		local re = nu.re.compile([[(?P<clave>\w+)=(\w+)]])
+		local re = enu.re.compile([[(?P<clave>\w+)=(\w+)]])
 		local caps = re:match("color=azul")
 		if not (caps and caps[1] == "color=azul" and caps[2] == "color"
 			and caps[3] == "azul" and caps.clave == "color") then
@@ -97,43 +97,43 @@ func TestWorkerG45WrappersOperativos(t *testing.T) {
 		end
 
 		-- text.wrap: el wrapper envuelve {id,width,height} como Block OPACO (§10).
-		local b = nu.text.wrap("hola mundo cruel", 6)
+		local b = enu.text.wrap("hola mundo cruel", 6)
 		if type(b.width) ~= "number" or type(b.height) ~= "number" then
 			mal[#mal+1] = "text.wrap no devuelve un Block con dimensiones"
 		end
 		if b.lines ~= nil then mal[#mal+1] = "el Block debe ser opaco (.lines nil)" end
 
 		-- log: formatea y escribe a fichero; no debe lanzar.
-		local okl = pcall(function() nu.log.info("g45 en worker: %d", 42) end)
-		if not okl then mal[#mal+1] = "nu.log.info lanza" end
+		local okl = pcall(function() enu.log.info("g45 en worker: %d", 42) end)
+		if not okl then mal[#mal+1] = "enu.log.info lanza" end
 
 		-- proc.spawn: handle con métodos suspendientes (__hcall_s) sobre un proceso real.
-		local p = nu.proc.spawn({"echo", "g45"})
+		local p = enu.proc.spawn({"echo", "g45"})
 		local linea = p:read_line("stdout")   -- "g45\n": read_line conserva el \n
 		local st = p:wait()
 		if linea ~= "g45\n" then mal[#mal+1] = "proc read_line: " .. tostring(linea) end
 		if st.code ~= 0 then mal[#mal+1] = "proc wait code: " .. tostring(st.code) end
 
-		-- search.grep: iterador suspendiente + nu.task.cleanup (el cuerpo del worker
+		-- search.grep: iterador suspendiente + enu.task.cleanup (el cuerpo del worker
 		-- ES una task, así que el cleanup tiene dónde registrarse).
 		local vistos = 0
-		for m in nu.search.grep("aguja", { root = root }) do vistos = vistos + 1 end
+		for m in enu.search.grep("aguja", { root = root }) do vistos = vistos + 1 end
 		if vistos ~= 2 then mal[#mal+1] = "grep vio " .. vistos .. " matches, esperaba 2" end
 
 		-- http.stream: el cableado wrapper→thunk sin tocar la red — sin url el thunk
 		-- responde EINVAL estructurado, prueba de que la llamada LLEGA al host.
-		local okh, eh = pcall(function() return nu.http.stream({}) end)
+		local okh, eh = pcall(function() return enu.http.stream({}) end)
 		if okh or type(eh) ~= "table" or eh.code ~= "EINVAL" then
 			mal[#mal+1] = "http.stream sin url no dio EINVAL estructurado"
 		end
 
-		nu.worker.parent.send(table.concat(mal, "; "))
+		enu.worker.parent.send(table.concat(mal, "; "))
 	`)
 
 	h.eval(fmt.Sprintf(`
 		G45OPMAL, G45OPDONE = nil, false
-		nu.task.spawn(function()
-			local w = nu.worker.spawn("wmod")
+		enu.task.spawn(function()
+			local w = enu.worker.spawn("wmod")
 			w:send(%q)
 			G45OPMAL = w:recv()
 			w:terminate()
@@ -149,26 +149,26 @@ func TestWorkerG45WrappersOperativos(t *testing.T) {
 // (workerGrants, sobre los thunks `needs` de cada snippet) decide qué wrappers
 // cruzan. Con caps={"re"}: el wrapper concedido funciona punta a punta, y los
 // módulos no concedidos NO EXISTEN dentro del worker — ni siquiera como tabla
-// (lo que un `if nu.http then` de detección de superficie debe poder fiarse).
+// (lo que un `if enu.http then` de detección de superficie debe poder fiarse).
 func TestWorkerG45CapsPodanLosWrappers(t *testing.T) {
 	h := workerHarness(t, `
 		local mal = {}
-		local re = nu.re.compile([[(\w+)]])
+		local re = enu.re.compile([[(\w+)]])
 		local caps = re:match("hola")
 		if not (caps and caps[1] == "hola") then
 			mal[#mal+1] = "re.compile no funciona con cap 're' concedida"
 		end
 		-- Lo no concedido no existe (§14), tampoco su capa de wrappers.
-		if nu.log ~= nil then mal[#mal+1] = "nu.log existe sin la cap 'log'" end
-		if nu.http ~= nil then mal[#mal+1] = "nu.http existe sin la cap 'http'" end
-		if nu.proc ~= nil then mal[#mal+1] = "nu.proc existe sin la cap 'proc'" end
-		nu.worker.parent.send(table.concat(mal, "; "))
+		if enu.log ~= nil then mal[#mal+1] = "enu.log existe sin la cap 'log'" end
+		if enu.http ~= nil then mal[#mal+1] = "enu.http existe sin la cap 'http'" end
+		if enu.proc ~= nil then mal[#mal+1] = "enu.proc existe sin la cap 'proc'" end
+		enu.worker.parent.send(table.concat(mal, "; "))
 	`)
 
 	h.eval(`
 		G45CAPMAL, G45CAPDONE = nil, false
-		nu.task.spawn(function()
-			local w = nu.worker.spawn("wmod", { caps = {"re"} })
+		enu.task.spawn(function()
+			local w = enu.worker.spawn("wmod", { caps = {"re"} })
 			G45CAPMAL = w:recv()
 			w:terminate()
 			G45CAPDONE = true

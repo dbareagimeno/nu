@@ -10,15 +10,15 @@ import (
 	"time"
 )
 
-// `nu.http.stream` — respuesta HTTP en streaming (api.md §8, sesión S20,
-// inventario 🔒). A diferencia de `nu.http.request` (S19, buffereada), `stream`
+// `enu.http.stream` — respuesta HTTP en streaming (api.md §8, sesión S20,
+// inventario 🔒). A diferencia de `enu.http.request` (S19, buffereada), `stream`
 // **no lee el body entero**: hace la petición, devuelve un `Stream` **al recibir
 // las cabeceras** (`Stream.status`, `Stream.headers`) y entrega el cuerpo trozo a
 // trozo según llega —`Stream:chunks()` (crudo) o `Stream:events()` (parser SSE
 // incorporado, la lógica 🔒)—. Es lo que pide ADR-005: los adaptadores de
 // providers viven en Lua y consumen SSE de un endpoint que va emitiendo tokens.
 //
-// REUSA TODO S19 (claude_decisions.md S19/S20): el parseo de `opts`
+// REUSA TODO S19 (docs/decisiones-implementacion.md S19/S20): el parseo de `opts`
 // (`parseReqOpts`), el modelo del cliente reutilizable vs por-petición
 // (`clientFor`, con TLS/proxy de G12) y el mapeo de errores de transporte
 // (`classifyTransportError`/`httpError`, que ya deciden el código del core fuera
@@ -27,7 +27,7 @@ import (
 //
 // EL PUENTE ⏸ (S04, ADR-011). Como el resto de IO, `stream` y sus iteradores son
 // ⏸: sueltan el token y bloquean en la goroutine de fondo, que **JAMÁS toca Lua**.
-// `nu.http.stream` suspende hasta las cabeceras; cada `next` de `chunks()`/
+// `enu.http.stream` suspende hasta las cabeceras; cada `next` de `chunks()`/
 // `events()` suspende hasta el siguiente trozo/evento; los bytes (o el evento ya
 // parseado en Go) cruzan a Lua solo en la `deliverFn`, con el token recuperado.
 //
@@ -52,7 +52,7 @@ import (
 //
 // CLOSE / CLEANUP. `Stream:close()` aborta la conexión (cancela el contexto, cierra
 // el body) y es **idempotente** (`closeOnce`). El idioma de vida es el de §6: quien
-// abre el stream registra `nu.task.cleanup(function() st:close() end)`, de modo que
+// abre el stream registra `enu.task.cleanup(function() st:close() end)`, de modo que
 // al cancelar/terminar la task el stream se cierra sin fuga de goroutines. Como red
 // de seguridad, `Runtime.Close` cierra todos los streams vivos (`stopAllStreams`).
 // El `Stream` NO es un `ownedHandle` por dueño como `Proc`: un stream es de la task
@@ -122,7 +122,7 @@ type httpStream struct {
 }
 
 // newHTTPStream construye el handle y arranca la goroutine de fondo que lee el
-// body. Se llama bajo el token (en la `deliverFn` de `nu.http.stream`), pero la
+// body. Se llama bajo el token (en la `deliverFn` de `enu.http.stream`), pero la
 // goroutine que lanza corre fuera de él.
 func newHTTPStream(s *scheduler, status int, headers map[string]string, body io.ReadCloser, cancel context.CancelFunc, idle time.Duration) *httpStream {
 	st := &httpStream{
@@ -185,7 +185,7 @@ func (st *httpStream) readLoop() {
 			if st.buffered+len(chunk) > maxStreamBuffer {
 				// Backpressure desbordado (§8): el consumidor va demasiado lento y el
 				// buffer superaría su tope. Falla con `EIO` en vez de crecer sin límite.
-				st.readErr = &httpError{code: CodeEIO, msg: "nu.http.stream: buffer de backpressure desbordado (consumidor demasiado lento)"}
+				st.readErr = &httpError{code: CodeEIO, msg: "enu.http.stream: buffer de backpressure desbordado (consumidor demasiado lento)"}
 				st.done = true
 				st.cond.Broadcast()
 				st.mu.Unlock()
@@ -229,7 +229,7 @@ func (st *httpStream) finishRead(err error) {
 		// cerró a propósito; un `next` posterior verá "fin" (readErr nil) o ECLOSED.
 		st.readErr = nil
 	} else if st.idleFired {
-		st.readErr = &httpError{code: CodeETIMEOUT, msg: "nu.http.stream: el body no envió bytes en idle_timeout_ms"}
+		st.readErr = &httpError{code: CodeETIMEOUT, msg: "enu.http.stream: el body no envió bytes en idle_timeout_ms"}
 	} else {
 		// Error de transporte leyendo el body (conexión cortada a media respuesta,
 		// reset): mismo mapeo que S19. No hay `ctx` aquí, pero un timeout de red lo
@@ -270,7 +270,7 @@ func (st *httpStream) nextChunk() ([]byte, bool, error) {
 
 // errStreamClosed lo devuelve `nextChunk` cuando el stream se cerró (`close()`)
 // mientras se consumía: los iteradores lo rinden como `ECLOSED`.
-var errStreamClosed = errors.New("nu.http.stream: stream cerrado")
+var errStreamClosed = errors.New("enu.http.stream: stream cerrado")
 
 // close aborta la conexión y libera recursos (§8). **Idempotente** (`closeOnce`):
 // llamarlo dos veces, o desde un `cleanup` tras un fin natural, es inocuo. Cancela
@@ -303,7 +303,7 @@ func (st *httpStream) close() {
 	})
 }
 
-// --- nu.http.stream -----------------------------------------------------------
+// --- enu.http.stream -----------------------------------------------------------
 
 // openStream hace la petición **fuera del token** y devuelve un `httpStream` con
 // las cabeceras ya recibidas y la goroutine de fondo leyendo el body. NO lee el
@@ -358,7 +358,7 @@ func (st *httpState) openStream(sched *scheduler, o reqOpts, idle time.Duration)
 			headerTimer.Stop()
 		}
 		cancel()
-		return nil, &httpError{code: CodeEINVAL, msg: "nu.http.stream: " + err.Error()}
+		return nil, &httpError{code: CodeEINVAL, msg: "enu.http.stream: " + err.Error()}
 	}
 	for name, value := range o.headers {
 		req.Header.Set(name, value)
@@ -376,7 +376,7 @@ func (st *httpState) openStream(sched *scheduler, o reqOpts, idle time.Duration)
 	if err != nil {
 		cancel()
 		if timedOut {
-			return nil, &httpError{code: CodeETIMEOUT, msg: "nu.http.stream: la petición excedió timeout_ms (hasta cabeceras)"}
+			return nil, &httpError{code: CodeETIMEOUT, msg: "enu.http.stream: la petición excedió timeout_ms (hasta cabeceras)"}
 		}
 		return nil, classifyTransportError(ctx, err)
 	}
@@ -389,7 +389,7 @@ func (st *httpState) openStream(sched *scheduler, o reqOpts, idle time.Duration)
 		// ya está cancelado) para no filtrar la conexión.
 		_ = resp.Body.Close()
 		cancel()
-		return nil, &httpError{code: CodeETIMEOUT, msg: "nu.http.stream: la petición excedió timeout_ms (hasta cabeceras)"}
+		return nil, &httpError{code: CodeETIMEOUT, msg: "enu.http.stream: la petición excedió timeout_ms (hasta cabeceras)"}
 	}
 
 	// Cabeceras recibidas: el `Stream` toma posesión del body y del `cancel`. La

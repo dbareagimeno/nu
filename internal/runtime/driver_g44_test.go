@@ -1,11 +1,11 @@
 package runtime
 
 // Test 🔒 de G44 en el DRIVER: la manifestación A-34 de la auditoría
-// (docs/auditoria-2026-07-12.md). Antes de G44, `drive()` solo hacía
+// (docs/audits/auditoria-2026-07-12.md). Antes de G44, `drive()` solo hacía
 // FeedInput/Eval/flushFrame: una task spawneada desde un keymap (exactamente
 // cómo la extensión `chat` lanza el turno del agente) encolaba y NADIE la
 // reanudaba jamás — la killer app no podía correr sobre el TTY. Con el bombeo
-// continuo (PumpTasks junto a drive), el patrón keymap → nu.task.spawn →
+// continuo (PumpTasks junto a drive), el patrón keymap → enu.task.spawn →
 // primitiva ⏸ → repintado funciona de punta a punta, y el input sigue
 // respondiendo mientras la task duerme en el fondo.
 
@@ -26,21 +26,21 @@ func TestG44DriverEjecutaTaskDeKeymap(t *testing.T) {
 	// IO suspendiente + blit del resultado). `up` es el keymap síncrono de
 	// control (el input debe responder mientras la task duerme). `q` apaga.
 	h.eval(`
-		local r = nu.ui.region({ x = 0, y = 0, w = 24, h = 4 })
+		local r = enu.ui.region({ x = 0, y = 0, w = 24, h = 4 })
 		local teclas = 0
-		r:blit(0, 0, nu.ui.block({ "esperando" }))
-		nu.ui.keymap("t", function()
-			nu.task.spawn(function()
-				nu.task.sleep(30)
+		r:blit(0, 0, enu.ui.block({ "esperando" }))
+		enu.ui.keymap("t", function()
+			enu.task.spawn(function()
+				enu.task.sleep(30)
 				r:clear()
-				r:blit(0, 0, nu.ui.block({ "turno-hecho" }))
+				r:blit(0, 0, enu.ui.block({ "turno-hecho" }))
 			end)
 		end)
-		nu.ui.keymap("up", function()
+		enu.ui.keymap("up", function()
 			teclas = teclas + 1
-			r:blit(0, 1, nu.ui.block({ "teclas=" .. teclas }))
+			r:blit(0, 1, enu.ui.block({ "teclas=" .. teclas }))
 		end)
-		nu.ui.keymap("q", function() nu.events.emit("core:shutdown") end)
+		enu.ui.keymap("q", function() enu.events.emit("core:shutdown") end)
 	`)
 
 	inR, inW := io.Pipe()

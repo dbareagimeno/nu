@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Tests de `nu.http.stream` (S20, api.md §8, inventario 🔒). Toda la lógica propia
+// Tests de `enu.http.stream` (S20, api.md §8, inventario 🔒). Toda la lógica propia
 // —el modelo de buffer acotado y backpressure → `EIO`, el idle-timeout →
 // `ETIMEOUT`, el cierre idempotente e integrado con `cleanup`, y la entrega de
 // `chunks()`/`events()` (el parser SSE 🔒 se prueba además aparte en `sse_test.go`)—
@@ -55,8 +55,8 @@ func TestStreamEventsBasic(t *testing.T) {
 	withURL(h, srv.URL)
 	h.eval(`
 		status, n, e1ev, e1data, e1id, e2data, e3data = nil,0,nil,nil,nil,nil,nil
-		nu.task.spawn(function()
-			local st = nu.http.stream({ url = URL() })
+		enu.task.spawn(function()
+			local st = enu.http.stream({ url = URL() })
 			status = st.status
 			for ev in st:events() do
 				n = n + 1
@@ -95,8 +95,8 @@ func TestStreamEventsSplitAcrossChunks(t *testing.T) {
 	withURL(h, srv.URL)
 	h.eval(`
 		ev_event, ev_data, count = nil, nil, 0
-		nu.task.spawn(function()
-			local st = nu.http.stream({ url = URL() })
+		enu.task.spawn(function()
+			local st = enu.http.stream({ url = URL() })
 			for ev in st:events() do
 				count = count + 1
 				ev_event, ev_data = ev.event, ev.data
@@ -125,8 +125,8 @@ func TestStreamChunksRaw(t *testing.T) {
 	withURL(h, srv.URL)
 	h.eval(`
 		acc, nchunks = "", 0
-		nu.task.spawn(function()
-			local st = nu.http.stream({ url = URL() })
+		enu.task.spawn(function()
+			local st = enu.http.stream({ url = URL() })
 			for c in st:chunks() do
 				acc = acc .. c
 				nchunks = nchunks + 1
@@ -153,8 +153,8 @@ func TestStreamStatus404NoThrow(t *testing.T) {
 	withURL(h, srv.URL)
 	h.eval(`
 		threw, status = false, nil
-		nu.task.spawn(function()
-			local ok, st = pcall(function() return nu.http.stream({ url = URL() }) end)
+		enu.task.spawn(function()
+			local ok, st = pcall(function() return enu.http.stream({ url = URL() }) end)
 			threw = not ok
 			if ok then status = st.status; st:close() end
 		end)
@@ -194,10 +194,10 @@ func TestStreamBackpressureEIO(t *testing.T) {
 	// que el primer `next` ve.
 	h.eval(`
 		code, gotData = nil, false
-		nu.task.spawn(function()
-			local st = nu.http.stream({ url = URL() })
+		enu.task.spawn(function()
+			local st = enu.http.stream({ url = URL() })
 			-- Deja que el servidor empuje y desborde el buffer antes de leer.
-			nu.task.sleep(300)
+			enu.task.sleep(300)
 			local ok, e = pcall(function()
 				for c in st:chunks() do gotData = true end
 			end)
@@ -229,8 +229,8 @@ func TestStreamIdleTimeoutETIMEOUT(t *testing.T) {
 	withURL(h, srv.URL)
 	h.eval(`
 		code, firstData = nil, nil
-		nu.task.spawn(function()
-			local st = nu.http.stream({ url = URL(), idle_timeout_ms = 80 })
+		enu.task.spawn(function()
+			local st = enu.http.stream({ url = URL(), idle_timeout_ms = 80 })
 			local it = st:events()
 			-- El primer evento llega; el segundo next se queda esperando un body mudo
 			-- -> idle-timeout -> ETIMEOUT.
@@ -259,8 +259,8 @@ func TestStreamCloseIdempotent(t *testing.T) {
 	withURL(h, srv.URL)
 	h.eval(`
 		ok = false
-		nu.task.spawn(function()
-			local st = nu.http.stream({ url = URL() })
+		enu.task.spawn(function()
+			local st = enu.http.stream({ url = URL() })
 			st:close()
 			st:close() -- idempotente: no lanza
 			st:close()
@@ -270,7 +270,7 @@ func TestStreamCloseIdempotent(t *testing.T) {
 	h.expectEval(`return tostring(ok)`, "true")
 }
 
-// TestStreamClosedByCleanupOnCancel blinda la integración con `nu.task.cleanup`
+// TestStreamClosedByCleanupOnCancel blinda la integración con `enu.task.cleanup`
 // (§6): una task que abre un stream y registra `cleanup(function() st:close() end)`
 // libera el stream al ser CANCELADA, sin fuga de goroutines. El servidor mantiene
 // la conexión abierta (SSE infinito); la task se bloquea consumiendo, se cancela
@@ -297,17 +297,17 @@ func TestStreamClosedByCleanupOnCancel(t *testing.T) {
 	// stream está vivo y leyendo), luego se cancela; su cleanup cierra el stream.
 	h.eval(`
 		got1, T = false, nil
-		T = nu.task.spawn(function()
-			local st = nu.http.stream({ url = URL() })
-			nu.task.cleanup(function() st:close() end)
+		T = enu.task.spawn(function()
+			local st = enu.http.stream({ url = URL() })
+			enu.task.cleanup(function() st:close() end)
 			for ev in st:events() do
 				got1 = true
 				-- sigue consumiendo indefinidamente hasta que cancelen la task
 			end
 		end)
 		-- Otra task: espera a que llegue un evento y cancela la primera.
-		nu.task.spawn(function()
-			while not got1 do nu.task.sleep(5) end
+		enu.task.spawn(function()
+			while not got1 do enu.task.sleep(5) end
 			T:cancel()
 		end)
 	`)
@@ -364,7 +364,7 @@ func TestHeaderGateRace(t *testing.T) {
 // lanza `EINVAL` (no puede suspender sin una task, §1.3).
 func TestStreamOutsideTaskEINVAL(t *testing.T) {
 	h := newHarness(t)
-	se := h.evalErr(`nu.http.stream({ url = "http://x" })`)
+	se := h.evalErr(`enu.http.stream({ url = "http://x" })`)
 	if se.Code != CodeEINVAL {
 		t.Fatalf("stream fuera de task: got %q, want EINVAL", se.Code)
 	}
@@ -376,10 +376,10 @@ func TestStreamBadIdleTimeoutEINVAL(t *testing.T) {
 	h := newHarness(t)
 	h.eval(`
 		c1, c2 = nil, nil
-		nu.task.spawn(function()
-			local _, e1 = pcall(function() nu.http.stream({ url = "http://x", idle_timeout_ms = -1 }) end)
+		enu.task.spawn(function()
+			local _, e1 = pcall(function() enu.http.stream({ url = "http://x", idle_timeout_ms = -1 }) end)
 			c1 = e1.code
-			local _, e2 = pcall(function() nu.http.stream({ url = "http://x", idle_timeout_ms = "diez" }) end)
+			local _, e2 = pcall(function() enu.http.stream({ url = "http://x", idle_timeout_ms = "diez" }) end)
 			c2 = e2.code
 		end)
 	`)

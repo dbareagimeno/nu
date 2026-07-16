@@ -1,4 +1,4 @@
-# Arquitectura de nu
+# Arquitectura de enu
 
 Estado: borrador fundacional. Esto describe la forma del sistema, no una
 especificación cerrada. Las decisiones y su razonamiento viven en
@@ -105,7 +105,7 @@ compongan, como en Neovim — y la robustez se obtiene con dos guardas del core:
 
 - **Capa 1 — Lua embebido.** El mecanismo universal: hooks del ciclo de vida,
   comandos, UI, keybindings, y también el propio agente y los adaptadores de
-  protocolo de los LLMs. Distribución v1: `~/.config/nu/plugins/` + git clone;
+  protocolo de los LLMs. Distribución v1: `~/.config/enu/plugins/` + git clone;
   sin package manager propio de momento.
 - **Capa 2 — Procesos externos.** Herramientas pesadas o en otros lenguajes
   vía subproceso (JSON-RPC/stdio). MCP vive aquí, **implementado como
@@ -135,8 +135,8 @@ recompilación. El contrato del adaptador y el formato del registro están en
   nativo: [P18](pospuesto.md).
 - Extensiones oficiales embebidas con `go:embed` pero **inactivas por
   defecto** (ADR-010): activación explícita (pantalla de runtime desnudo
-  con TTY — api.md §14 —, el flag `nu --default-config` sin TTY —ADR-015,
-  G33—, o `nu.toml` a mano), sin red; sobreescribibles por el usuario
+  con TTY — api.md §14 —, el flag `enu --default-config` sin TTY, o `enu.toml`
+  a mano), sin red; sobreescribibles por el usuario
   desde su directorio de config. El **conjunto oficial de producto** son
   las embebidas menos el andamiaje `example` y la malla `mesh` (ADR-015;
   [malla.md](malla.md) §1.4): además del
@@ -144,7 +144,7 @@ recompilación. El contrato del adaptador y el formato del registro están en
   Lua sobre la API pública, activable solo, el punto de partida del autor
   de extensiones que no quiere el harness (G21)—. Con TTY, **una sola UI
   primaria posee la pantalla**: el repl **cede al chat** (solo auto-monta su
-  UI si el chat no está activo, vía `nu.plugin.list`), así `nu` con el
+  UI si el chat no está activo, vía `enu.plugin.list`), así `enu` con el
   conjunto oficial abre una TUI única y no el chat *y* el REPL solapados
   ([G36](problemas.md#g36), [ADR-018](adr.md)). La **`mesh`** ([malla.md](malla.md),
   nacida de la ronda 8 de pseudocódigo) viaja embebida pero se activa
@@ -159,6 +159,8 @@ convención pública legible por otras extensiones, no una primitiva del core.
 Contrato completo en [sesiones.md](sesiones.md). El resto de extensiones
 escriben bajo `data_dir()/plugins/<nombre>/`.
 
+<!-- enu:interno -->
+
 ## Cuestiones abiertas
 
 1. ~~**Spike de validación de ADR-007**: celdas/regiones + compositor + toolkit
@@ -171,7 +173,7 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
    primitiva Go), así que **el veto NO se ejecutó** y el toolkit se construye en
    Lua. ADR-007 ascendió a Aceptada.
 2. **Política fina del watchdog**: el presupuesto base ya está fijado
-   (100 ms, configurable en `nu.toml` — api.md §1.3); queda lo fino: si es
+   (100 ms, configurable en `enu.toml` — api.md §1.3); queda lo fino: si es
    configurable por plugin y el flujo de deshabilitación/aviso al usuario
    tras `core:plugin.misbehaved`.
 3. **Diseño de la API pública del toolkit oficial** (vocabulario de widgets,
@@ -185,13 +187,13 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
    El contrato quedó fijado al construirla —Lua puro sobre la API pública, sin
    tocar el core (corolario de completitud satisfecho)—:
    - **Configuración** (división datos/código, ADR-005): los servidores se
-     DECLARAN en `mcp.toml` (`nu.config.dir()`), formato
+     DECLARAN en `mcp.toml` (`enu.config.dir()`), formato
      `[servers.<nombre>] command = [...] cwd? env?`. Ausente → no se conecta
      nada. También se conectan a mano con `mcp.connect{ name, command, cwd?,
      env? } ⏸ -> Conn`.
    - **Ciclo de vida de los procesos**: el servidor se lanza con
-     `nu.proc.spawn`, vive mientras su `Conn` exista, y se mata limpiamente
-     (`Proc:kill` registrado en `nu.task.cleanup` + `Conn:close()` idempotente,
+     `enu.proc.spawn`, vive mientras su `Conn` exista, y se mata limpiamente
+     (`Proc:kill` registrado en `enu.task.cleanup` + `Conn:close()` idempotente,
      [api.md](api.md) §6). Un servidor que muere (EOF en stdout) despierta a
      todos los requests pendientes con `EMCP` (nadie cuelga). El diálogo es
      JSON-RPC 2.0 sobre stdio con **framing por líneas** (una línea = un mensaje
@@ -201,23 +203,27 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
      §3) bajo el prefijo `mcp__<servidor>__<tool>`; su handler hace `tools/call`
      por JSON-RPC. La **confianza** —son tools de TERCEROS— se gobierna con el
      pipeline de permisos del agente ([agente.md](agente.md) §5): se registran
-     con `permissions.default = "ask"`, así que requieren permiso explícito
-     (`allow = {"mcp__<servidor>__*"}`) y en headless sin él se DENIEGAN con
+     con `permissions.default = "ask"`, así que requieren permiso explícito —
+     un `allow` por tool, con nombre **exacto**
+     (`allow = {"mcp__github__search_code"}`): el emparejamiento de nombres no
+     admite glob (G53, [agente.md](agente.md) §5), de modo que autorizar un
+     servidor entero es enumerar sus tools o conceder por hook `permission` —
+     y en headless sin él se DENIEGAN con
      error accionable. No hay caso especial: una tool MCP pasa por la misma
      valla que cualquier otra.
-5. ~~**Superficie CLI**: `nu -e` y `--auto-permissions` aparecen en los
+5. ~~**Superficie CLI**: `enu -e` y `--auto-permissions` aparecen en los
    contratos sin especificación propia (flags, subcomandos, comportamiento
    headless, códigos de salida). El azúcar de reanudación (un `--continue`
    sobre `agent.session{ resume }`) se decidirá aquí: G18 lo dejó
    deliberadamente fuera de los contratos.~~ **RESUELTA** por la
    implementación de S45 ([implementacion.md](implementacion.md)). La
    superficie CLI vive en el **binario** (`main.go`), NO en la API sagrada
-   `nu.*` (api.md): es la interfaz de línea de comandos del ejecutable, y el
+   `enu.*` (api.md): es la interfaz de línea de comandos del ejecutable, y el
    core sigue sin saber lo que es un agente (ADR-003) — el CLI orquesta las
    extensiones (`agent`, `sessions`) por la API pública, como podría hacerlo un
    `init.lua` de usuario. Lo fijado:
-   - **Flags**: `nu -e '<lua>'` (evalúa un chunk Lua headless e imprime sus
-     retornos, ya de S01); `nu -p '<prompt>'` (ejecuta un **turno de agente
+   - **Flags**: `enu -e '<lua>'` (evalúa un chunk Lua headless e imprime sus
+     retornos, ya de S01); `enu -p '<prompt>'` (ejecuta un **turno de agente
      headless** — agente.md §1, "modo scripting/CI gratis" — e imprime el texto
      final del asistente a stdout); `--auto-permissions` (permisos del agente en
      modo `"auto"`, agente.md §5 amortiguador 3 — sin él, en headless las tools
@@ -225,11 +231,11 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
      de `agent.toml`); `--continue`/`-c` (azúcar de reanudación, abajo);
      `--default-config` (activa el **conjunto oficial de producto** sin TTY —el
      onramp que la pantalla desnuda de G21 no cubría—: solo, escribe
-     `plugins.enabled` en `nu.toml` —y plantillas activas de
+     `plugins.enabled` en `enu.toml` —y plantillas activas de
      `agent.toml`/`providers.toml` si no existen, para dejar el harness usable,
      ADR-017/G35— y sale; con `-p`/`-e`, lo activa solo para ese
      proceso sin tocar disco. ADR-015, G33).
-   - **Headless / códigos de salida**: `nu -e` y el modo agente corren SIN TTY
+   - **Headless / códigos de salida**: `enu -e` y el modo agente corren SIN TTY
      (G20) con códigos de salida coherentes para CI/scripts — **0** éxito;
      **1** error de ejecución (el chunk, el turno o el provider lanzaron, o el
      arranque falló); **2** uso inválido (flags/argumentos); **3** permiso
@@ -243,8 +249,8 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
      deliberadamente fuera de los contratos por pertenecer a esta superficie.
    - **Arranque** (S33): sin args y con TTY → arranque normal (pantalla de
      runtime desnudo si no hay plugins, G21); sin args y sin TTY → uso (código 2);
-     `nu -e`/`-p`/`--continue` → modo headless. `--default-config` solo (sin acción
-     headless) escribe el conjunto de producto en `nu.toml` —más plantillas de
+     `enu -e`/`-p`/`--continue` → modo headless. `--default-config` solo (sin acción
+     headless) escribe el conjunto de producto en `enu.toml` —más plantillas de
      `agent.toml`/`providers.toml` si faltan (ADR-017/G35)— y sale (G33): el onramp
      sin TTY que la pantalla desnuda no daba.
    El ejecutor headless de los modos suspendientes (el turno del agente es ⏸) es
@@ -252,3 +258,5 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
    del binario, NO superficie Lua sagrada (como `EvalString`/`RenderBareScreen`);
    api.md quedó INTACTO (corolario de completitud satisfecho: la API pública +
    las extensiones bastaron, sin hallazgo `G##`).
+
+<!-- /enu:interno -->

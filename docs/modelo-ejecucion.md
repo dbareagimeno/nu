@@ -71,17 +71,17 @@ sequenceDiagram
     participant C as Compositor (Go)
     participant T as Terminal
 
-    P->>N: nu.http.stream(...) ⏸ (la task se suspende)
+    P->>N: enu.http.stream(...) ⏸ (la task se suspende)
     Note over L: el loop sigue atendiendo input y otros eventos
     N-->>L: cabeceras recibidas
     L->>P: reanuda la task con el Stream
     loop por cada evento SSE
         N-->>L: chunk (encolado)
         L->>P: reanuda el iterador Stream:events()
-        P->>TX: nu.text.markdown(texto parcial)
+        P->>TX: enu.text.markdown(texto parcial)
         TX-->>P: Block
         P->>C: region:blit(Block)
-        Note over C: marca damage; NO pinta aún
+        Note over C: marca damage — NO pinta aún
     end
     C-->>T: repinta lo dañado (coalescido, ≤ ~30 ms)
 ```
@@ -99,7 +99,7 @@ recibir el chunk ya parseado, pedir el Block, colocarlo.
 2. **La cancelación es cooperativa.** `Task:cancel()` solo surte efecto en el
    siguiente punto de suspensión. Un bucle de CPU puro en Lua no es
    cancelable: solo el watchdog lo aborta. El aborto no es capturable con
-   `pcall`; los recursos se liberan con `nu.task.cleanup` (api.md §1.3).
+   `pcall`; los recursos se liberan con `enu.task.cleanup` (api.md §1.3).
    Además, cancelar **no interrumpe la primitiva ⏸ en vuelo**: la task ve
    `ECANCELED` al instante, pero la operación Go en curso (`fs.write`,
    `http.request`…) corre hasta su fin natural y sus efectos pueden aterrizar
@@ -108,14 +108,14 @@ recibir el chunk ya parseado, pedir el Block, colocarlo.
    valores JSON-ables copiados. No cruzan: closures, userdata ni **Blocks**.
    Consecuencia práctica: un worker no puede pre-renderizar UI; manda datos
    digeridos y el estado principal pide los Blocks y los coloca.
-4. **Workers sin `nu.ui` ni `nu.events`.** Su único canal con el mundo es la
+4. **Workers sin `enu.ui` ni `enu.events`.** Su único canal con el mundo es la
    mensajería con el padre. Diseño deliberado (un solo escritor de UI), pero
    significa que un worker no puede reaccionar a eventos del bus ni emitirlos
    directamente. La API del worker puede recortarse aún más al crearlo
    (`opts.caps`), hasta dejar solo los módulos concedidos.
 5. **En headless el bombeo retorna en la quiescencia de primer plano** (`Boot`
    y los `Eval` de `-e`/`-p`): mientras ningún bucle bombea, los timers de
-   fondo (`nu.task.every`) no laten — se **pausan** (su petición en vuelo
+   fondo (`enu.task.every`) no laten — se **pausan** (su petición en vuelo
    sigue su curso y el resultado espera) y el siguiente drenaje los reanuda.
    En el modo interactivo el bombeo es **continuo** ([G44](problemas.md#g44),
    resuelta y construida 2026-07-13): `PumpTasks` vive junto al bucle del

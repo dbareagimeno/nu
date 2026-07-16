@@ -51,11 +51,11 @@ type asyncResult struct {
 
 // RunTasks conduce el bucle de scheduler hasta la quiescencia de PRIMER PLANO
 // (todas las tasks no-fondo terminaron) o hasta idle (nada en vuelo). Las tasks
-// se crean desde Lua (nu.task.spawn) antes o durante el bucle. `ctx` permite
+// se crean desde Lua (enu.task.spawn) antes o durante el bucle. `ctx` permite
 // cancelar la espera del bucle y retornar.
 //
 // G44: el estado del bombeo vive en la Instance, así que retornar NO barre el
-// trabajo de fondo — el `sleep` en vuelo de un `nu.task.every` sigue su curso,
+// trabajo de fondo — el `sleep` en vuelo de un `enu.task.every` sigue su curso,
 // su resultado espera en `pumpCh`, y la siguiente invocación (o un `PumpTasks`)
 // lo drena y reanuda el timer: los `every` se PAUSAN entre invocaciones, no
 // mueren. Solo un error duro del motor barre las peticiones en vuelo (esa VM ya

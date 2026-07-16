@@ -2,7 +2,7 @@ package vmwasm
 
 // Tests 🔒 de G44: el bombeo del scheduler con estado en la Instance.
 // Blindan las tres manifestaciones que la auditoría verificó empíricamente
-// (A-01/A-03/A-34 del informe, docs/auditoria-2026-07-12.md):
+// (A-01/A-03/A-34 del informe, docs/audits/auditoria-2026-07-12.md):
 //   - un `every` SOBREVIVE a la quiescencia de primer plano (pausa, no muerte)
 //     y la siguiente invocación de RunTasks lo reanuda;
 //   - el trabajo encolado desde fuera del bucle (EmitEvent) despierta al select
@@ -40,7 +40,7 @@ func evalInt(t *testing.T, inst *Instance, expr string) int {
 	return n
 }
 
-// TestG44EverySobreviveQuiescencia (A-01): el contador de un `nu.task.every`
+// TestG44EverySobreviveQuiescencia (A-01): el contador de un `enu.task.every`
 // avanza también en una SEGUNDA invocación de RunTasks. Antes de G44 este test
 // fallaba: la quiescencia del primer RunTasks hacía cancelAll(), el sleep en
 // vuelo del timer moría con ECANCELED no capturable y el segundo RunTasks no lo
@@ -49,8 +49,8 @@ func TestG44EverySobreviveQuiescencia(t *testing.T) {
 	inst := newInstance(t)
 	evalOK(t, inst, `
 		n = 0
-		nu.task.every(5, function() n = n + 1 end)
-		nu.task.spawn(function() nu.task.sleep(30) end)`)
+		enu.task.every(5, function() n = n + 1 end)
+		enu.task.spawn(function() enu.task.sleep(30) end)`)
 	if err := inst.RunTasks(context.Background()); err != nil {
 		t.Fatalf("RunTasks 1: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestG44EverySobreviveQuiescencia(t *testing.T) {
 	// Entre invocaciones el bucle está PARADO: el timer vence y su resultado
 	// espera en pumpCh (pausa). La segunda invocación lo drena y el every late.
 	time.Sleep(20 * time.Millisecond)
-	evalOK(t, inst, `nu.task.spawn(function() nu.task.sleep(40) end)`)
+	evalOK(t, inst, `enu.task.spawn(function() enu.task.sleep(40) end)`)
 	if err := inst.RunTasks(context.Background()); err != nil {
 		t.Fatalf("RunTasks 2: %v", err)
 	}
@@ -79,10 +79,10 @@ func TestG44KickDespiertaElBucle(t *testing.T) {
 	inst := newInstance(t)
 	evalOK(t, inst, `
 		hecho = 0
-		nu.events.on("t:go", function()
-			nu.task.spawn(function() hecho = 1 end)
+		enu.events.on("t:go", function()
+			enu.task.spawn(function() hecho = 1 end)
 		end)
-		nu.task.spawn(function() nu.task.sleep(400) end)`)
+		enu.task.spawn(function() enu.task.sleep(400) end)`)
 
 	done := make(chan error, 1)
 	go func() { done <- inst.RunTasks(context.Background()) }()
@@ -117,7 +117,7 @@ func TestG44PumpTasksBombeoContinuo(t *testing.T) {
 
 	// (1) Una task spawneada con el bombeo ya en marcha (y ocioso) corre: es el
 	// gesto del keymap/handler del modo interactivo.
-	evalOK(t, inst, `x = 0; nu.task.spawn(function() nu.task.sleep(1); x = 1 end)`)
+	evalOK(t, inst, `x = 0; enu.task.spawn(function() enu.task.sleep(1); x = 1 end)`)
 	deadline := time.Now().Add(2 * time.Second)
 	for evalInt(t, inst, "x") != 1 {
 		if time.Now().After(deadline) {
@@ -127,7 +127,7 @@ func TestG44PumpTasksBombeoContinuo(t *testing.T) {
 	}
 
 	// (2) Un every late de forma continua (ninguna task de primer plano viva).
-	evalOK(t, inst, `n = 0; nu.task.every(5, function() n = n + 1 end)`)
+	evalOK(t, inst, `n = 0; enu.task.every(5, function() n = n + 1 end)`)
 	c1 := -1
 	deadline = time.Now().Add(2 * time.Second)
 	for {
@@ -169,8 +169,8 @@ func TestG44PumpTasksBombeoContinuo(t *testing.T) {
 func TestG44CloseReclamaElFondo(t *testing.T) {
 	inst := newInstance(t)
 	evalOK(t, inst, `
-		nu.task.every(3600000, function() end) -- una hora: solo Close puede reclamarlo
-		nu.task.spawn(function() nu.task.sleep(1) end)`)
+		enu.task.every(3600000, function() end) -- una hora: solo Close puede reclamarlo
+		enu.task.spawn(function() enu.task.sleep(1) end)`)
 	if err := inst.RunTasks(context.Background()); err != nil {
 		t.Fatalf("RunTasks: %v", err)
 	}

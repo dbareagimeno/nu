@@ -1,6 +1,6 @@
 package runtime
 
-// Catálogo de nu.search sobre el backend wasm (M13b, §11). Contraparte de
+// Catálogo de enu.search sobre el backend wasm (M13b, §11). Contraparte de
 // search.go: las tres primitivas del módulo —files (⏸), grep (⏸, con handle
 // iterador) y fuzzy (síncrona)— reusando ÍNTEGRO el núcleo VM-agnóstico de la
 // implementación gopher: el recorrido del árbol (`walkFiles`), el scorer difuso
@@ -9,15 +9,15 @@ package runtime
 // marshaling de la frontera (mapas del wire en vez de `*lua.LTable`) y la forma de
 // despachar el iterador de grep (handle + método ⏸ en vez de una clausura Lua).
 //
-// EL RETO DEL grep ⏸ + HANDLE ITERADOR. En gopher `nu.search.grep` devuelve una
+// EL RETO DEL grep ⏸ + HANDLE ITERADOR. En gopher `enu.search.grep` devuelve una
 // **clausura Lua** que suspende en cada llamada; el wire no cruza clausuras. El
-// modelo wasm equivalente (DM3) es un HANDLE: `nu.search._grep` es una primitiva ⏸
+// modelo wasm equivalente (DM3) es un HANDLE: `enu.search._grep` es una primitiva ⏸
 // que enumera el árbol (IO, cede al scheduler) y, ya con la lista de ficheros,
 // arranca el pool de goroutines y registra el iterador como handle `GrepIter`
 // (mismo idioma que `ws._connect`: primitiva ⏸ que además crea handle vía
 // `inst.AllocHandle` — sólo toca la `handleTable`, no la VM). El wrapper Lua
-// `nu.search.grep` envuelve ese handle en una clausura que en cada iteración llama
-// `GrepIter:next` por `__hcall_s`, reconstruyendo el `for r in nu.search.grep(...)`.
+// `enu.search.grep` envuelve ese handle en una clausura que en cada iteración llama
+// `GrepIter:next` por `__hcall_s`, reconstruyendo el `for r in enu.search.grep(...)`.
 //
 // EL MÉTODO next ⏸. `GrepIter:next` es el gemelo exacto de la clausura `next` de
 // search.go: corta sin recibir si ya se alcanzó `max`, si no bloquea en el canal
@@ -28,7 +28,7 @@ package runtime
 // sobre el mismo `grepIter`: `emitted`/`close` no necesitan candado extra.
 //
 // CICLO DE VIDA. El pool se ata a `grepIter.close` (idempotente, `closeOnce`). El
-// wrapper registra `GrepIter:close` en `nu.task.cleanup` al crear el iterador: un
+// wrapper registra `GrepIter:close` en `enu.task.cleanup` al crear el iterador: un
 // `break`, el éxito, un error o la cancelación de la task paran el pool. `next` lo
 // cierra además al agotar/tope y `Runtime.Close` conserva el rastreo global como
 // red de seguridad. Algunos tests vmwasm mínimos no tienen scheduler; en ellos el
@@ -39,11 +39,11 @@ import (
 	"regexp"
 	"sort"
 
-	"github.com/dbareagimeno/nu/internal/vmwasm"
+	"github.com/dbareagimeno/enu/internal/vmwasm"
 )
 
 func registerSearchWasm(p *vmwasm.Pool, rt *Runtime) {
-	// nu.search.files(root, opts?) -> string[] ⏸ — listado recursivo bajo `root`
+	// enu.search.files(root, opts?) -> string[] ⏸ — listado recursivo bajo `root`
 	// respetando `.gitignore` (G7). El recorrido (IO pesado) corre en la goroutine
 	// de fondo; las rutas cruzan como array. `root` inexistente → ENOENT; opts mal
 	// tipadas → EINVAL (reusa `walkFiles` y el mapeo de errores de fs).
@@ -64,7 +64,7 @@ func registerSearchWasm(p *vmwasm.Pool, rt *Runtime) {
 		return []any{arr}, nil
 	})
 
-	// nu.search.fuzzy(query, candidates, opts?) -> {index, score}[] — SÍNCRONA (la
+	// enu.search.fuzzy(query, candidates, opts?) -> {index, score}[] — SÍNCRONA (la
 	// primitiva caliente del picker): reusa `fuzzyScore` y el orden estable por score
 	// descendente. candidates no-array o con no-strings → EINVAL; opts.max recorta.
 	p.Register("search.fuzzy", func(inst *vmwasm.Instance, args []any) ([]any, error) {
@@ -113,7 +113,7 @@ func registerSearchWasm(p *vmwasm.Pool, rt *Runtime) {
 		return []any{out}, nil
 	})
 
-	// nu.search._grep(pattern, opts) -> GrepIter ⏸ — el wrapper nu.search.grep lo
+	// enu.search._grep(pattern, opts) -> GrepIter ⏸ — el wrapper enu.search.grep lo
 	// envuelve. Compila el patrón (RE2; EINVAL si inválido o insensible con "(?i)"),
 	// enumera el árbol bajo opts.root (IO, cede al scheduler; root inexistente →
 	// ENOENT), arranca el pool y registra el iterador como handle. opts sin root, mal
@@ -174,22 +174,22 @@ func registerSearchWasm(p *vmwasm.Pool, rt *Runtime) {
 
 	// GrepIter:close() cancela el pool. Es síncrono e idempotente: no espera IO ni
 	// toca Lua; sólo cancela el contexto y desregistra el iterador. El wrapper lo
-	// registra en `nu.task.cleanup`, de modo que un `break` no deja productores
+	// registra en `enu.task.cleanup`, de modo que un `break` no deja productores
 	// bloqueados intentando enviar al canal sin consumidor.
 	p.RegisterHandleMethod("GrepIter", "close", func(inst *vmwasm.Instance, val any, args []any) ([]any, error) {
 		val.(*grepIter).close()
 		return nil, nil
 	})
 
-	// Wrapper Lua: nu.search.grep envuelve el handle de _grep en una clausura
+	// Wrapper Lua: enu.search.grep envuelve el handle de _grep en una clausura
 	// iteradora que en cada paso llama GrepIter:next por __hcall_s (⏸) y registra el
-	// cierre en la task actual. Reconstruye el `for r in nu.search.grep(pattern,
+	// cierre en la task actual. Reconstruye el `for r in enu.search.grep(pattern,
 	// opts) do ... end` del contrato (§11); el primer valor es la función iteradora.
 	p.AddPreludioW(`
-nu.search = nu.search or {}
-function nu.search.grep(pattern, opts)
-  local it = nu.search._grep(pattern, opts)   -- handle {__id} tras enumerar el árbol
-  nu.task.cleanup(function() __hcall(it.__id, "close") end)
+enu.search = enu.search or {}
+function enu.search.grep(pattern, opts)
+  local it = enu.search._grep(pattern, opts)   -- handle {__id} tras enumerar el árbol
+  enu.task.cleanup(function() __hcall(it.__id, "close") end)
   return function()
     return __hcall_s(it.__id, "next")
   end
@@ -283,7 +283,7 @@ func parseGrepOptsWasm(v any) (grepOpts, error) {
 
 // grepResultToWasm construye el mapa {path, line_no, line, ranges} de un match para
 // cruzar el wire. Gemelo de grepResultToLua (search.go): cada rango es {start, end}
-// en BYTES 1-based inclusive (convenio de nu.re.find_all, S26), como array de dos
+// en BYTES 1-based inclusive (convenio de enu.re.find_all, S26), como array de dos
 // enteros; `line:sub(r[1], r[2])` reconstruye el tramo casado.
 func grepResultToWasm(res grepResult) map[string]any {
 	ranges := make([]any, len(res.ranges))
@@ -307,7 +307,7 @@ func validGlob(glob string) error {
 }
 
 // einvalSearch acuña el error EINVAL del módulo con el mismo prefijo que el backend
-// gopher ("nu.search.<fn>: ...").
+// gopher ("enu.search.<fn>: ...").
 func einvalSearch(fn, msg string) error {
-	return &vmwasm.StructuredError{Code: CodeEINVAL, Message: "nu.search." + fn + ": " + msg}
+	return &vmwasm.StructuredError{Code: CodeEINVAL, Message: "enu.search." + fn + ": " + msg}
 }

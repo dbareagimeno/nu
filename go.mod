@@ -1,6 +1,8 @@
-module github.com/dbareagimeno/nu
+module github.com/dbareagimeno/enu
 
 go 1.26.3
+
+toolchain go1.26.5
 
 require (
 	github.com/BurntSushi/toml v1.6.0

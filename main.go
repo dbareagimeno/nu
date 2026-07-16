@@ -1,7 +1,7 @@
-// Command nu es el binario del runtime: un kernel Lua mínimo donde todo lo demás
+// Command enu es el binario del runtime: un kernel Lua mínimo donde todo lo demás
 // son extensiones (filosofia.md). Este fichero es la SUPERFICIE CLI (S45, cuestión
 // abierta nº5 de arquitectura.md): los flags, el comportamiento headless y los
-// códigos de salida del ejecutable. NO es la API sagrada `nu.*` (eso es api.md, la
+// códigos de salida del ejecutable. NO es la API sagrada `enu.*` (eso es api.md, la
 // superficie Lua): es la interfaz de línea de comandos del binario, y por eso vive
 // aquí, en `package main`, no en el core. El core sigue sin saber lo que es un
 // agente (ADR-003): el CLE orquesta las EXTENSIONES (`agent`, `sessions`) por la API
@@ -10,25 +10,25 @@
 //
 // MODOS (sin args y con TTY → pantalla de runtime desnudo / arranque normal, S33):
 //
-//	nu                       Arranque canónico (§14). Con TTY y ningún plugin activo,
+//	enu                       Arranque canónico (§14). Con TTY y ningún plugin activo,
 //	                         pinta la PANTALLA DE RUNTIME DESNUDO (G21, S33).
-//	nu --default-config      Activa el CONJUNTO OFICIAL DE PRODUCTO (las embebidas menos
+//	enu --default-config      Activa el CONJUNTO OFICIAL DE PRODUCTO (las embebidas menos
 //	                         el andamiaje `example`, ADR-015/G33) sin TTY. SOLO: escribe
-//	                         `plugins.enabled` en `config.dir()/nu.toml` y sale (atómico,
-//	                         idempotente, preserva el resto; un `nu.toml` roto NO se pisa).
+//	                         `plugins.enabled` en `config.dir()/enu.toml` y sale (atómico,
+//	                         idempotente, preserva el resto; un `enu.toml` roto NO se pisa).
 //	                         Combinado con `-p`/`-e`: EFÍMERO, lo activa solo para ese
 //	                         proceso (`WithEnabledPlugins`) sin tocar disco —Docker/CI
 //	                         inmutable—. Es el onramp sin TTY que la pantalla no daba.
-//	nu -e '<lua>'            Evalúa un chunk Lua SIN TTY (headless) e imprime sus
+//	enu -e '<lua>'            Evalúa un chunk Lua SIN TTY (headless) e imprime sus
 //	                         valores de retorno. El chunk corre en el estado
-//	                         principal (no es task): puede `nu.task.spawn` pero no
+//	                         principal (no es task): puede `enu.task.spawn` pero no
 //	                         usar funciones ⏸ directamente (§1.3).
-//	nu -p '<prompt>'         Ejecuta un TURNO de AGENTE headless (agente.md §1: el
+//	enu -p '<prompt>'         Ejecuta un TURNO de AGENTE headless (agente.md §1: el
 //	                         motor es headless, "modo scripting/CI gratis") con el
 //	                         prompt dado e imprime el texto final del asistente a
 //	                         stdout. Corre como TASK (vía EvalTaskString) para que el
 //	                         turno (⏸) y sus tools (fs/proc/http) funcionen sin TTY.
-//	nu --continue -p '<...>' Reanuda la ÚLTIMA sesión del proyecto (cwd) antes de
+//	enu --continue -p '<...>' Reanuda la ÚLTIMA sesión del proyecto (cwd) antes de
 //	                         enviar el prompt: azúcar de `agent.session{resume}`
 //	                         (G18) — el `--continue` que G18 dejó deliberadamente
 //	                         fuera de los contratos por pertenecer a la superficie
@@ -48,7 +48,7 @@
 //	0  éxito.
 //	1  error de ejecución: el chunk de `-e`, el turno del agente o un fallo del
 //	   provider lanzaron (error estructurado §1.4 o no), o el arranque (`Boot`)
-//	   falló (grafo de plugins inválido, `nu.toml` roto).
+//	   falló (grafo de plugins inválido, `enu.toml` roto).
 //	2  error de uso: flags incompatibles o un argumento requerido ausente.
 //	3  permiso denegado en headless: una tool sensible se denegó por falta de
 //	   `--auto-permissions` (agente.md §5). Código DISTINTO para que un script/CI
@@ -62,7 +62,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dbareagimeno/nu/internal/runtime"
+	"github.com/dbareagimeno/enu/internal/runtime"
 )
 
 // Códigos de salida del binario (la convención de S45; ver el doc de paquete).
@@ -100,7 +100,7 @@ func run() int {
 	flag.BoolVar(&opts.cont, "c", false, "alias de --continue")
 	flag.BoolVar(&opts.autoPerm, "auto-permissions", false, "permisos del agente en modo \"auto\" (agente.md §5); sin él, en headless las tools sensibles se deniegan")
 	flag.StringVar(&opts.model, "model", "", "selecciona el provider/modelo del turno de agente (anula agent.toml)")
-	flag.BoolVar(&opts.defConfig, "default-config", false, "activa el conjunto oficial de producto: solo, escribe plugins.enabled en nu.toml y sale; con -p/-e, lo activa solo para ese proceso (ADR-015)")
+	flag.BoolVar(&opts.defConfig, "default-config", false, "activa el conjunto oficial de producto: solo, escribe plugins.enabled en enu.toml y sale; con -p/-e, lo activa solo para ese proceso (ADR-015)")
 	flag.Parse()
 	// El modo agente exige un prompt NO vacío (un turno necesita algo que enviar),
 	// así que tratamos `-p ""` igual que la ausencia: ambos son "sin prompt". No hay
@@ -142,7 +142,7 @@ func run() int {
 	defer rt.Close()
 
 	// `--default-config` SOLO (sin acción headless): modo PERSISTENTE (ADR-015, G33).
-	// Escribe el conjunto oficial de producto en `config.dir()/nu.toml` y SALE, sin
+	// Escribe el conjunto oficial de producto en `config.dir()/enu.toml` y SALE, sin
 	// arrancar nada. No depende del TTY (es el onramp que la pantalla desnuda de G21 no
 	// daba sin terminal): no hace `Boot`, solo escribe el fichero.
 	if opts.defConfig && !headless {
@@ -151,24 +151,24 @@ func run() int {
 
 	if !headless {
 		// Sin `-e`/`-p`: el arranque INTERACTIVO (S33, CP-7). Con un TTY, el binario da
-		// vida al `nu.ui`: arranca el contenido (la pantalla desnuda de G21 si no hay
+		// vida al `enu.ui`: arranca el contenido (la pantalla desnuda de G21 si no hay
 		// plugins, o el `Boot` canónico que corre los `init.lua`) y entra en el bucle del
 		// driver de TTY (raw mode, pintado al terminal, teclado, resize) hasta que se pide
 		// apagar. Sin TTY (salida redirigida, CI) no hay superficie: se imprime el uso.
 		if !rt.UIActive() {
-			fmt.Fprintln(os.Stderr, "uso: nu [--default-config] | [-e '<lua>'] | [-p '<prompt>' [--continue] [--auto-permissions] [--model prov/modelo]]")
+			fmt.Fprintln(os.Stderr, "uso: enu [--default-config] | [-e '<lua>'] | [-p '<prompt>' [--continue] [--auto-permissions] [--model prov/modelo]]")
 			return exitUsage
 		}
 		return runInteractive(rt)
 	}
 
-	// Arranque canónico (§14, S11/S12): lee `config.dir()/nu.toml` (activación de
+	// Arranque canónico (§14, S11/S12): lee `config.dir()/enu.toml` (activación de
 	// plugins, rutas extra, presupuesto del watchdog), carga los plugins activados
 	// en orden topológico —las extensiones embebidas solo si `plugins.enabled` las
 	// nombra, ADR-010—, ejecuta el `init.lua` del usuario el último y emite
 	// `core:ready`. Un grafo roto (colisión, ciclo, dependencia ausente), un
-	// `nu.toml` mal formado o un `plugins.enabled` que nombra algo inexistente es un
-	// error de arranque accionable que apunta a la línea de `nu.toml` que lo arregla.
+	// `enu.toml` mal formado o un `plugins.enabled` que nombra algo inexistente es un
+	// error de arranque accionable que apunta a la línea de `enu.toml` que lo arregla.
 	if err := rt.Boot(); err != nil {
 		fmt.Fprintln(os.Stderr, "error de arranque:", err)
 		return exitError
@@ -177,7 +177,7 @@ func run() int {
 	return runWith(rt, opts)
 }
 
-// runInteractive arranca el runtime con un TTY (S33, CP-7): da vida al `nu.ui`. Decide
+// runInteractive arranca el runtime con un TTY (S33, CP-7): da vida al `enu.ui`. Decide
 // el CONTENIDO —la pantalla de runtime desnudo (G21) si no hay plugins activos, o el
 // `Boot` canónico que corre los `init.lua` de plugins y usuario si los hay— y entra en el
 // bucle del driver de TTY (`RunInteractive`: raw mode, pintado al terminal, teclado,
@@ -237,12 +237,12 @@ func runWith(rt *runtime.Runtime, opts cliOptions) int {
 	return runAgent(rt, opts)
 }
 
-// runDefaultConfig respalda el modo PERSISTENTE de `nu --default-config` (ADR-015,
-// G33): escribe el conjunto oficial de producto en `config.dir()/nu.toml` y SALE, sin
+// runDefaultConfig respalda el modo PERSISTENTE de `enu --default-config` (ADR-015,
+// G33): escribe el conjunto oficial de producto en `config.dir()/enu.toml` y SALE, sin
 // arrancar. Reusa `rt.WriteDefaultConfig` (que reusa `writeEnabledPlugins`: preserva el
-// resto del fichero, atómico, idempotente, no sobrescribe un `nu.toml` mal formado).
+// resto del fichero, atómico, idempotente, no sobrescribe un `enu.toml` mal formado).
 // Informa a stdout qué activó y dónde —accionable: el usuario sabe el fichero exacto y
-// el siguiente paso—. Un fallo de escritura (E/S, o `nu.toml` roto que no se pisa) sale
+// el siguiente paso—. Un fallo de escritura (E/S, o `enu.toml` roto que no se pisa) sale
 // con código 1 y mensaje accionable a stderr. Construye un Runtime mínimo solo para
 // resolver `config.dir()` y escribir; no hace `Boot` (no carga ni una extensión).
 func runDefaultConfig(rt *runtime.Runtime) int {
@@ -251,7 +251,7 @@ func runDefaultConfig(rt *runtime.Runtime) int {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return exitError
 	}
-	fmt.Printf("conjunto oficial de producto activado en %s/nu.toml: %s\n",
+	fmt.Printf("conjunto oficial de producto activado en %s/enu.toml: %s\n",
 		dir, strings.Join(names, ", "))
 	// Plantillas de config de agente (ADR-017, G35): informamos solo de las que
 	// CREAMOS este comando; las que ya existían se respetan y no se nombran como si
@@ -263,11 +263,11 @@ func runDefaultConfig(rt *runtime.Runtime) int {
 	// (la plantilla usa anthropic/opus con ANTHROPIC_API_KEY). Sin ella, el chat
 	// abre igual pero el primer turno dará un error accionable; con ella, ya funciona.
 	fmt.Printf("exporta tu API key (p. ej. ANTHROPIC_API_KEY) o edita %s/providers.toml; "+
-		"luego ejecuta `nu` (chat) o `nu -p '<prompt>'` (headless)\n", dir)
+		"luego ejecuta `enu` (chat) o `enu -p '<prompt>'` (headless)\n", dir)
 	return exitOK
 }
 
-// runEval respalda `nu -e '<lua>'`: evalúa el chunk en el estado principal (no es
+// runEval respalda `enu -e '<lua>'`: evalúa el chunk en el estado principal (no es
 // task; §1.3) e imprime cada valor de retorno en su propia línea a stdout. `print`
 // (que va al log, no a la pantalla, §15) no interfiere con esta salida.
 func runEval(rt *runtime.Runtime, code string) int {
@@ -282,7 +282,7 @@ func runEval(rt *runtime.Runtime, code string) int {
 	return exitOK
 }
 
-// runAgent respalda `nu -p '<prompt>'` (con sus modificadores --continue/
+// runAgent respalda `enu -p '<prompt>'` (con sus modificadores --continue/
 // --auto-permissions/--model): ejecuta un TURNO de agente HEADLESS y escribe el
 // texto final del asistente a stdout. Construye el DRIVER Lua (agentDriver), le
 // pasa los argumentos del CLI como globales (SetStringGlobal, sin interpolarlos:
@@ -296,7 +296,7 @@ func runAgent(rt *runtime.Runtime, opts cliOptions) int {
 	if !opts.promptSet {
 		// --continue/--auto-permissions/--model sin un prompt no tienen turno que
 		// ejecutar: es uso inválido (el modo agente headless necesita algo que enviar).
-		fmt.Fprintln(os.Stderr, "uso: el modo agente requiere un prompt: nu -p '<prompt>' [--continue] [--auto-permissions]")
+		fmt.Fprintln(os.Stderr, "uso: el modo agente requiere un prompt: enu -p '<prompt>' [--continue] [--auto-permissions]")
 		return exitUsage
 	}
 
@@ -352,7 +352,7 @@ func boolFlag(b bool) string {
 // devuelve `(texto_final, estado)` donde `estado` es "OK" o "DENIED".
 //
 // Corre como TASK (EvalTaskString), así que puede usar funciones ⏸ —`Session:send`
-// es ⏸ (agente.md §2)— directamente, sin envolverlo en `nu.task.spawn`.
+// es ⏸ (agente.md §2)— directamente, sin envolverlo en `enu.task.spawn`.
 //
 // `--continue` (G18): la sesión más reciente del proyecto sale de
 // `sessions.list(cwd)` ordenando los ids descendente (ordenan lexicográfico =
@@ -366,14 +366,14 @@ func boolFlag(b bool) string {
 // positivos (un default-deny también nombra `allow` en su mensaje accionable).
 //
 // IMPORTANTE — el estado del handler vive en una TABLA (`state`), no en un escalar:
-// los handlers de `nu.events` corren sobre un thread efímero (ADR-008), y mutar un
+// los handlers de `enu.events` corren sobre un thread efímero (ADR-008), y mutar un
 // upvalue ESCALAR (`denied = true`) desde ese thread no se propaga de vuelta al
 // thread del driver de forma fiable; mutar el CONTENIDO de una tabla capturada SÍ
 // (la tabla es una referencia). Es el mismo patrón que usan el agente y el chat para
-// el estado compartido entre handlers (ver claude_decisions.md S45).
+// el estado compartido entre handlers (ver docs/decisiones-implementacion.md S45).
 const agentDriver = `
 -- El modo agente exige las extensiones oficiales activas (ADR-010: inactivas por
--- defecto). Si no lo están, un error accionable que nombra la línea de nu.toml a
+-- defecto). Si no lo están, un error accionable que nombra la línea de enu.toml a
 -- añadir —misma filosofía que los demás errores de arranque (§14)— en vez del crudo
 -- "module not found" de require.
 local function need(name)
@@ -382,7 +382,7 @@ local function need(name)
     error({ code = "EAGENT",
       message = "el modo agente requiere la extensión '" .. name ..
         "' activa; añade plugins.enabled = {\"providers\", \"sessions\", \"agent\"} en " ..
-        nu.config.dir() .. "/nu.toml (ADR-010: las extensiones oficiales están inactivas por defecto)",
+        enu.config.dir() .. "/enu.toml (ADR-010: las extensiones oficiales están inactivas por defecto)",
       detail = { reason = "extension_inactive", extension = name } })
   end
   return mod
@@ -391,7 +391,7 @@ end
 local agent = need("agent")
 local sessions = need("sessions")
 
-local cwd = nu.fs.cwd()
+local cwd = enu.fs.cwd()
 local opts = { cwd = cwd, permissions = {} }
 
 if NU_CLI_AUTOPERM == "1" then
@@ -415,7 +415,7 @@ end
 
 -- Estado compartido con el handler de eventos (tabla, no escalar: ver arriba).
 local state = { denied = false }
-local sub = nu.events.on("agent:permission.denied", function(ev)
+local sub = enu.events.on("agent:permission.denied", function(ev)
   -- Solo el deny por AUSENCIA de UI (headless, G20) mapea al código 3: es el que
   -- --auto-permissions habría concedido. Un default-deny, un veto de hook o un deny
   -- de usuario son denegaciones legítimas, no "falta el flag". El campo source es un

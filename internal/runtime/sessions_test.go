@@ -3,7 +3,7 @@ package runtime
 // Tests de la extensión oficial `sessions` (S38, embebida en
 // internal/runtime/embedded/sessions). Es Lua sobre la API pública congelada
 // (Fase 8, ADR-003: el core NO sabe lo que es una sesión), así que la prueba es
-// Go que arranca un Runtime con la extensión ACTIVADA por `nu.toml`
+// Go que arranca un Runtime con la extensión ACTIVADA por `enu.toml`
 // (`plugins.enabled = ["sessions"]`, igual que el gating de S12) y ejercita el
 // contrato desde Lua, requiriendo el módulo con `require("sessions")`.
 //
@@ -13,7 +13,7 @@ package runtime
 //     (replay) recupera las entradas en orden, con el `Message` canónico intacto;
 //   - **lockfile exclusivo (§6, G5/G17/G32)**: dos `open` de escritura sobre la
 //     misma sesión chocan (el segundo recibe ESESSION busy); el lock graba el pid
-//     de `nu.sys.pid()` (G32) y el hostname de `nu.sys.hostname()` (G17);
+//     de `enu.sys.pid()` (G32) y el hostname de `enu.sys.hostname()` (G17);
 //   - **lock huérfano (§6)**: un lock con un pid muerto (en esta máquina) se
 //     reclama en silencio; uno con pid vivo no.
 
@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -133,7 +134,7 @@ func TestSessionsLockExclusivo(t *testing.T) {
 // TestSessionsLockHuerfano (§6): un lockfile dejado por un crash (mismo hostname,
 // pid MUERTO) es huérfano: el siguiente `open` lo reclama EN SILENCIO y adquiere
 // el lock. Se simula escribiendo a mano un lock con un pid imposible (1<<30, que
-// `nu.proc.alive` reporta muerto, cf. proc_test) y un id de sesión existente.
+// `enu.proc.alive` reporta muerto, cf. proc_test) y un id de sesión existente.
 func TestSessionsLockHuerfano(t *testing.T) {
 	h, dataDir := bootSessions(t)
 
@@ -174,9 +175,9 @@ func TestSessionsLockHuerfano(t *testing.T) {
 }
 
 // TestSessionsLockGrababPidPropio (G32): el contenido del lock que escribe la
-// extensión lleva el pid de ESTE proceso (`nu.sys.pid()` == os.Getpid) y su
-// hostname (`nu.sys.hostname()`). Se lee el lock DESDE LA MISMA task, antes del
-// `close` —el lock se suelta al terminar la task vía `nu.task.cleanup` (§6), así
+// extensión lleva el pid de ESTE proceso (`enu.sys.pid()` == os.Getpid) y su
+// hostname (`enu.sys.hostname()`). Se lee el lock DESDE LA MISMA task, antes del
+// `close` —el lock se suelta al terminar la task vía `enu.task.cleanup` (§6), así
 // que inspeccionarlo después desde Go sería tarde—.
 func TestSessionsLockGrababPidPropio(t *testing.T) {
 	h, _ := bootSessions(t)
@@ -185,17 +186,17 @@ func TestSessionsLockGrababPidPropio(t *testing.T) {
 		local sessions = require("sessions")
 		local s = sessions.open({ cwd = "/repo/lockcheck" })
 		-- El lock vive junto al transcript: <path>.lock. Lo leemos en esta task.
-		local raw = nu.fs.read(s.path .. ".lock")
-		local meta = nu.json.decode(raw)
+		local raw = enu.fs.read(s.path .. ".lock")
+		local meta = enu.json.decode(raw)
 		LOCK_PID = meta.pid
 		LOCK_HOST = meta.hostname
 		LOCK_HAS_STARTED = (meta.started ~= nil)
-		MY_PID = nu.sys.pid()
-		MY_HOST = nu.sys.hostname()
+		MY_PID = enu.sys.pid()
+		MY_HOST = enu.sys.hostname()
 		s:close()
 		out = "ok"`))
 	h.expectEval(`return tostring(out)`, "ok")
-	// El pid del lock es el propio (nu.sys.pid) y coincide con os.Getpid del test.
+	// El pid del lock es el propio (enu.sys.pid) y coincide con os.Getpid del test.
 	h.expectEval(`return tostring(LOCK_PID == MY_PID)`, "true")
 	h.expectEval(`return tostring(LOCK_HOST == MY_HOST)`, "true")
 	h.expectEval(`return tostring(LOCK_HAS_STARTED)`, "true")
@@ -233,6 +234,107 @@ func TestSessionsList(t *testing.T) {
 	h.expectEval(`return tostring(out)`, "ok")
 	h.expectEval(`return tostring(COUNT)`, "2")
 	h.expectEval(`return tostring(ALLMETA)`, "true")
+}
+
+// TestSessionsListA38 (A-38): `sessions.list` obtiene la línea `meta` de cada
+// transcript vía `enu.search.grep` —solo esa línea cruza la frontera wasm— en vez
+// de leer el fichero ENTERO con `enu.fs.read`. Antes, listar costaba O(bytes
+// totales del proyecto) en IO y memoria (un transcript de MB se copiaba a Lua
+// solo para mirar su primera línea). Se blindan las tres invariantes del cambio:
+//
+//	(a) MISMO CONTRATO: con varias sesiones normales, cada entrada trae `id`,
+//	    `path` y la `meta` correcta, en el orden del directorio (como antes).
+//	(b) TRANSCRIPT GRANDE: un fichero de cientos de KB devuelve su `meta` de la
+//	    PRIMERA línea. Se le añade a mano una segunda línea con una `meta` FALSA
+//	    (`cwd="/WRONG"`): list debe quedarse con la de `line_no == 1` (la buena),
+//	    lo que prueba que la disciplina "solo la primera línea" se respeta y que
+//	    el coste ya no escala con el tamaño del fichero (nunca se lee entero).
+//	(c) FICHERO CORRUPTO / SIN `meta`: no rompe list (no hay match de grep) y
+//	    sigue apareciendo en la lista con `meta == nil` (igual que la versión
+//	    previa, que dejaba `meta` a nil pero incluía el fichero).
+func TestSessionsListA38(t *testing.T) {
+	h, _ := bootSessions(t)
+	const cwd = "/repo/a38"
+
+	// Tres sesiones normales; capturamos el directorio del proyecto y el id de la
+	// que convertiremos en GRANDE (escribiendo en su fichero desde Go).
+	h.eval(inTask(`
+		local sessions = require("sessions")
+		local a = sessions.open({ cwd = "` + cwd + `" }); a:close()
+		local b = sessions.open({ cwd = "` + cwd + `" }); b:close()
+		local big = sessions.open({ cwd = "` + cwd + `" }); BIG_ID = big.id; big:close()
+		DIR = sessions.dir("` + cwd + `")
+		out = "ok"`))
+	h.expectEval(`return tostring(out)`, "ok")
+	dir := h.eval(`return DIR`)[0]
+	bigID := h.eval(`return BIG_ID`)[0]
+
+	// (b) Hacemos GRANDE el transcript de `big`: su línea 1 (la `meta` real) ya
+	// está; añadimos una línea 2 con una `meta` FALSA (para verificar que list se
+	// queda con la de line_no==1) y luego cientos de KB de entries `message`.
+	bigPath := filepath.Join(dir, bigID+".jsonl")
+	f, err := os.OpenFile(bigPath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatalf("no se pudo abrir el transcript grande %q: %v", bigPath, err)
+	}
+	if _, err := f.WriteString(`{"created":1,"cwd":"/WRONG","id":"WRONG","t":"meta","v":1}` + "\n"); err != nil {
+		t.Fatalf("append meta falsa: %v", err)
+	}
+	var sb strings.Builder
+	line := `{"model":"m","t":"message","ts":1,"message":{"role":"user","content":"` +
+		strings.Repeat("x", 200) + `"}}` + "\n"
+	for sb.Len() < 400*1024 { // > 400 KiB de relleno: leer esto entero es justo lo que evitamos
+		sb.WriteString(line)
+	}
+	if _, err := f.WriteString(sb.String()); err != nil {
+		t.Fatalf("append relleno: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close transcript grande: %v", err)
+	}
+
+	// (c) Fichero corrupto: un `.jsonl` sin `meta` en la primera línea (ni la
+	// subcadena que casa el patrón). No debe romper list y debe salir con meta=nil.
+	corruptPath := filepath.Join(dir, "0000000000001-dead.jsonl")
+	if err := os.WriteFile(corruptPath,
+		[]byte("esto no es json valido, ni una meta\n{\"t\":\"message\",\"ts\":1}\n"), 0o644); err != nil {
+		t.Fatalf("escribir fichero corrupto: %v", err)
+	}
+
+	// Listar y auditar las tres invariantes desde Lua.
+	h.eval(inTask(`
+		local sessions = require("sessions")
+		local l = sessions.list("` + cwd + `")
+		COUNT = #l
+		local withmeta = 0
+		local corrupt_present, corrupt_meta_nil = false, false
+		local big_meta = nil
+		for _, e in ipairs(l) do
+			if e.meta ~= nil then withmeta = withmeta + 1 end
+			if e.id == "0000000000001-dead" then
+				corrupt_present = true
+				corrupt_meta_nil = (e.meta == nil)
+			end
+			if e.id == "` + bigID + `" then big_meta = e.meta end
+		end
+		WITHMETA = withmeta
+		CORRUPT_PRESENT = corrupt_present
+		CORRUPT_META_NIL = corrupt_meta_nil
+		BIG_CWD = big_meta and big_meta.cwd or "NONE"
+		BIG_METAID = big_meta and big_meta.id or "NONE"
+		out = "ok"`))
+	h.expectEval(`return tostring(out)`, "ok")
+
+	// (a) 3 sesiones normales + 1 corrupto = 4 entradas; 3 con meta.
+	h.expectEval(`return tostring(COUNT)`, "4")
+	h.expectEval(`return tostring(WITHMETA)`, "3")
+	// (b) la meta del fichero grande es la de la PRIMERA línea (cwd real, id real),
+	// NO la falsa de la línea 2 (cwd="/WRONG"): line_no==1 manda.
+	h.expectEval(`return tostring(BIG_CWD)`, cwd)
+	h.expectEval(`return tostring(BIG_METAID)`, bigID)
+	// (c) el corrupto está en la lista, con meta=nil, y no rompió nada.
+	h.expectEval(`return tostring(CORRUPT_PRESENT)`, "true")
+	h.expectEval(`return tostring(CORRUPT_META_NIL)`, "true")
 }
 
 // TestSessionsReanudarInexistente (§6/G18): reanudar una sesión que no existe es

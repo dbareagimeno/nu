@@ -1,20 +1,20 @@
 package runtime
 
-// Catálogo de nu.http sobre el backend wasm (M13b, §8). Contraparte de http.go
-// (nu.http.request) y stream.go (nu.http.stream): la petición de un tiro
-// nu.http.request(opts) -> {status, headers, body} (⏸) y el streaming
-// nu.http.stream(opts) -> Stream (⏸). Ambos reusan el estado del Runtime (rt.http)
+// Catálogo de enu.http sobre el backend wasm (M13b, §8). Contraparte de http.go
+// (enu.http.request) y stream.go (enu.http.stream): la petición de un tiro
+// enu.http.request(opts) -> {status, headers, body} (⏸) y el streaming
+// enu.http.stream(opts) -> Stream (⏸). Ambos reusan el estado del Runtime (rt.http)
 // y su núcleo VM-agnóstico —`do` para request, `openStream`/`httpStream` para
 // stream—, idéntico al backend gopher; el IO corre en la goroutine de fondo del
 // scheduler.
 //
-// EL STREAM Y SUS ITERADORES (§8). `nu.http.stream` es a la vez BLOQUEANTE (suspende
-// hasta las cabeceras) y CREADOR DE HANDLE, como `nu.ws.connect`: se implementa con
+// EL STREAM Y SUS ITERADORES (§8). `enu.http.stream` es a la vez BLOQUEANTE (suspende
+// hasta las cabeceras) y CREADOR DE HANDLE, como `enu.ws.connect`: se implementa con
 // una primitiva suspendente (`http._stream`) que abre el stream fuera de la VM y, ya
 // recibidas las cabeceras, registra el handle Stream y lo devuelve por el wire junto
 // a los campos `status`/`headers`. El handle lleva `next_chunk`/`next_event` (⏸, IO
 // bloqueante: se despachan por `__hcall_s`, que cede al scheduler) y `close`
-// (síncrono, por `__hcall`). El wrapper Lua `nu.http.stream` (AddPreludio) envuelve
+// (síncrono, por `__hcall`). El wrapper Lua `enu.http.stream` (AddPreludio) envuelve
 // el handle, le cuelga los campos de cabecera y expone `chunks()`/`events()` como los
 // ITERADORES que Lua consume con `for x in st:chunks() do` —cada `next` es una llamada
 // suspendente a su método de handle—.
@@ -34,11 +34,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dbareagimeno/nu/internal/vmwasm"
+	"github.com/dbareagimeno/enu/internal/vmwasm"
 )
 
 func registerHTTPWasm(p *vmwasm.Pool, rt *Runtime) {
-	// nu.http.request(opts) -> {status, headers, body} ⏸
+	// enu.http.request(opts) -> {status, headers, body} ⏸
 	p.RegisterSuspending("http.request", func(inst *vmwasm.Instance, args []any) ([]any, error) {
 		o, err := parseReqOptsWasm(arg(args, 0))
 		if err != nil {
@@ -62,14 +62,14 @@ func registerHTTPWasm(p *vmwasm.Pool, rt *Runtime) {
 	registerHTTPStreamWasm(p, rt)
 }
 
-// registerHTTPStreamWasm añade nu.http.stream (el handle Stream) al catálogo wasm
+// registerHTTPStreamWasm añade enu.http.stream (el handle Stream) al catálogo wasm
 // (§8). Se separa de registerHTTPWasm por volumen, no por semántica: comparte el
 // estado (rt.http) y el mapeo de errores con request.
 func registerHTTPStreamWasm(p *vmwasm.Pool, rt *Runtime) {
-	// nu.http._stream(opts) -> (Stream, status, headers) ⏸ — el wrapper nu.http.stream
+	// enu.http._stream(opts) -> (Stream, status, headers) ⏸ — el wrapper enu.http.stream
 	// lo envuelve. Reusa el núcleo VM-agnóstico de stream.go: el parseo de opts
 	// (parseReqOptsWasm, el mismo que request —en gopher `parseReqOpts` también lo
-	// comparten, de ahí que sus errores digan "nu.http.request:") más idle_timeout_ms,
+	// comparten, de ahí que sus errores digan "enu.http.request:") más idle_timeout_ms,
 	// y `openStream`, que hace la petición SOLO hasta las cabeceras y arranca la
 	// goroutine de fondo que lee el body a la cola acotada. Un status >= 400 NO es
 	// error (se devuelve el Stream con su status); sólo transporte/timeout/uso malo
@@ -150,16 +150,16 @@ func registerHTTPStreamWasm(p *vmwasm.Pool, rt *Runtime) {
 		return nil, nil
 	})
 
-	// Wrapper Lua: nu.http.stream envuelve el handle de http._stream con los campos
+	// Wrapper Lua: enu.http.stream envuelve el handle de http._stream con los campos
 	// status/headers (§8) y los métodos chunks()/events() —cada uno devuelve el
 	// ITERADOR que Lua consume con `for x in st:chunks() do`, y cada `next` cede al
 	// scheduler por __hcall_s (⏸)— y close (por __hcall, síncrono). Mismo patrón que
-	// nu.ws.connect (vmwasm_ws.go): el handle ya trae la metatable de handles; aquí
+	// enu.ws.connect (vmwasm_ws.go): el handle ya trae la metatable de handles; aquí
 	// sólo se le cuelgan los campos de cabecera y los métodos.
 	p.AddPreludioW(`
-nu.http = nu.http or {}
-function nu.http.stream(opts)
-  local st, status, headers = nu.http._stream(opts)  -- ⏸: handle {__id} tras las cabeceras
+enu.http = enu.http or {}
+function enu.http.stream(opts)
+  local st, status, headers = enu.http._stream(opts)  -- ⏸: handle {__id} tras las cabeceras
   st.status  = status
   st.headers = headers
   st.chunks  = function(self) return function() return __hcall_s(self.__id, "next_chunk") end end
@@ -172,7 +172,7 @@ end`, "http._stream")
 // parseIdleTimeoutWasm extrae opts.idle_timeout_ms del mapa `opts` que cruzó el wire
 // (§8). Mismo contrato que parseIdleTimeout del backend gopher: ausente → 0 (sin
 // idle-timeout); presente debe ser un número positivo, si no EINVAL —con el prefijo
-// "nu.http.stream:" (el idle-timeout es específico de stream, a diferencia del resto
+// "enu.http.stream:" (el idle-timeout es específico de stream, a diferencia del resto
 // de opts, que comparte con request).
 func parseIdleTimeoutWasm(v any) (time.Duration, error) {
 	m, ok := v.(map[string]any)
@@ -185,10 +185,10 @@ func parseIdleTimeoutWasm(v any) (time.Duration, error) {
 	}
 	n, ok := httpNum(tv)
 	if !ok {
-		return 0, &vmwasm.StructuredError{Code: CodeEINVAL, Message: "nu.http.stream: opts.idle_timeout_ms debe ser un número"}
+		return 0, &vmwasm.StructuredError{Code: CodeEINVAL, Message: "enu.http.stream: opts.idle_timeout_ms debe ser un número"}
 	}
 	if n <= 0 {
-		return 0, &vmwasm.StructuredError{Code: CodeEINVAL, Message: "nu.http.stream: opts.idle_timeout_ms debe ser positivo"}
+		return 0, &vmwasm.StructuredError{Code: CodeEINVAL, Message: "enu.http.stream: opts.idle_timeout_ms debe ser positivo"}
 	}
 	return time.Duration(n) * time.Millisecond, nil
 }
@@ -214,7 +214,7 @@ func sseEventToWasm(ev sseEvent) map[string]any {
 // backend gopher.
 func streamErrWasm(err error) error {
 	if errors.Is(err, errStreamClosed) {
-		return &vmwasm.StructuredError{Code: CodeECLOSED, Message: "nu.http.stream: el stream fue cerrado"}
+		return &vmwasm.StructuredError{Code: CodeECLOSED, Message: "enu.http.stream: el stream fue cerrado"}
 	}
 	return httpErrWasm(err)
 }
@@ -297,7 +297,7 @@ func httpNum(v any) (float64, bool) {
 }
 
 func einvalHTTP(msg string) error {
-	return &vmwasm.StructuredError{Code: CodeEINVAL, Message: "nu.http.request: " + msg}
+	return &vmwasm.StructuredError{Code: CodeEINVAL, Message: "enu.http.request: " + msg}
 }
 
 // httpErrWasm traduce el error de rt.http.do (un *httpError con code/msg) al error

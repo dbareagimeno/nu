@@ -4,7 +4,7 @@ package runtime
 // S33 no existía —tecla cruda del terminal → parser → pila de input → handler Lua →
 // mutación del compositor → frame ANSI volcado al terminal— SIN un TTY real, conduciendo
 // el bucle del driver (`drive`) contra tuberías en memoria. Es la demostración de que
-// "una TUI en Lua sobre la API de Go" funciona: el mismo camino que un `nu` interactivo,
+// "una TUI en Lua sobre la API de Go" funciona: el mismo camino que un `enu` interactivo,
 // pero con la entrada/salida inyectadas para que un test las inspeccione.
 //
 // Lo no testeable aquí (raw mode, `term.GetSize`, `SIGWINCH`) es la cáscara fina de
@@ -90,15 +90,15 @@ func TestDriverEndToEnd(t *testing.T) {
 	// keymaps. Usa SOLO la API pública de §9 (region/blit/block/clear, keymap) y §4
 	// (events.emit) — exactamente lo que un autor de extensión escribiría.
 	h.eval(`
-		local r = nu.ui.region({ x = 0, y = 0, w = 24, h = 4 })
+		local r = enu.ui.region({ x = 0, y = 0, w = 24, h = 4 })
 		local count = 0
 		local function repaint()
 		  r:clear()
-		  r:blit(0, 0, nu.ui.block({ "count=" .. count }))
+		  r:blit(0, 0, enu.ui.block({ "count=" .. count }))
 		end
 		repaint()
-		nu.ui.keymap("up", function() count = count + 1; repaint() end)
-		nu.ui.keymap("q", function() nu.events.emit("core:shutdown") end)
+		enu.ui.keymap("up", function() count = count + 1; repaint() end)
+		enu.ui.keymap("q", function() enu.events.emit("core:shutdown") end)
 	`)
 
 	inR, inW := io.Pipe()
@@ -170,12 +170,12 @@ func waitScreen(h *harness, sub string, d time.Duration) bool {
 }
 
 // TestDriverRunsRealDemoPlugin arranca el PLUGIN DE DEMOSTRACIÓN real
-// (examples/nu/plugins/tui-demo) desde disco y lo conduce por el driver, sin TTY. Es la
+// (examples/enu/plugins/tui-demo) desde disco y lo conduce por el driver, sin TTY. Es la
 // prueba de que el artefacto que un humano correría en su terminal funciona: su init.lua
 // monta la UI sin errores, pinta el marco/título y responde al teclado (↑ sube el
 // contador). Si el demo tuviera un fallo de Lua, Boot o el primer frame lo destaparían.
 func TestDriverRunsRealDemoPlugin(t *testing.T) {
-	demoDir, err := filepath.Abs(filepath.Join("..", "..", "examples", "nu", "plugins"))
+	demoDir, err := filepath.Abs(filepath.Join("..", "..", "examples", "enu", "plugins"))
 	if err != nil {
 		t.Fatalf("ruta del demo: %v", err)
 	}

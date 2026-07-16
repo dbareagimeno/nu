@@ -16,7 +16,7 @@ import (
 	ignore "github.com/sabhiram/go-gitignore"
 )
 
-// `nu.search` — búsqueda a escala de repo (api.md §11, sesión S27; inventario
+// `enu.search` — búsqueda a escala de repo (api.md §11, sesión S27; inventario
 // 🔒). Tres primitivas y el cierre de la Fase 5:
 //
 //   - `files(root, opts?) -> string[]` ⏸ — listado **recursivo** bajo `root`
@@ -39,7 +39,7 @@ import (
 // EL PUENTE ⏸ (S04, ADR-011). `files` y cada `next` de `grep` son ⏸: sueltan el
 // token y bloquean en goroutines de fondo que **JAMÁS tocan Lua**; los datos
 // cruzan a Lua solo en la `deliverFn`, con el token recuperado. Mismo patrón que
-// `nu.fs` (S14) y `nu.http.stream` (S20). `fuzzy` no suspende (es síncrono).
+// `enu.fs` (S14) y `enu.http.stream` (S20). `fuzzy` no suspende (es síncrono).
 //
 // EL MODELO DEL ITERADOR `grep` PARALELO (lo delicado, gemelo del `Stream` de
 // S20). Al crear el iterador se arranca un **pool de goroutines de fondo** (una
@@ -49,13 +49,13 @@ import (
 // hasta EOF, cuando el canal se cierra tras drenarse todas las goroutines). El
 // `max` corta: alcanzado el límite, el iterador deja de entregar y las goroutines
 // se cancelan (`context`). Al crear el handle, el wrapper wasm registra su cierre
-// en `nu.task.cleanup`, así ninguna goroutine queda colgada aunque el consumidor
+// en `enu.task.cleanup`, así ninguna goroutine queda colgada aunque el consumidor
 // haga `break`. Como red de seguridad, `Runtime.Close` cancela todos los greps
 // vivos (`stopAllGreps`).
 
-// --- nu.search.files ----------------------------------------------------------
+// --- enu.search.files ----------------------------------------------------------
 
-// filesOpts son las opciones ya parseadas de `nu.search.files` (§11). `glob`
+// filesOpts son las opciones ya parseadas de `enu.search.files` (§11). `glob`
 // vacío = sin filtro; `max <= 0` = sin límite.
 type filesOpts struct {
 	glob   string
@@ -164,9 +164,9 @@ func walkFiles(root string, opts filesOpts) ([]string, error) {
 // errFilesMaxReached es el centinela con que `walkFiles` corta el `WalkDir` al
 // alcanzar `max` —no es un error real, solo el modo de detener el recorrido
 // antes de tiempo (`WalkDir` no tiene otra vía de parada temprana).
-var errFilesMaxReached = errors.New("nu.search.files: max alcanzado")
+var errFilesMaxReached = errors.New("enu.search.files: max alcanzado")
 
-// --- nu.search.fuzzy ----------------------------------------------------------
+// --- enu.search.fuzzy ----------------------------------------------------------
 
 // fuzzyMatch es un candidato que casó: su índice 1-based en `candidates` y su
 // score. Se ordena por score desc, conservando el orden de entrada en los
@@ -178,7 +178,7 @@ type fuzzyMatch struct {
 
 // fuzzyScore calcula el score de `query` contra `cand` con un scorer de
 // **subsecuencia con bonus** estilo fzf simplificado (decisión propia,
-// claude_decisions.md S27): los caracteres de `query` deben aparecer en `cand`
+// docs/decisiones-implementacion.md S27): los caracteres de `query` deben aparecer en `cand`
 // en el mismo orden (no necesariamente contiguos); el score premia las
 // coincidencias **contiguas** y las que caen en un **inicio de palabra** (tras
 // un separador `/`, `_`, `-`, `.`, espacio, o un cambio de minúscula→mayúscula,
@@ -286,7 +286,7 @@ func toLowerNonASCII(r rune) rune {
 	return unicode.ToLower(r)
 }
 
-// --- nu.search.grep -----------------------------------------------------------
+// --- enu.search.grep -----------------------------------------------------------
 
 // grepMaxLine es el tope de bytes de una línea que el grep examina (§11). Una
 // línea más larga que esto (ficheros generados, JSON minificado) se trunca al
@@ -328,7 +328,7 @@ type grepIter struct {
 	closeOnce sync.Once
 }
 
-// grepOpts son las opciones ya parseadas de `nu.search.grep` (§11).
+// grepOpts son las opciones ya parseadas de `enu.search.grep` (§11).
 type grepOpts struct {
 	root       string
 	glob       string
@@ -445,7 +445,7 @@ func grepFile(it *grepIter, re *regexp.Regexp, path string) {
 		}
 		ranges := make([][2]int, len(idxs))
 		for i, pair := range idxs {
-			// Mismo convenio que `nu.re.find_all` (S26): byte 1-based, ambos inclusive.
+			// Mismo convenio que `enu.re.find_all` (S26): byte 1-based, ambos inclusive.
 			// `s:sub(start, end)` reconstruye el match; match vacío → end = start-1.
 			ranges[i] = [2]int{pair[0] + 1, pair[1]}
 		}

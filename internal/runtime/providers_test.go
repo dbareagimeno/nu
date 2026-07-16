@@ -3,7 +3,7 @@ package runtime
 // Tests de la extensión oficial `providers` (S36, embebida en
 // internal/runtime/embedded/providers). Es Lua sobre la API pública congelada
 // (Fase 8, ADR-003: el core NO sabe lo que es un provider), así que la prueba es
-// Go que arranca un Runtime con la extensión ACTIVADA por `nu.toml`
+// Go que arranca un Runtime con la extensión ACTIVADA por `enu.toml`
 // (`plugins.enabled = ["providers"]`, igual que el gating de S12) y ejercita el
 // contrato desde Lua, requiriendo el módulo con `require("providers")`.
 //
@@ -45,14 +45,14 @@ func bootProviders(t *testing.T, providersToml string) *harness {
 
 // inTask envuelve un cuerpo Lua en una task que captura su resultado en la global
 // `out` y su error estructurado en `err_code` (las funciones del registro —list,
-// resolve— suspenden porque leen `providers.toml` con `nu.fs.read` ⏸, api.md §5,
+// resolve— suspenden porque leen `providers.toml` con `enu.fs.read` ⏸, api.md §5,
 // así que SOLO corren dentro de una task; es justamente cómo las llama el agente).
 // Tras `h.eval(inTask(...))`, el siguiente `eval` lee las globales (la task ya
 // progresó al soltar el token).
 func inTask(body string) string {
 	return `
 		out, err_code = nil, nil
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local ok, e = pcall(function()
 ` + body + `
 			end)
@@ -191,7 +191,7 @@ func TestProvidersRegistroTOML(t *testing.T) {
 }
 
 // TestProvidersTOMLAusente: sin `providers.toml`, el registro está vacío pero no
-// es error (un nu sin modelos configurados arranca limpio). list() devuelve [].
+// es error (un enu sin modelos configurados arranca limpio). list() devuelve [].
 func TestProvidersTOMLAusente(t *testing.T) {
 	h := bootProviders(t, "")
 	h.eval(inTask(`out = tostring(#require("providers").list())`))
@@ -262,7 +262,7 @@ func TestProvidersAdaptadorStub(t *testing.T) {
 	}
 	h.eval(`
 		out = {}
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local p = require("providers")
 			local r = p.resolve("testco/big")
 			local req = {
@@ -303,7 +303,7 @@ func TestProvidersStubDegradacionDeclarada(t *testing.T) {
 	}
 	h.eval(`
 		err_code = nil
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local p = require("providers")
 			local r = p.resolve("testco/big")
 			local req = {
@@ -330,7 +330,7 @@ func TestProvidersStubCountTokens(t *testing.T) {
 	}
 	h.eval(`
 		count = nil
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local p = require("providers")
 			local r = p.resolve("testco/big")
 			local req = {

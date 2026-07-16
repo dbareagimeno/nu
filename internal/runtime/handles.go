@@ -1,17 +1,17 @@
 package runtime
 
 // Registro de handles por dueño (api.md §14, sesión S13, inventario 🔒). Es la
-// pieza que hace que `nu.plugin.reload` (best-effort, G2) "suelte TODOS los
+// pieza que hace que `enu.plugin.reload` (best-effort, G2) "suelte TODOS los
 // handles del plugin" sin dejar huérfanos: cada handle que el core entrega y que
-// **sobrevive a un reload** —una suscripción de eventos (`nu.events.on/once`), un
-// timer periódico (`nu.task.every`)— se etiqueta, al crearse, con el **dueño
+// **sobrevive a un reload** —una suscripción de eventos (`enu.events.on/once`), un
+// timer periódico (`enu.task.every`)— se etiqueta, al crearse, con el **dueño
 // vigente** (el `currentOwner()` del `ownerStack`, S11). Recargar un plugin
 // recorre su lista de handles y los libera uno a uno.
 //
 // POR QUÉ UN REGISTRO GENERAL, NO UN PARCHE PARA events+timers. El reload de G2
 // es "suelta todos los handles del plugin": el conjunto de cosas que un plugin
 // registra y que persisten entre arranques crecerá con el kernel —watchers de
-// `nu.fs.watch` (S15), procesos de `nu.proc.spawn` (S16), handlers de input y
+// `enu.fs.watch` (S15), procesos de `enu.proc.spawn` (S16), handlers de input y
 // regiones de UI (S29+)—. Si cada una inventara su propia limpieza, el reload
 // sería un agregado frágil de casos especiales. En su lugar, el core lleva **un
 // solo registro** indexado por dueño y cada primitiva que entrega un handle
@@ -46,7 +46,7 @@ type ownedHandle interface {
 
 // track registra un handle persistente bajo su dueño (el `currentOwner()` vigente
 // al crearlo, que el handle ya guardó). Lo llaman las primitivas que entregan un
-// handle persistente Go-side (`nu.proc.spawn`, `nu.fs.watch`).
+// handle persistente Go-side (`enu.proc.spawn`, `enu.fs.watch`).
 func (s *scheduler) track(h ownedHandle) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -89,7 +89,7 @@ func (s *scheduler) untrack(h ownedHandle) {
 // releaseOwnerHandles libera TODOS los handles Go-side de un dueño y vacía su
 // lista. Lo llama `reloadWasm` (vmwasm_loader.go) tras el `__release_owner` del
 // preludio: el registro Lua solo conoce subs y timers; los recursos Go (procesos
-// de `nu.proc.spawn`, watchers de `nu.fs.watch`) viven aquí —"un spawn de su
+// de `enu.proc.spawn`, watchers de `enu.fs.watch`) viven aquí —"un spawn de su
 // init.lua no debe sobrevivir a la recarga" (G2, inventario 🔒)—.
 //
 // El snapshot y el borrado ocurren bajo `s.mu`; los `release()` corren FUERA del

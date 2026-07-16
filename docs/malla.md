@@ -2,7 +2,7 @@
 
 Estado: **borrador para discusión — v0.1 construida**. Nace de la [Ronda 8 de
 pseudocódigo](pseudocodigo.md) ("kubernetes de agentes"): una malla de nodos
-`nu` headless que ejecutan trabajos declarativos sobre ramas de git, con el
+`enu` headless que ejecutan trabajos declarativos sobre ramas de git, con el
 humano en las dos fronteras que importan (los Roles y los merges). Como el
 resto de extensiones oficiales, NO es API sagrada del core: es el contrato
 público del plugin `mesh`, versionado aparte, construido **íntegramente** sobre
@@ -21,7 +21,7 @@ incompletas (ADR-003). La Ronda 8 validó exactamente eso antes de construir
    script del usuario (§10 trae el patrón). Un daemon con su ciclo de vida
    sería producto encima del producto — cuando duela escribirlo a mano, se
    reabre.
-2. **Pull-only.** nu solo actúa de **cliente** (git, y en el futuro `nu.ws`
+2. **Pull-only.** enu solo actúa de **cliente** (git, y en el futuro `enu.ws`
    saliente): sin listener, [P1/P19](pospuesto.md) siguen dormidos.
 3. **Git es el único sustrato v0.1**: transporte, almacén y coordinación
    (claim por CAS de refs). La Ronda 8 (escenario 36) validó que la capa
@@ -50,7 +50,7 @@ mode  = "ask"                          territory = ["src/parser/**"]  # opc., in
 allow = ["read", "grep", "glob",       #        el reparto de territorio va por prompt)
          "edit", "bash:pytest *"]
 deny  = ["bash:rm *"]                  [fork]                 # opc.: fork-job (§8)
-                                       parent_transcript = ".nu/mesh/transcript.jsonl"
+                                       parent_transcript = ".enu/mesh/transcript.jsonl"
 [budget]                               at    = 12
 max_turns    = 40                      nudge = "arregla ahora los tests de lexer"
 max_cost_usd = 2.0
@@ -77,17 +77,17 @@ Crear una ref en el remoto es **atómico**: dos nodos que reclaman el mismo job
 empujan la misma ref y solo uno gana. Sin servidor propio.
 
 ```
-mesh.claim(job_id, opts?) ⏸ -> boolean      -- crea refs/nu/mesh/claims/<id>; false = carrera perdida
+mesh.claim(job_id, opts?) ⏸ -> boolean      -- crea refs/enu/mesh/claims/<id>; false = carrera perdida
 mesh.heartbeat(job_id, opts?) ⏸ -> boolean  -- re-empuja la claim-ref (--force-with-lease: solo
                                             --   late quien la posee); false = te la robaron
 mesh.claim_info(job_id, opts?) ⏸ -> { hostname, ts }?  -- nil si no hay claim
 mesh.release(job_id, opts?) ⏸               -- borra la claim-ref (job terminado o abandonado)
 ```
 
-- `opts`: `{ cwd?, remote? = "origin" }`. Todo vía `nu.proc.run(["git", ...])`;
+- `opts`: `{ cwd?, remote? = "origin" }`. Todo vía `enu.proc.run(["git", ...])`;
   git es dependencia declarada de la extensión, no del core.
 - El contenido del commit de claim/heartbeat es `{ hostname, ts }`
-  (`nu.sys.hostname/now_ms`). **Los relojes de los nodos no están
+  (`enu.sys.hostname/now_ms`). **Los relojes de los nodos no están
   sincronizados**: el umbral de staleness que un re-claimer aplique sobre
   `claim_info().ts` debe ser generoso (minutos, no segundos). El lock local de
   [sesiones.md](sesiones.md) §6 (pid + `proc.alive`) no cruza máquinas — aquí
@@ -104,7 +104,7 @@ mesh.worktree.remove(dir, opts?) ⏸        -- git worktree remove --force
 
 Un worktree por job y por variante de torneo: el remedio de G16 (last-write-wins
 entre escritores paralelos) es repartir territorio físico. `dir` por defecto
-bajo `nu.fs.tmpdir()`.
+bajo `enu.fs.tmpdir()`.
 
 ## 5. El runner: `mesh.run_job`
 
@@ -135,8 +135,8 @@ piezas de §2-§4 a mano):
 6. Turno(s): `send(job.prompt)` — o el flujo de fork si `job.fork` (§8).
 7. **La rama es el resultado y la auditoría viaja con ella**: commit del
    worktree + el transcript de la sesión (localizado con `sessions.dir`, G38)
-   copiado a `.nu/mesh/transcript.jsonl` + `Result` serializado a
-   `.nu/mesh/result.json` → push a `job.branch`. Un controlador remoto lee la
+   copiado a `.enu/mesh/transcript.jsonl` + `Result` serializado a
+   `.enu/mesh/result.json` → push a `job.branch`. Un controlador remoto lee la
    rama y extrae denials/usage/error **sin parsear prosa**.
 
 Un fallo en cualquier paso no lanza hacia fuera: `Result.ok = false` con
@@ -192,20 +192,20 @@ las skills del Role van **pineadas por hash de contenido**, y ese pin lo
 escribió el humano que revisó el Role. Si el hash del worktree coincide, el
 runner marca el worktree como confiado (`agent.trust.set(dir, true)`) **solo
 para ese job**; si no coincide, `EMESH` y el job muere antes de abrir sesión.
-Un Role **sin** skills pineadas no confía nada: el `nu.md` y las skills del
+Un Role **sin** skills pineadas no confía nada: el `enu.md` y las skills del
 repo no se inyectan (el default headless de §11.2 se mantiene).
 
 ## 10. El nodo, como patrón (no API)
 
 ```lua
--- node.lua — corre con `nu -e node.lua` en cada máquina
+-- node.lua — corre con `enu -e node.lua` en cada máquina
 local mesh = require("mesh")
 while true do
-  for _, jf in ipairs(nu.search.files(JOBS_DIR, { glob = "*.toml" })) do
+  for _, jf in ipairs(enu.search.files(JOBS_DIR, { glob = "*.toml" })) do
     local job = mesh.job.load(jf)
     if mesh.claim(job.id) then                       -- CAS: solo un nodo gana
-      local hb = nu.task.every(60000, function()
-        nu.task.spawn(function() mesh.heartbeat(job.id) end)
+      local hb = enu.task.every(60000, function()
+        enu.task.spawn(function() mesh.heartbeat(job.id) end)
       end)
       local role = mesh.role.load(repo_path(job.role))
       local r = mesh.run_job(job, role)              -- allSettled: nunca lanza
@@ -213,7 +213,7 @@ while true do
       log_result(r)                                  -- r.denials → enmiendas de Role
     end
   end
-  nu.task.sleep(POLL_MS)
+  enu.task.sleep(POLL_MS)
 end
 ```
 
@@ -223,7 +223,7 @@ end
 |---|---|---|
 | D1 | Nombre `mesh` (identificadores en inglés; "malla" en la prosa) | `fleet` evocaría "flota de trabajadores"; renombrar es barato hoy |
 | D2 | Fuera del conjunto oficial de producto (§1.4) | ¿Debería el onramp ofrecerla como extra de una tecla? |
-| D3 | Convenciones git: `refs/nu/mesh/claims/<id>` y `.nu/mesh/{transcript.jsonl,result.json}` en la rama | Nombres alternativos; ¿un `refs/nu/mesh/results/<id>` además de la rama? |
+| D3 | Convenciones git: `refs/enu/mesh/claims/<id>` y `.enu/mesh/{transcript.jsonl,result.json}` en la rama | Nombres alternativos; ¿un `refs/enu/mesh/results/<id>` además de la rama? |
 | D4 | El hash pineado sustituye al TOFU (§9): `trust.set` programático por worktree | ¿Exigir además una firma/allowlist de hashes global del operador? |
 | D5 | El bucle del nodo es patrón, no API (§10); el broker WS queda pospuesto | Disparador de reapertura: una malla real donde el polling de git duela |
 | D6 | El controlador que estampa jobs queda fuera de v0.1 (los escribe un humano/script) | ¿Merece `mesh.job.emit(spec)` que valide y comitee el TOML? |
@@ -233,7 +233,7 @@ end
 
 ## 12. Relación con lo pospuesto
 
-- **Broker como segundo sustrato** (`nu.ws` saliente): validado como expresable
+- **Broker como segundo sustrato** (`enu.ws` saliente): validado como expresable
   (Ronda 8, escenario 36); se construirá cuando exista una malla real donde el
   polling de git no baste.
 - **Tool calls paralelas** ([P12](pospuesto.md)): un job sigue siendo secuencial

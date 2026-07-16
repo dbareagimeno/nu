@@ -19,7 +19,7 @@ func setRoot(h *harness, root string) {
 	h.eval(`ROOT = rootPath()`)
 }
 
-// Tests de `nu.search` (S27, api.md §11; inventario 🔒). Tres bloques de lógica
+// Tests de `enu.search` (S27, api.md §11; inventario 🔒). Tres bloques de lógica
 // a blindar:
 //
 //   - `files` respeta `.gitignore` (G7): ignorado NO aparece, no-ignorado SÍ;
@@ -64,7 +64,7 @@ func makeSearchTree(t *testing.T) string {
 	return root
 }
 
-// --- nu.search.files (🔒: respeta .gitignore) ---------------------------------
+// --- enu.search.files (🔒: respeta .gitignore) ---------------------------------
 
 // TestSearchFilesGitignore blinda que `files` respeta `.gitignore` (G7,
 // inventario 🔒): el fichero ignorado NO aparece, el no-ignorado SÍ, un
@@ -81,7 +81,7 @@ func TestSearchFilesGitignore(t *testing.T) {
 	}
 	setRoot(h, root)
 
-	got := searchFilesList(h, `nu.search.files(ROOT)`)
+	got := searchFilesList(h, `enu.search.files(ROOT)`)
 	want := []string{"a.go", "b.txt", "sub/c.go"}
 	assertRelPaths(t, root, got, want)
 }
@@ -94,7 +94,7 @@ func TestSearchFilesHidden(t *testing.T) {
 	root := makeSearchTree(t)
 	setRoot(h, root)
 
-	got := searchFilesList(h, `nu.search.files(ROOT, { hidden = true })`)
+	got := searchFilesList(h, `enu.search.files(ROOT, { hidden = true })`)
 	// Con hidden: aparecen `.gitignore`, `.hidden.txt` y `.secretdir/d.go` (todos
 	// ficheros ocultos reales); siguen fuera los ignorados por gitignore
 	// (ignored.txt, debug.log, build/out.bin). El `.gitignore` es un fichero más:
@@ -110,7 +110,7 @@ func TestSearchFilesGlob(t *testing.T) {
 	root := makeSearchTree(t)
 	setRoot(h, root)
 
-	got := searchFilesList(h, `nu.search.files(ROOT, { glob = "*.go" })`)
+	got := searchFilesList(h, `enu.search.files(ROOT, { glob = "*.go" })`)
 	want := []string{"a.go", "sub/c.go"}
 	assertRelPaths(t, root, got, want)
 }
@@ -121,7 +121,7 @@ func TestSearchFilesMax(t *testing.T) {
 	root := makeSearchTree(t)
 	setRoot(h, root)
 
-	got := searchFilesList(h, `nu.search.files(ROOT, { max = 2 })`)
+	got := searchFilesList(h, `enu.search.files(ROOT, { max = 2 })`)
 	if len(got) != 2 {
 		t.Fatalf("max=2: got %d resultados %q, want 2", len(got), got)
 	}
@@ -138,8 +138,8 @@ func TestSearchFilesErrors(t *testing.T) {
 	// root inexistente → ENOENT (desde una task, capturado y reexpuesto).
 	h.eval(`
 		ERRC = nil
-		nu.task.spawn(function()
-			local ok, e = pcall(function() return nu.search.files(ROOT .. "/no-existe") end)
+		enu.task.spawn(function()
+			local ok, e = pcall(function() return enu.search.files(ROOT .. "/no-existe") end)
 			ERRC = ok and "no-error" or e.code
 		end)
 	`)
@@ -148,12 +148,12 @@ func TestSearchFilesErrors(t *testing.T) {
 	// opts no-tabla, glob no-string, max no-número → EINVAL.
 	h.eval(`
 		E2,E3,E4 = nil,nil,nil
-		nu.task.spawn(function()
-			local _, a = pcall(function() return nu.search.files(ROOT, 5) end)
+		enu.task.spawn(function()
+			local _, a = pcall(function() return enu.search.files(ROOT, 5) end)
 			E2 = a.code
-			local _, b = pcall(function() return nu.search.files(ROOT, { glob = 7 }) end)
+			local _, b = pcall(function() return enu.search.files(ROOT, { glob = 7 }) end)
 			E3 = b.code
-			local _, c = pcall(function() return nu.search.files(ROOT, { max = "x" }) end)
+			local _, c = pcall(function() return enu.search.files(ROOT, { max = "x" }) end)
 			E4 = c.code
 		end)
 	`)
@@ -162,13 +162,13 @@ func TestSearchFilesErrors(t *testing.T) {
 	h.expectEval(`return E4`, "EINVAL")
 
 	// Fuera de una task (en el chunk principal) → EINVAL (no se puede suspender).
-	se := h.evalErr(`return nu.search.files(ROOT)`)
+	se := h.evalErr(`return enu.search.files(ROOT)`)
 	if se.Code != CodeEINVAL {
 		t.Fatalf("files fuera de task: got %s, want EINVAL", se.Code)
 	}
 }
 
-// --- nu.search.fuzzy (🔒: ordena por score de forma estable) ------------------
+// --- enu.search.fuzzy (🔒: ordena por score de forma estable) ------------------
 
 // TestSearchFuzzyOrder blinda que `fuzzy` ordena por score descendente, excluye
 // los que no casan y devuelve `index` 1-based correcto.
@@ -177,7 +177,7 @@ func TestSearchFuzzyOrder(t *testing.T) {
 	// "abc" casa "abc" (1, contiguo desde el inicio), "axbxc" (2, disperso) y
 	// "xxabc" (4, contiguo pero no al inicio). "zzz" (3) no casa → excluido.
 	h.eval(`
-		R = nu.search.fuzzy("abc", { "abc", "axbxc", "zzz", "xxabc" })
+		R = enu.search.fuzzy("abc", { "abc", "axbxc", "zzz", "xxabc" })
 		IDX, SCORE = {}, {}
 		for i,m in ipairs(R) do IDX[i] = m.index; SCORE[i] = m.score end
 		N = #R
@@ -209,7 +209,7 @@ func TestSearchFuzzyStable(t *testing.T) {
 	// Cuatro candidatos idénticos: todos casan "ab" con EXACTAMENTE el mismo score.
 	// Un orden estable debe devolverlos en orden de entrada (1,2,3,4).
 	h.eval(`
-		R = nu.search.fuzzy("ab", { "ab", "ab", "ab", "ab" })
+		R = enu.search.fuzzy("ab", { "ab", "ab", "ab", "ab" })
 		ORDER = {}
 		for i,m in ipairs(R) do ORDER[i] = m.index end
 	`)
@@ -221,7 +221,7 @@ func TestSearchFuzzyStable(t *testing.T) {
 	// que empiezan por "a" (índices 1,3) puntúan más (primer carácter). Estables:
 	// dentro del grupo alto debe salir 1 antes que 3; en el bajo, 2 antes que 4.
 	h.eval(`
-		R2 = nu.search.fuzzy("a", { "aXa", "bXa", "aYa", "bYa" })
+		R2 = enu.search.fuzzy("a", { "aXa", "bXa", "aYa", "bYa" })
 		O2 = {}
 		for i,m in ipairs(R2) do O2[i] = m.index end
 	`)
@@ -240,22 +240,22 @@ func TestSearchFuzzyEmptyAndMax(t *testing.T) {
 	h := newHarness(t)
 	// Query vacío: casa todo, orden de entrada (todos score 0, estable).
 	h.eval(`
-		RE = nu.search.fuzzy("", { "x", "y", "z" })
+		RE = enu.search.fuzzy("", { "x", "y", "z" })
 		EORDER = {}
 		for i,m in ipairs(RE) do EORDER[i] = m.index end
 	`)
 	h.expectEval(`return #RE == 3 and tostring(EORDER[1]..EORDER[2]..EORDER[3])`, "123")
 
 	// max recorta.
-	h.eval(`RM = nu.search.fuzzy("a", { "a", "ba", "xa", "aa" }, { max = 2 })`)
+	h.eval(`RM = enu.search.fuzzy("a", { "a", "ba", "xa", "aa" }, { max = 2 })`)
 	h.expectEval(`return tostring(#RM)`, "2")
 
 	// candidatos con un no-string → EINVAL; opts no-tabla → EINVAL.
-	se := h.evalErr(`return nu.search.fuzzy("a", { "ok", 5 })`)
+	se := h.evalErr(`return enu.search.fuzzy("a", { "ok", 5 })`)
 	if se.Code != CodeEINVAL {
 		t.Fatalf("fuzzy candidato no-string: got %s, want EINVAL", se.Code)
 	}
-	se2 := h.evalErr(`return nu.search.fuzzy("a", { "ok" }, 5)`)
+	se2 := h.evalErr(`return enu.search.fuzzy("a", { "ok" }, 5)`)
 	if se2.Code != CodeEINVAL {
 		t.Fatalf("fuzzy opts no-tabla: got %s, want EINVAL", se2.Code)
 	}
@@ -302,11 +302,11 @@ func TestFuzzyScoreUnit(t *testing.T) {
 	}
 }
 
-// --- nu.search.grep (🔒: itera según llegan, ranges, paralelo, max) -----------
+// --- enu.search.grep (🔒: itera según llegan, ranges, paralelo, max) -----------
 
 // TestSearchGrepAll blinda que `grep` encuentra TODOS los matches con la forma
 // `{path, line_no, line, ranges}` correcta, que los ranges (byte 1-based
-// inclusive, coherente con `nu.re.find_all` de S26) reconstruyen el match por
+// inclusive, coherente con `enu.re.find_all` de S26) reconstruyen el match por
 // `line:sub`, y que el pool paralelo no pierde ni duplica resultados (respeta
 // gitignore: el match en el fichero ignorado no aparece).
 func TestSearchGrepAll(t *testing.T) {
@@ -319,8 +319,8 @@ func TestSearchGrepAll(t *testing.T) {
 	h.eval(`
 		MATCHES = {}
 		SUBOK = true
-		nu.task.spawn(function()
-			for r in nu.search.grep("TODO", { root = ROOT }) do
+		enu.task.spawn(function()
+			for r in enu.search.grep("TODO", { root = ROOT }) do
 				MATCHES[#MATCHES+1] = { path = r.path, line_no = r.line_no, line = r.line }
 				-- ranges reconstruyen el match exacto por line:sub (S26).
 				local rg = r.ranges[1]
@@ -364,8 +364,8 @@ func TestSearchGrepGlobCaseMax(t *testing.T) {
 	// glob *.go: solo x.go. case sensible: "hello" en minúscula → 2 líneas.
 	h.eval(`
 		N_GLOB = 0
-		nu.task.spawn(function()
-			for r in nu.search.grep("hello", { root = ROOT, glob = "*.go", case = "sensitive" }) do
+		enu.task.spawn(function()
+			for r in enu.search.grep("hello", { root = ROOT, glob = "*.go", case = "sensitive" }) do
 				N_GLOB = N_GLOB + 1
 			end
 		end)
@@ -375,8 +375,8 @@ func TestSearchGrepGlobCaseMax(t *testing.T) {
 	// case insensible en x.go: "hello"/"HELLO"/"hello" → 3 líneas.
 	h.eval(`
 		N_CI = 0
-		nu.task.spawn(function()
-			for r in nu.search.grep("hello", { root = ROOT, glob = "*.go", case = "insensitive" }) do
+		enu.task.spawn(function()
+			for r in enu.search.grep("hello", { root = ROOT, glob = "*.go", case = "insensitive" }) do
 				N_CI = N_CI + 1
 			end
 		end)
@@ -386,8 +386,8 @@ func TestSearchGrepGlobCaseMax(t *testing.T) {
 	// max corta: con max=1 sobre x.go (3 matches insensibles) → exactamente 1.
 	h.eval(`
 		N_MAX = 0
-		nu.task.spawn(function()
-			for r in nu.search.grep("hello", { root = ROOT, glob = "*.go", case = "insensitive", max = 1 }) do
+		enu.task.spawn(function()
+			for r in enu.search.grep("hello", { root = ROOT, glob = "*.go", case = "insensitive", max = 1 }) do
 				N_MAX = N_MAX + 1
 			end
 		end)
@@ -420,8 +420,8 @@ func TestSearchGrepParallelComplete(t *testing.T) {
 	h.eval(`
 		TOTAL = 0
 		PERPATH = {}
-		nu.task.spawn(function()
-			for r in nu.search.grep("MARK", { root = ROOT }) do
+		enu.task.spawn(function()
+			for r in enu.search.grep("MARK", { root = ROOT }) do
 				TOTAL = TOTAL + 1
 				PERPATH[r.path] = (PERPATH[r.path] or 0) + 1
 			end
@@ -462,8 +462,8 @@ func TestSearchGrepEarlyStopNoLeak(t *testing.T) {
 	base := runtime.NumGoroutine()
 	h.eval(`
 		FIRST = nil
-		nu.task.spawn(function()
-			for r in nu.search.grep("NEEDLE", { root = ROOT }) do
+		enu.task.spawn(function()
+			for r in enu.search.grep("NEEDLE", { root = ROOT }) do
 				FIRST = r.path
 				break -- abandona el iterador con el pool aún trabajando
 			end
@@ -505,8 +505,8 @@ func TestSearchGrepLineaLargaNoSilenciaElFichero(t *testing.T) {
 
 	h.eval(`
 		FOUND = {}
-		nu.task.spawn(function()
-			for r in nu.search.grep("AGUJA", { root = ROOT }) do
+		enu.task.spawn(function()
+			for r in enu.search.grep("AGUJA", { root = ROOT }) do
 				FOUND[#FOUND+1] = { line_no = r.line_no, line = r.line }
 			end
 		end)
@@ -555,13 +555,13 @@ func TestReadGrepLine(t *testing.T) {
 
 // --- helpers ------------------------------------------------------------------
 
-// searchFilesList corre una expresión `nu.search.files(...)` desde una task y
+// searchFilesList corre una expresión `enu.search.files(...)` desde una task y
 // devuelve las rutas resultantes (ordenadas para comparación determinista).
 func searchFilesList(h *harness, expr string) []string {
 	h.t.Helper()
 	h.eval(`
 		FILES_RESULT = nil
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			FILES_RESULT = ` + expr + `
 		end)
 	`)

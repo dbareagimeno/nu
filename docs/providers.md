@@ -16,7 +16,7 @@ Dos audiencias:
 
 ## 1. El registro: `providers.toml`
 
-Vive en `nu.config.dir()`. Declara *datos*, nunca lógica.
+Vive en `enu.config.dir()`. Declara *datos*, nunca lógica.
 
 ```toml
 # Provider con adaptador oficial: solo datos.
@@ -58,7 +58,7 @@ key del entorno y entrega al adaptador una `ProviderConfig` ya cocinada.
 `resolve` **no falla** si la variable de `api_key_env` no está en el entorno:
 entrega la config con `api_key` ausente y el adaptador decide (un Ollama local no
 la necesita; Anthropic dará un error accionable en la primera petición, no al
-resolver). El onramp `nu --default-config` deja una plantilla **activa** de este
+resolver). El onramp `enu --default-config` deja una plantilla **activa** de este
 fichero —provider `anthropic` con `api_key_env = "ANTHROPIC_API_KEY"` y el modelo
 `claude-opus-4-8` (alias `opus`)— escrita solo si no existe, para que el harness
 quede usable con un comando ([ADR-017](adr.md), [G35](problemas.md)).
@@ -146,7 +146,7 @@ resuelta desde el TOML.
 Obligaciones del adaptador:
 
 1. **`stream` es una función suspendiente** que devuelve un iterador de
-   `Event`s (típicamente envolviendo `nu.http.stream` + `Stream:events()`).
+   `Event`s (típicamente envolviendo `enu.http.stream` + `Stream:events()`).
    Se ejecuta dentro de la task del agente: la cancelación de esa task
    cancela la petición (el runtime cierra el `Stream` subyacente).
 2. **Errores**: lanza errores estructurados (ADR-009) con código
@@ -180,11 +180,11 @@ return {
   caps = { tools = true, images = true, system = true, usage = true },
   stream = function(req, provider)
     local body = to_wire(req)                       -- canónico → dialecto
-    local s = nu.http.stream{
+    local s = enu.http.stream{
       url = provider.base_url .. "/chat/completions",
       method = "POST",
       headers = auth_headers(provider),
-      body = nu.json.encode(body),
+      body = enu.json.encode(body),
     }
     if s.status >= 400 then
       error({ code = "EPROVIDER", message = read_error(s),
@@ -194,6 +194,14 @@ return {
   end,
 }
 ```
+
+*(Redirects (G54): el default de [api.md](api.md) §8 ya recorta las cabeceras
+del llamante en saltos cross-host, así que un `302` del provider hacia un
+tercero no arrastra `x-api-key`/`x-goog-api-key`; un adaptador que solo habla
+con su `base_url` no necesita hacer nada. Si tu adaptador descarga URLs que
+no controla —adjuntos o imágenes que el modelo referencia—, pon
+`max_redirects = 0` (o un límite corto) y valida cada salto: la guía de tools
+de [guia-plugins.md](guia-plugins.md) §5 tiene el porqué.)*
 
 ---
 
@@ -212,13 +220,27 @@ return {
   `providers.list() -> ModelInfo[]` (alimenta el selector de modelos de la UI).
 - `providers.approx_tokens(s) -> integer`: estimación heurística de tokens
   (agnóstica de modelo, ~4 bytes/token), en Lua puro. Vivía en el core como
-  `nu.text.approx_tokens` y salió de él (G23): "token" es vocabulario de
+  `enu.text.approx_tokens` y salió de él (G23): "token" es vocabulario de
   esta extensión, y una división no merece primitiva. Para exactitud, el
   `count_tokens?` del adaptador (§3).
+- `providers.secret_env_vars() -> string[]` (G55): los **nombres** —nunca los
+  valores— de las variables de entorno que portan credenciales según el
+  registro: las `api_key_env` de todos los providers declarados en
+  `providers.toml`, deduplicadas. Existe porque solo esta extensión sabe qué
+  variables del entorno son secretos de LLM — "provider" y "API key" son
+  vocabulario de producto, invisible para el core (ADR-003) —, y otras
+  extensiones necesitan esa lista para no regalarlos: la tool `bash` de la
+  extensión `agent` (y el lanzamiento de servidores MCP) la usa para
+  **recortar por defecto** esas variables del entorno de sus subprocesos
+  ([agente.md](agente.md) §3, origen SEC-04). Es una foto del registro
+  vigente, no una promesa de secreto absoluto: una credencial que el usuario
+  exporte al margen del TOML no se conoce aquí — el contrato es honesto sobre
+  su alcance. *(⏳ Pendiente de construcción: la extensión `0.1.0` aún no la
+  expone; se implementará junto al recorte de [agente.md](agente.md) §3.)*
 
 **Suscripciones / OAuth (G13).** El camino v1 es el que no necesita
-servidor local: **device flow o pegado manual de código** (`nu.http.request`
-en polling + abrir el navegador con `nu.proc` — el patrón de `gh` o
+servidor local: **device flow o pegado manual de código** (`enu.http.request`
+en polling + abrir el navegador con `enu.proc` — el patrón de `gh` o
 `gcloud`). Tokens de refresco: en `data_dir()/plugins/<nombre>/`, permisos
 `0600`, en claro (coherente con [P7](pospuesto.md): el cifrado en reposo es
 del filesystem). El flujo con callback localhost requeriría un listener

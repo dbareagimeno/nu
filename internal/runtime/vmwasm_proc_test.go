@@ -1,9 +1,9 @@
 package runtime
 
-// Tests de M13b: nu.proc sobre wasm (§6). Paridad con proc_test.go: spawn de un
+// Tests de M13b: enu.proc sobre wasm (§6). Paridad con proc_test.go: spawn de un
 // comando + wait por su código de salida, captura de salida (read/read_line), el
 // round-trip por stdin de `cat` (write/close_stdin/EOF), señal/kill a un proceso que
-// duerme, nu.proc.alive (G17: existencia, no identidad) y los errores de arranque/uso
+// duerme, enu.proc.alive (G17: existencia, no identidad) y los errores de arranque/uso
 // (ENOENT/EINVAL/ETIMEOUT). Se usan utilidades POSIX reales (echo/cat/sh/sleep),
 // presentes en cualquier Linux de CI. Las primitivas ⏸ corren dentro de una task y el
 // driver (RunTasks) las lleva a término; un plazo acota un cuelgue accidental a un
@@ -16,10 +16,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dbareagimeno/nu/internal/vmwasm"
+	"github.com/dbareagimeno/enu/internal/vmwasm"
 )
 
-// wasmProcRun registra nu.proc sobre una Instance (con métodos extra opcionales para
+// wasmProcRun registra enu.proc sobre una Instance (con métodos extra opcionales para
 // los tests, p. ej. exponer el pid), evalúa `setup` (que crea tasks) y conduce el
 // bucle; devuelve la Instance para leer las globales de resultado. Espeja
 // wasmWsRun/wasmHTTPRun.
@@ -65,8 +65,8 @@ func evalStr(t *testing.T, inst *vmwasm.Instance, expr string) string {
 // TestSpawnCatRoundTrip (aquí sobre echo).
 func TestProcWasmSpawnWait(t *testing.T) {
 	inst := wasmProcRun(t, &Runtime{}, nil, `
-		nu.task.spawn(function()
-			local p = nu.proc.spawn({"echo", "hola"})
+		enu.task.spawn(function()
+			local p = enu.proc.spawn({"echo", "hola"})
 			local line = p:read_line("stdout")   -- "hola\n"
 			local eof = p:read_line("stdout")     -- nil: echo cerró stdout
 			local code = p:wait().code            -- 0
@@ -82,8 +82,8 @@ func TestProcWasmSpawnWait(t *testing.T) {
 // code=0. El equivalente wasm de TestSpawnCatRoundTrip (write/read_line/close_stdin).
 func TestProcWasmCatRoundTrip(t *testing.T) {
 	inst := wasmProcRun(t, &Runtime{}, nil, `
-		nu.task.spawn(function()
-			local p = nu.proc.spawn({"cat"})
+		enu.task.spawn(function()
+			local p = enu.proc.spawn({"cat"})
 			p:write("uno\n")
 			local l1 = p:read_line("stdout")      -- "uno\n"
 			p:write("dos\n")
@@ -102,8 +102,8 @@ func TestProcWasmCatRoundTrip(t *testing.T) {
 // El equivalente wasm de TestSpawnReadRaw.
 func TestProcWasmReadRaw(t *testing.T) {
 	inst := wasmProcRun(t, &Runtime{}, nil, `
-		nu.task.spawn(function()
-			local p = nu.proc.spawn({"sh", "-c", "printf 'abcdef'"})
+		enu.task.spawn(function()
+			local p = enu.proc.spawn({"sh", "-c", "printf 'abcdef'"})
 			local all = p:read("stdout")          -- "abcdef" (todo hasta EOF)
 			local more = p:read("stdout")         -- nil (ya en EOF)
 			local code = p:wait().code
@@ -127,10 +127,10 @@ func TestProcWasmKillSleeping(t *testing.T) {
 		})
 	}
 	inst := wasmProcRun(t, &Runtime{}, extra, `
-		nu.task.spawn(function()
-			local p = nu.proc.spawn({"sleep", "30"})
+		enu.task.spawn(function()
+			local p = enu.proc.spawn({"sleep", "30"})
 			g_pid = __hcall(p.__id, "_pid")
-			g_alive = nu.proc.alive(g_pid)   -- true: el proceso está vivo
+			g_alive = enu.proc.alive(g_pid)   -- true: el proceso está vivo
 			p:kill(9)                         -- SIGKILL
 			local code = p:wait().code        -- desbloquea; code != 0 (matado por señal)
 			g_killed = (code ~= 0)
@@ -164,14 +164,14 @@ func TestProcWasmKillNonNumericSignal(t *testing.T) {
 		})
 	}
 	inst := wasmProcRun(t, &Runtime{}, extra, `
-		nu.task.spawn(function()
-			local p = nu.proc.spawn({"sleep", "30"})
+		enu.task.spawn(function()
+			local p = enu.proc.spawn({"sleep", "30"})
 			g_pid = __hcall(p.__id, "_pid")
 			-- señal no numérica: debe lanzar EINVAL y NO tocar el proceso
 			local ok, e = pcall(function() return p:kill("KILL") end)
 			g_ok = ok
 			g_code = (e and e.code) or "nil"
-			g_alive = nu.proc.alive(g_pid)     -- sigue vivo: el kill inválido no lo mató
+			g_alive = enu.proc.alive(g_pid)     -- sigue vivo: el kill inválido no lo mató
 			-- ...y sigue siendo matable con una señal válida
 			p:kill(9)                          -- SIGKILL
 			g_killed = (p:wait().code ~= 0)
@@ -199,13 +199,13 @@ func TestProcWasmKillNonNumericSignal(t *testing.T) {
 	}
 }
 
-// M13b.proc.5: nu.proc.alive (G17) — existencia, no identidad. El pid 1 (init) existe
+// M13b.proc.5: enu.proc.alive (G17) — existencia, no identidad. El pid 1 (init) existe
 // en cualquier Unix aunque no sea nuestro → true; un pid imposible (2^30) → false. El
 // equivalente wasm de TestProcAliveSnippetG17. alive NO es ⏸ (consulta inmediata):
 // funciona fuera de una task.
 func TestProcWasmAlive(t *testing.T) {
 	inst := wasmProcRun(t, &Runtime{}, nil, `
-		out = tostring(nu.proc.alive(1)) .. ":" .. tostring(nu.proc.alive(1073741824))`)
+		out = tostring(enu.proc.alive(1)) .. ":" .. tostring(enu.proc.alive(1073741824))`)
 	if got := evalStr(t, inst, `return tostring(out)`); got != "true:false" {
 		t.Fatalf("alive G17: got %q, want true:false", got)
 	}
@@ -216,9 +216,9 @@ func TestProcWasmAlive(t *testing.T) {
 // validación de parseProcArgs.
 func TestProcWasmSpawnInvalid(t *testing.T) {
 	inst := wasmProcRun(t, &Runtime{}, nil, `
-		nu.task.spawn(function()
-			local ok1, e1 = pcall(function() return nu.proc.spawn({"no-existe-binario-xyz-123"}) end)
-			local ok2, e2 = pcall(function() return nu.proc.spawn({}) end)
+		enu.task.spawn(function()
+			local ok1, e1 = pcall(function() return enu.proc.spawn({"no-existe-binario-xyz-123"}) end)
+			local ok2, e2 = pcall(function() return enu.proc.spawn({}) end)
 			out = tostring(ok1) .. ":" .. e1.code .. ":" .. tostring(ok2) .. ":" .. e2.code
 		end)`)
 	if got := evalStr(t, inst, `return tostring(out)`); got != "false:ENOENT:false:EINVAL" {
@@ -226,17 +226,17 @@ func TestProcWasmSpawnInvalid(t *testing.T) {
 	}
 }
 
-// M13b.proc.7: nu.proc.run (⏸) — la conveniencia con buffers. echo → code=0 + stdout;
+// M13b.proc.7: enu.proc.run (⏸) — la conveniencia con buffers. echo → code=0 + stdout;
 // un exit != 0 es dato (no lanza); un ejecutable inexistente → ENOENT; timeout_ms
 // excedido → ETIMEOUT (tras matar el proceso). Espeja TestRunSnippet + TestRunTimeoutSnippet
 // + TestRunNonexistentSnippet.
 func TestProcWasmRun(t *testing.T) {
 	inst := wasmProcRun(t, &Runtime{}, nil, `
-		nu.task.spawn(function()
-			local r = nu.proc.run({"echo", "hi"})
-			local r2 = nu.proc.run({"sh", "-c", "exit 7"})
-			local ok3, e3 = pcall(function() return nu.proc.run({"no-existe-xyz-123"}) end)
-			local ok4, e4 = pcall(function() return nu.proc.run({"sleep", "30"}, { timeout_ms = 100 }) end)
+		enu.task.spawn(function()
+			local r = enu.proc.run({"echo", "hi"})
+			local r2 = enu.proc.run({"sh", "-c", "exit 7"})
+			local ok3, e3 = pcall(function() return enu.proc.run({"no-existe-xyz-123"}) end)
+			local ok4, e4 = pcall(function() return enu.proc.run({"sleep", "30"}, { timeout_ms = 100 }) end)
 			out = tostring(r.code) .. "|" .. r.stdout .. "|" .. tostring(r2.code)
 				.. "|" .. tostring(ok3) .. ":" .. e3.code .. "|" .. tostring(ok4) .. ":" .. e4.code
 		end)`)
@@ -249,8 +249,8 @@ func TestProcWasmRun(t *testing.T) {
 // del IO). El equivalente wasm de TestProcReadInvalidStream.
 func TestProcWasmReadInvalidStream(t *testing.T) {
 	inst := wasmProcRun(t, &Runtime{}, nil, `
-		nu.task.spawn(function()
-			local p = nu.proc.spawn({"cat"})
+		enu.task.spawn(function()
+			local p = enu.proc.spawn({"cat"})
 			local ok, e = pcall(function() return p:read_line("nope") end)
 			p:kill()
 			p:wait()
@@ -265,8 +265,8 @@ func TestProcWasmReadInvalidStream(t *testing.T) {
 // TestProcWriteAfterCloseECLOSED.
 func TestProcWasmWriteAfterClose(t *testing.T) {
 	inst := wasmProcRun(t, &Runtime{}, nil, `
-		nu.task.spawn(function()
-			local p = nu.proc.spawn({"cat"})
+		enu.task.spawn(function()
+			local p = enu.proc.spawn({"cat"})
 			p:close_stdin()
 			local ok, e = pcall(function() return p:write("x") end)
 			p:kill()
@@ -286,8 +286,8 @@ func TestProcWasmReapTemprano(t *testing.T) {
 	rt := &Runtime{}
 	rt.sched = newScheduler(rt, 100*time.Millisecond)
 	inst := wasmProcRun(t, rt, nil, `
-		nu.task.spawn(function()
-			local p = nu.proc.spawn({"sh", "-c", "echo hola; echo err 1>&2"})
+		enu.task.spawn(function()
+			local p = enu.proc.spawn({"sh", "-c", "echo hola; echo err 1>&2"})
 			p:wait()
 			while p:read_line("stdout") ~= nil do end
 			while p:read_line("stderr") ~= nil do end

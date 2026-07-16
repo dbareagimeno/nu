@@ -18,12 +18,12 @@ sin pasar por el agente.
 3. **Reutiliza el modelo canónico.** Los mensajes se serializan exactamente
    como los define [providers.md](providers.md) (bloques, `meta` incluido):
    una sesión reanudada produce requests idénticos a los de la original.
-4. **El core solo aporta `nu.fs` y `nu.json`.** Nada de esto es primitiva.
+4. **El core solo aporta `enu.fs` y `enu.json`.** Nada de esto es primitiva.
 
 ## 2. Ubicación
 
 ```
-nu.config.data_dir()/
+enu.config.data_dir()/
   sessions/
     <proyecto>/                          # cwd codificado como slug
       2026-06-11T10-22-07Z-a3f9.jsonl    # una sesión = un fichero
@@ -37,7 +37,7 @@ nu.config.data_dir()/
   por herramientas externas (§1), la codificación cwd→directorio no puede ser
   un detalle privado. Algoritmo: todo carácter fuera de `[A-Za-z0-9.-]` se
   sustituye por `_`; se recortan los `_` de ambos bordes; si queda vacío,
-  `"root"`. Ejemplo: `/home/diego/nu` → `home_diego_nu`. Es deliberadamente
+  `"root"`. Ejemplo: `/home/diego/enu` → `home_diego_enu`. Es deliberadamente
   **legible y con pérdida**: no es reversible, y dos `cwd` patológicamente
   parecidos (`/a/b` y `/a_b`) pueden colisionar en el mismo directorio. No es
   una identidad sino una **clave de agrupación**: la identidad canónica de
@@ -95,7 +95,7 @@ compatible: versiones nuevas pueden añadir tipos).
 
 Durante el streaming de una respuesta no se escribe nada: los deltas son
 para la pantalla. Al completarse el turno (`done` del adaptador), se hace
-**un** `nu.fs.append` con la entrada `message` entera. Una sesión nunca
+**un** `enu.fs.append` con la entrada `message` entera. Una sesión nunca
 contiene mensajes a medias; si el proceso muere a mitad de respuesta, el
 turno simplemente no existe (y la petición se puede relanzar al reanudar).
 
@@ -122,12 +122,12 @@ Dos procesos haciendo append al mismo JSONL = corrupción intercalada. Regla:
 - `<sesión>.jsonl.lock` junto al transcript, contenido
   `{ pid, hostname, started }`. Se adquiere al abrir para escribir
   (crear/reanudar) con creación **exclusiva**
-  (`nu.fs.write(..., { exclusive = true })`, atómica: dos procesos no
+  (`enu.fs.write(..., { exclusive = true })`, atómica: dos procesos no
   pueden ganar a la vez — [api.md](api.md) §5), se libera al salir. La
-  identidad del escritor que se graba es la del proceso `nu` actual: el
-  `pid`, de `nu.sys.pid()` (G32); el `hostname`, de `nu.sys.hostname()`
-  (G17); el `started`, de `nu.sys.now_ms()`. Al *verificar* un lock ajeno se
-  comprueba su `pid` con `nu.proc.alive` (existencia en esta máquina, no
+  identidad del escritor que se graba es la del proceso `enu` actual: el
+  `pid`, de `enu.sys.pid()` (G32); el `hostname`, de `enu.sys.hostname()`
+  (G17); el `started`, de `enu.sys.now_ms()`. Al *verificar* un lock ajeno se
+  comprueba su `pid` con `enu.proc.alive` (existencia en esta máquina, no
   identidad — G17). **Leer nunca requiere lock** (un append-only es seguro
   de leer a medias).
 - **Lock huérfano** (crash): si el `pid` no está vivo en esta máquina, es

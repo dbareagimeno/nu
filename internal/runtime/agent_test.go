@@ -4,7 +4,7 @@ package runtime
 // internal/runtime/embedded/agent). Es el MOTOR HEADLESS: Lua sobre la API
 // pública congelada (Fase 8, ADR-003: el core NO sabe lo que es un agente),
 // construido sobre las extensiones `providers` (S36/S37) y `sessions` (S38).
-// La prueba arranca un Runtime con las TRES activadas por `nu.toml` y ejercita el
+// La prueba arranca un Runtime con las TRES activadas por `enu.toml` y ejercita el
 // contrato de [agente.md](../../docs/agente.md) desde Lua con `require("agent")`.
 //
 // Blinda:
@@ -19,7 +19,7 @@ package runtime
 //   - **eventos `agent:*`** (§4): turn.start/message/tool.start/tool.end/turn.end
 //     se emiten con atribución `session` (G3);
 //   - **CP-10**: turno headless (sin UI, G20) con una tool de FICHERO real
-//     (nu.fs) y un permiso DENEGADO accionable, PERSISTIDO en JSONL (sessions) y
+//     (enu.fs) y un permiso DENEGADO accionable, PERSISTIDO en JSONL (sessions) y
 //     REANUDABLE.
 
 import (
@@ -139,7 +139,7 @@ func TestAgentTurnoCompleto(t *testing.T) {
 
 	h.eval(`
 		out, errc = nil, nil
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local ok, e = pcall(function()
 				local agent = require("agent")
 				` + registerToolStub + `
@@ -187,7 +187,7 @@ func TestAgentReparaToolCallHuerfano(t *testing.T) {
 
 	h.eval(`
 		out, errc = nil, nil
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local ok, e = pcall(function()
 				local agent = require("agent")
 				` + registerToolStub + `
@@ -267,10 +267,10 @@ func TestAgentTurnoErrorSeEmite(t *testing.T) {
 	h, _ := bootAgent(t, providersTomlErrStub, false)
 	h.eval(`
 		ERRMSG, SENT, RET = nil, false, "sentinel"
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local agent = require("agent")
 			` + registerErrStub + `
-			local sub = nu.events.on("agent:error", function(p) ERRMSG = p.message end)
+			local sub = enu.events.on("agent:error", function(p) ERRMSG = p.message end)
 			local s = agent.session{ model = "test/m", no_store = true }
 			RET = s:send("hola")   -- el turno falla; send DEBE retornar (no colgar)
 			SENT = true
@@ -294,7 +294,7 @@ func TestAgentPermisoDenegado(t *testing.T) {
 
 	h.eval(`
 		out, errc = nil, nil
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local ok, e = pcall(function()
 				local agent = require("agent")
 				` + registerToolStub + `
@@ -338,7 +338,7 @@ func TestAgentPermisoConcedido(t *testing.T) {
 
 	h.eval(`
 		out, errc = nil, nil
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local ok, e = pcall(function()
 				local agent = require("agent")
 				` + registerToolStub + `
@@ -373,7 +373,7 @@ func TestAgentHooks(t *testing.T) {
 
 	h.eval(`
 		out, errc = nil, nil
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local ok, e = pcall(function()
 				local agent = require("agent")
 				agent._reset_hooks()
@@ -420,7 +420,7 @@ func TestAgentHookVeto(t *testing.T) {
 
 	h.eval(`
 		out, errc = nil, nil
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local ok, e = pcall(function()
 				local agent = require("agent")
 				agent._reset_hooks()
@@ -456,7 +456,7 @@ func TestAgentHookVeto(t *testing.T) {
 	}
 }
 
-// TestAgentEventos (§4): los eventos `agent:*` se emiten por el bus `nu.events`
+// TestAgentEventos (§4): los eventos `agent:*` se emiten por el bus `enu.events`
 // con atribución obligatoria `session` (G3). Suscribimos a varios y comprobamos
 // que se disparan en un turno y llevan el id de sesión.
 func TestAgentEventos(t *testing.T) {
@@ -465,7 +465,7 @@ func TestAgentEventos(t *testing.T) {
 	h.eval(`
 		out, errc = nil, nil
 		EV = {}
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local ok, e = pcall(function()
 				local agent = require("agent")
 				agent._reset_hooks()
@@ -478,7 +478,7 @@ func TestAgentEventos(t *testing.T) {
 				local names = { "turn.start", "turn.end", "message", "tool.start", "tool.end" }
 				ALL_HAVE_SESSION = true
 				for _, n in ipairs(names) do
-					nu.events.on("agent:" .. n, function(p)
+					enu.events.on("agent:" .. n, function(p)
 						EV[n] = (EV[n] or 0) + 1
 						if p.session == nil then ALL_HAVE_SESSION = false end
 					end)
@@ -486,7 +486,7 @@ func TestAgentEventos(t *testing.T) {
 				local s = agent.session{ model = "test/m", no_store = true }
 				SID = s.id
 				EV_SESSION_MATCHES = true
-				nu.events.on("agent:turn.end", function(p)
+				enu.events.on("agent:turn.end", function(p)
 					if p.session ~= SID then EV_SESSION_MATCHES = false end
 				end)
 				s:send("dispara eventos")
@@ -509,11 +509,11 @@ func TestAgentEventos(t *testing.T) {
 
 // TestCP10AgenteHeadless es el CHECKPOINT CP-10 (tras S39): un turno HEADLESS (sin
 // UI, G20) que (a) ejecuta una tool de FICHERO real (read_file/write_file con
-// nu.fs), (b) DENIEGA el permiso de escritura (error accionable, sin que el turno
+// enu.fs), (b) DENIEGA el permiso de escritura (error accionable, sin que el turno
 // se rompa), (c) PERSISTE la sesión en JSONL (sessions S38) y (d) es REANUDABLE.
 // Verifica que TODO corre sin una sola línea de UI.
 func TestCP10AgenteHeadless(t *testing.T) {
-	// headless de verdad: WithForceUI(false). nu.has("ui") será false.
+	// headless de verdad: WithForceUI(false). enu.has("ui") será false.
 	h, dataDir := bootCP10(t)
 
 	// Fichero a leer por la tool read_file (camino de solo lectura, se permite).
@@ -524,15 +524,15 @@ func TestCP10AgenteHeadless(t *testing.T) {
 	}
 
 	// Turno 1: el adaptador pide read_file(target). El handler lee el fichero
-	// (nu.fs), se concede (solo lectura, default allow), su contenido se realimenta,
+	// (enu.fs), se concede (solo lectura, default allow), su contenido se realimenta,
 	// y el done final cierra. La sesión se PERSISTE (no no_store).
 	h.eval(`
 		out, errc = nil, nil
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local ok, e = pcall(function()
 				local agent = require("agent")
 				` + registerToolStub + `
-				HAS_UI = nu.has("ui")
+				HAS_UI = enu.has("ui")
 				TOOLNAME = "read_file"
 				TOOLARGS = { path = "` + target + `" }
 				local s = agent.session{ model = "test/m", cwd = "` + repo + `" }
@@ -572,7 +572,7 @@ func TestCP10AgenteHeadless(t *testing.T) {
 	// reanudar repobló el historial (replay) — comprobamos que la sesión continúa.
 	h.eval(`
 		out2, errc2 = nil, nil
-		nu.task.spawn(function()
+		enu.task.spawn(function()
 			local ok, e = pcall(function()
 				local agent = require("agent")
 				` + registerToolStub + `

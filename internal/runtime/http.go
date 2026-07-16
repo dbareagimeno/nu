@@ -15,13 +15,13 @@ import (
 	"time"
 )
 
-// `nu.http` — red (api.md §8, sesión S19). Por ahora solo `nu.http.request`: una
+// `enu.http` — red (api.md §8, sesión S19). Por ahora solo `enu.http.request`: una
 // petición HTTP **buffereada** (lee el body entero a string) que devuelve
 // `{status, headers, body}`. Es ⏸ (sobre el puente `suspend` de S04, ADR-011):
 // suelta el token, hace la petición **bloqueante** en una goroutine de fondo que
 // **jamás toca Lua**, y al volver recupera el token y entrega la respuesta (o
-// mapea el error) en la `deliverFn`. El streaming (`nu.http.stream`) es S20 y los
-// websockets (`nu.ws`) S21; aquí no se tocan.
+// mapea el error) en la `deliverFn`. El streaming (`enu.http.stream`) es S20 y los
+// websockets (`enu.ws`) S21; aquí no se tocan.
 //
 // SEMÁNTICA CLAVE (§8):
 //
@@ -37,9 +37,9 @@ import (
 //     (`insecure`, para entornos de prueba). `opts.proxy` fija un proxy por
 //     petición; sin él se respeta `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` del entorno
 //     (`http.ProxyFromEnvironment`). Los defaults globales viven en `[net]` de
-//     `nu.toml` (`ca_file`, `proxy`), sobreescribibles por petición.
+//     `enu.toml` (`ca_file`, `proxy`), sobreescribibles por petición.
 //
-// EL MODELO DEL CLIENTE (la decisión de diseño de S19, ver claude_decisions.md):
+// EL MODELO DEL CLIENTE (la decisión de diseño de S19, ver docs/decisiones-implementacion.md):
 // **un cliente reutilizable para el caso común, uno por-petición para los casos
 // con TLS/proxy a medida.** El caso común (sin `opts.tls`, sin `opts.proxy`, sin
 // CA corporativa de `[net]`) reusa un único `*http.Client` cacheado en
@@ -58,8 +58,8 @@ import (
 // explícito lo tratamos como inválido, ver parseo).
 const httpDefaultTimeout = 30 * time.Second
 
-// httpState es el estado de sesión de `nu.http` (§8). Guarda los defaults de red
-// de `[net]` de `nu.toml` (G12) y el cliente **reutilizable** del caso común,
+// httpState es el estado de sesión de `enu.http` (§8). Guarda los defaults de red
+// de `[net]` de `enu.toml` (G12) y el cliente **reutilizable** del caso común,
 // construido perezosamente la primera vez que una petición no necesita un cliente
 // a medida. El candado protege la construcción perezosa frente a peticiones
 // concurrentes (cada `request` corre su IO en una goroutine de fondo, sin token).
@@ -71,8 +71,8 @@ type httpState struct {
 	reuseDflt *http.Client // cliente del caso común (CA del sistema + proxy default); nil hasta el primer uso
 }
 
-// newHTTPState construye el estado de `nu.http` con los defaults de `[net]` de
-// `nu.toml` (G12). Lo llama `New` (runtime.go). El cliente reutilizable se crea
+// newHTTPState construye el estado de `enu.http` con los defaults de `[net]` de
+// `enu.toml` (G12). Lo llama `New` (runtime.go). El cliente reutilizable se crea
 // perezosamente (no toda sesión hace red).
 func newHTTPState(caFile, proxy string) *httpState {
 	return &httpState{caFile: caFile, proxy: proxy}
@@ -133,7 +133,7 @@ func (o *reqOpts) needsCustomClient(st *httpState) bool {
 // construcción de la petición o de la config TLS se devuelve como un error normal
 // que se rinde como `EINVAL`.
 var (
-	errHTTPTimeout = errors.New("nu.http: timeout")
+	errHTTPTimeout = errors.New("enu.http: timeout")
 )
 
 // httpError envuelve el error original con su código del core ya decidido, para
@@ -171,7 +171,7 @@ func (st *httpState) do(o reqOpts) (int, map[string]string, string, error) {
 	req, err := http.NewRequestWithContext(ctx, o.method, o.rawURL, bodyReader)
 	if err != nil {
 		// URL inválida, método inválido: uso inválido (§1.4 EINVAL).
-		return 0, nil, "", &httpError{code: CodeEINVAL, msg: "nu.http.request: " + err.Error()}
+		return 0, nil, "", &httpError{code: CodeEINVAL, msg: "enu.http.request: " + err.Error()}
 	}
 	for name, value := range o.headers {
 		req.Header.Set(name, value)
@@ -201,24 +201,24 @@ func (st *httpState) do(o reqOpts) (int, map[string]string, string, error) {
 // por `os.IsTimeout`.
 func classifyTransportError(ctx context.Context, err error) error {
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
-		return &httpError{code: CodeETIMEOUT, msg: "nu.http.request: la petición excedió timeout_ms"}
+		return &httpError{code: CodeETIMEOUT, msg: "enu.http.request: la petición excedió timeout_ms"}
 	}
 	var ne net.Error
 	if errors.As(err, &ne) && ne.Timeout() {
-		return &httpError{code: CodeETIMEOUT, msg: "nu.http.request: la petición excedió timeout_ms"}
+		return &httpError{code: CodeETIMEOUT, msg: "enu.http.request: la petición excedió timeout_ms"}
 	}
 	if errors.Is(err, os.ErrDeadlineExceeded) {
-		return &httpError{code: CodeETIMEOUT, msg: "nu.http.request: la petición excedió timeout_ms"}
+		return &httpError{code: CodeETIMEOUT, msg: "enu.http.request: la petición excedió timeout_ms"}
 	}
 	if errors.Is(err, errHTTPTimeout) {
-		return &httpError{code: CodeETIMEOUT, msg: "nu.http.request: la petición excedió timeout_ms"}
+		return &httpError{code: CodeETIMEOUT, msg: "enu.http.request: la petición excedió timeout_ms"}
 	}
-	return &httpError{code: CodeENET, msg: "nu.http.request: fallo de transporte: " + err.Error()}
+	return &httpError{code: CodeENET, msg: "enu.http.request: fallo de transporte: " + err.Error()}
 }
 
 // flattenHeaders convierte los headers de respuesta (`http.Header`, que es
 // nombre→[]valor por el modelo del protocolo) a la tabla nombre→valor que el
-// contrato pide (§8). **Decisión sobre valores múltiples (claude_decisions.md
+// contrato pide (§8). **Decisión sobre valores múltiples (docs/decisiones-implementacion.md
 // S19):** se **unen por ", "** —la forma canónica de combinar headers repetidos
 // según RFC 7230 §3.2.2, válida para casi todos (la excepción notable, `Set-Cookie`,
 // no se parte por comas; un consumidor que necesite cookies crudas usará `stream`
@@ -299,7 +299,7 @@ func (st *httpState) customClient(o reqOpts) (*http.Client, error) {
 	if proxyURL != "" {
 		u, err := url.Parse(proxyURL)
 		if err != nil {
-			return nil, errors.New("nu.http.request: proxy inválido: " + err.Error())
+			return nil, errors.New("enu.http.request: proxy inválido: " + err.Error())
 		}
 		tr.Proxy = http.ProxyURL(u)
 	} else {
@@ -317,14 +317,14 @@ func (st *httpState) customClient(o reqOpts) (*http.Client, error) {
 func loadCAPool(caFile string) (*x509.CertPool, error) {
 	pem, err := os.ReadFile(caFile)
 	if err != nil {
-		return nil, errors.New("nu.http.request: no se pudo leer ca_file: " + err.Error())
+		return nil, errors.New("enu.http.request: no se pudo leer ca_file: " + err.Error())
 	}
 	pool, err := x509.SystemCertPool()
 	if err != nil || pool == nil {
 		pool = x509.NewCertPool()
 	}
 	if !pool.AppendCertsFromPEM(pem) {
-		return nil, errors.New("nu.http.request: ca_file no contiene certificados PEM válidos: " + caFile)
+		return nil, errors.New("enu.http.request: ca_file no contiene certificados PEM válidos: " + caFile)
 	}
 	return pool, nil
 }
