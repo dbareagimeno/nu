@@ -24,9 +24,9 @@ UI can do everything this one does.
 ```
 
 One column, one visible session. Splits and multi-session view: postponed
-([P14](pospuesto.md)).
+([P14](../postponed/pospuesto.md)).
 
-> ✅ **Product polish** ([ADR-018](adr.md)). The column looks finished, not
+> ✅ **Product polish** ([ADR-018](../decisions/adr/README.md)). The column looks finished, not
 > like a bare kernel: a **welcome screen** on startup (banner + model + cwd +
 > shortcuts) instead of a blank screen; a **framed input** (`toolkit.box`, rounded
 > border) with a `› ` prompt and visible placeholder; an **activity** row with an
@@ -55,7 +55,7 @@ session indefinitely.
 | `agent:permission.asked` | Modal dialog (§5), FIFO-queued if one is already visible. |
 | `agent:compact` | Visual mark of "history compacted above". |
 
-> ✅ **Implemented** ([pospuesto.md](pospuesto.md) **P27**). Chat also consumes
+> ✅ **Implemented** ([pospuesto.md](../postponed/pospuesto.md) **P27**). Chat also consumes
 > `agent:tool.progress` (live progress under the tool in progress) and
 > `agent:compact` (the "history compacted above" mark, already emitted by the
 > agent with **P25**). With G42/G43 it also consumes `agent:retry` (the
@@ -69,7 +69,7 @@ without `chat` knowing about them. Fallback: folded plain text.
 
 ## 3. Input
 
-- **Framed** multiline editor ([ADR-018](adr.md)): lives in a `toolkit.box`
+- **Framed** multiline editor ([ADR-018](../decisions/adr/README.md)): lives in a `toolkit.box`
   (rounded border, focus highlight) with a `› ` prompt; the box **grows and
   shrinks** with content (up to a maximum). The **placeholder** (usage hints)
   is visible even when the editor has focus (previously it hid right at
@@ -81,7 +81,7 @@ without `chat` knowing about them. Fallback: folded plain text.
 - **`@` mentions**: opens a fuzzy picker of repo files
   (`enu.search.files` + `enu.search.fuzzy`); the mention injects the path and
   the agent decides whether to read it (content is not blindly embedded).
-  *(✅ Implemented: [pospuesto.md](pospuesto.md) **P26**, via `chat.picker`.)*
+  *(✅ Implemented: [pospuesto.md](../postponed/pospuesto.md) **P26**, via `chat.picker`.)*
 - **`/` at the start**: command autocompletion (§4) — `tab` opens the
   command picker. *(✅ Implemented: **P29**.)*
 - Correct multiline paste (`paste` event from `enu.ui`).
@@ -107,7 +107,7 @@ resumes via `agent.session{ resume = id }`), `/fork`, `/compact`,
 change reasoning, ADR-016), `/retry` (re-runs the turn after an error,
 `Session:retry`, G43), `/help`, `/quit`.
 
-> ✅ **Implemented** ([pospuesto.md](pospuesto.md) **P28**). Besides
+> ✅ **Implemented** ([pospuesto.md](../postponed/pospuesto.md) **P28**). Besides
 > `/model`, `/sessions`, `/compact`, `/clear`, `/help`, `/quit`, chat ships
 > `/fork` (forks with `Session:fork` and continues on the branch via
 > `Chat:switch_session`), `/permissions` (view and edit the policy:
@@ -131,7 +131,7 @@ options:
   model ([agente.md](agente.md) §11). The proposed pattern is shown and is
   editable before accepting (generalizing `bash:npm install` to
   `bash:npm *` is a human decision, not the UI's).
-  *(✅ Implemented: [pospuesto.md](pospuesto.md) **P29**. Key `s` = always
+  *(✅ Implemented: [pospuesto.md](../postponed/pospuesto.md) **P29**. Key `s` = always
   (session), `g` = always (global, persists to `agent.toml`). Inline editing
   of the pattern before accepting remains as minor polish; v1 uses the
   suggested pattern.)*
@@ -144,7 +144,7 @@ the queue (and are signaled in the statusline).
 
 ## 6. Statusline
 
-It's rendered as a **bar** ([ADR-018](adr.md)): a continuous background
+It's rendered as a **bar** ([ADR-018](../decisions/adr/README.md)): a continuous background
 (`bg_surface`) and, on top of it, the segments as **colored spans** from the
 theme (G22) — not gray concatenated text. Each segment returns
 `{ text, style }` (a semantic color name) or `""` to hide itself; chat
@@ -172,13 +172,13 @@ chat.statusline.add{ id, side: "left"|"right", priority, render: fn(ctx) -> Span
 - `chat` only activates in an interactive TTY — the test is `enu.has("ui")`
   ([api.md](api.md) §9, G20); in headless it isn't even loaded (the
   engine/UI separation in [agente.md](agente.md) §1 is what allows it).
-- **Welcome screen** ([ADR-018](adr.md)). While the conversation is empty,
+- **Welcome screen** ([ADR-018](../decisions/adr/README.md)). While the conversation is empty,
   the transcript shows a greeting (identifies the harness, the active
   **model** and **cwd**, and recalls the shortcuts) instead of a blank
   screen; on the first message the conversation replaces it. The quality of
   the degraded startup screen (below) stops being the exception.
 - **Chat owns the screen and shutting it down powers off the binary**
-  ([G36](problemas.md#g36)). The official set (ADR-015) also activates
+  ([G36](../findings/g36-el-conjunto-oficial-de-producto.md)). The official set (ADR-015) also activates
   `repl`, but `repl` **yields**: it only auto-mounts its UI if chat isn't
   active (it checks this with `enu.plugin.list`, without depending on chat).
   And `Chat:quit` (and `ctrl+c`) emit `core:shutdown`: quitting chat
@@ -188,7 +188,7 @@ chat.statusline.add{ id, side: "left"|"right", priority, render: fn(ctx) -> Span
 - Creates the initial session (`agent.session`) with the resolved config
   (defaults < global < project), or resumes an existing one
   (`agent.session{ resume = id }`, fed by the `/sessions` picker).
-- **Degraded startup ([ADR-017](adr.md), [G35](problemas.md)).** If the
+- **Degraded startup ([ADR-017](../decisions/adr/README.md), [G35](../findings/README.md)).** If the
   initial session **can't be built due to missing or broken config** —
   `agent.session` throws `EINVAL` (no model), `EPROVIDER` (model/provider
   not resolvable in `providers.toml`) or `EAGENT`/`EPROVIDER` (malformed
@@ -218,9 +218,9 @@ chat.statusline.add{ id, side: "left"|"right", priority, render: fn(ctx) -> Span
 
 ## 10. Postponed
 
-Splits / multi-session view ([P14](pospuesto.md)), search within the
-transcript ([P15](pospuesto.md)), vim mode for the input editor
-([P16](pospuesto.md)), image rendering in the transcript
-([P6](pospuesto.md)).
+Splits / multi-session view ([P14](../postponed/pospuesto.md)), search within the
+transcript ([P15](../postponed/pospuesto.md)), vim mode for the input editor
+([P16](../postponed/pospuesto.md)), image rendering in the transcript
+([P6](../postponed/pospuesto.md)).
 
 <!-- /enu:interno -->

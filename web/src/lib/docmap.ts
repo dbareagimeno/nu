@@ -133,6 +133,17 @@ const WIKI_DIR: Record<string, string> = {
   'modelo-ejecucion': 'core',
 };
 
+// Ruta que el chrome MUESTRA como contexto (cabecera, statusline, drawer,
+// resultados de búsqueda), en estilo terminal. Para la wiki es la ruta REAL
+// del fichero en el repo (docs/core|contracts/<slug>.md — la misma en ES y
+// EN: la fuente de verdad es la ES); para las páginas locales (empezar,
+// extensiones) se mantiene la convención docs/<slug>.md, que es identidad de
+// la web, no un fichero del repo.
+export function repoPath(collection: Coleccion, slug: string): string {
+  if (collection === 'wiki') return `docs/${WIKI_DIR[slug] ?? 'contracts'}/${slug}.md`;
+  return `docs/${slug}.md`;
+}
+
 // Compat: la ruta ES baked en cada DocEntry (la usa el wrapper ES; el EN pasa
 // por gitPathLang con lang='en').
 function gitPath(collection: Coleccion, slug: string): string {

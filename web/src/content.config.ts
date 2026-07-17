@@ -71,7 +71,21 @@ const referencia = defineCollection({
 // title/description ya traducido. Las páginas EN (/en/docs, /en/api) las
 // consumen; check-drift sigue mirando SOLO la referencia ES.
 const wiki_en = defineCollection({
-  loader: glob({ pattern: ['*.md', '!README.md'], base: './src/content/en/wiki' }),
+  // Espejo exacto de la lista explícita de `wiki` (la instantánea EN es plana,
+  // sin subcarpetas): solo las 8 páginas publicadas, nada de huérfanos.
+  loader: glob({
+    pattern: [
+      'filosofia.md',
+      'arquitectura.md',
+      'modelo-ejecucion.md',
+      'guia-plugins.md',
+      'providers.md',
+      'agente.md',
+      'sesiones.md',
+      'chat.md',
+    ],
+    base: './src/content/en/wiki',
+  }),
   schema: z.object({
     title: z.string().optional(),
     description: z.string().optional(),

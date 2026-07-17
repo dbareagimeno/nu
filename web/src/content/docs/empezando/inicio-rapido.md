@@ -4,7 +4,7 @@ description: De cero a tu primer turno de agente en tres pasos — activa el con
 ---
 
 Recién instalado, `enu` es un **runtime desnudo**: las extensiones oficiales
-vienen embebidas pero **inactivas por defecto** ([ADR-010](adr.md)) — el
+vienen embebidas pero **inactivas por defecto** ([ADR-010](decisions/adr/adr-010-extensiones-oficiales-distribuidas-con-nu.md)) — el
 harness es una elección tuya, no un hecho consumado. De cero a tu primer turno
 de agente en tres pasos:
 

@@ -41,7 +41,7 @@ Session.id / Session.usage -> { context_tokens, cost_usd, turns }
 ```
 
 > **Implementation status.** ✅ Implemented `send/spawn/set_model/close` and
-> also `cancel`, `fork`, `compact` and `clear_queue` ([pospuesto.md](pospuesto.md)
+> also `cancel`, `fork`, `compact` and `clear_queue` ([pospuesto.md](../postponed/pospuesto.md)
 > **P22**, resolved). The turn runs in a task **owned by the session** (the
 > one `cancel` cancels); `send` waits for the result via a future, not the
 > task, so canceling the turn doesn't cancel whoever called it (its `send`
@@ -59,7 +59,7 @@ Session.id / Session.usage -> { context_tokens, cost_usd, turns }
 4. On `done`: persists the message (with `usage` and model), emits
    `agent:message`.
 5. If `stop_reason == "tool_calls"`: for each tool call, **in order**
-   (parallel execution is postponed, [P12](pospuesto.md)): permission
+   (parallel execution is postponed, [P12](../postponed/pospuesto.md)): permission
    pipeline (§5) → `tool.pre` hooks → handler → `tool.post` hooks →
    `tool_result`. Then, back to step 2.
 6. Ends when the model stops without requesting tools, or upon exhausting
@@ -71,7 +71,7 @@ never mid-stream). This lets the user correct the agent while it's working
 ("use pnpm, not npm"). All `send` calls consumed by the same turn resolve
 with that turn's final message. `Session:cancel()` cancels the turn,
 **not** drain the queue (draining it is a separate action:
-`Session:clear_queue()`). *(✅ Implemented: [pospuesto.md](pospuesto.md) **P23**.
+`Session:clear_queue()`). *(✅ Implemented: [pospuesto.md](../postponed/pospuesto.md) **P23**.
 The loop drains the queue at the start of each iteration; every `send` consumed
 by a turn resolves with its final message.)*
 
@@ -118,7 +118,7 @@ actionable error). House rule: whoever opens sessions closes them
 (`enu.task.cleanup`); GC as a non-deterministic safety net, same as
 [api.md](api.md) §6's `Proc`.
 
-**Reasoning control ([ADR-016](adr.md#adr-016--modelo-canónico-de-thinking-con-mode-y-traducción-por-modelo-en-el-adaptador))**:
+**Reasoning control ([ADR-016](../decisions/adr/adr-016-modelo-canonico-de-thinking.md))**:
 `opts.thinking` (or `agent.toml`'s `[thinking]` default, §10) fixes the
 reasoning mode each canonical request will carry (`thinking`,
 providers.md §2.1); `Session:set_thinking(mode|table)` changes it hot (same
@@ -183,7 +183,7 @@ Two mechanisms, deliberately separate:
 `error`, `retry` (G42: `{ attempt, max_retries, delay_ms, code, message }`,
 one per backoff wait), `permission.asked`, `permission.denied` (G40, §5). For
 painting, logging, observing. *(The `compact` event will only be emitted once
-automatic compaction exists: [pospuesto.md](pospuesto.md) (P25).)* The
+automatic compaction exists: [pospuesto.md](../postponed/pospuesto.md) (P25).)* The
 `agent:` namespace is not reserved by the core (the core doesn't know
 about agents, ADR-003): it's the `agent` plugin's namespace, protected by
 plugin-name uniqueness like any other (G26, [api.md](api.md) §4).
@@ -300,7 +300,7 @@ otherwise.
 
 ## 6. Skills
 
-> ✅ **Implemented** ([pospuesto.md](pospuesto.md) **P24**). Assembly
+> ✅ **Implemented** ([pospuesto.md](../postponed/pospuesto.md) **P24**). Assembly
 > discovers skills, injects their index and exposes `agent.skills.list(cwd)`;
 > the full content is loaded by the internal `skill` tool on demand. The
 > repo's content goes through the TOFU gate (§11.2, `agent.trust`).
@@ -324,14 +324,14 @@ context file (`enu.md` at the repo root, if it exists) → `opts.system`. The
 `request.pre` hooks can touch up the result. Every piece is replaceable
 via configuration — there's no inaccessible magic prompt.
 
-> ✅ **Implemented** ([pospuesto.md](pospuesto.md) **P24**). The assembly is
+> ✅ **Implemented** ([pospuesto.md](../postponed/pospuesto.md) **P24**). The assembly is
 > `base → skills index → enu.md (after TOFU) → opts.system`. Discovery is
 > captured when the session opens; whether the repo's content is included
 > is decided by trust at each assembly.
 
 ## 8. Compaction
 
-> ✅ **Implemented** ([pospuesto.md](pospuesto.md) **P25**). Compaction fires
+> ✅ **Implemented** ([pospuesto.md](../postponed/pospuesto.md) **P25**). Compaction fires
 > when the threshold is exceeded (default 80% of `context`) at the **turn
 > boundary** (not between iterations, so as not to break
 > tool_call↔tool_result pairing), and emits `agent:compact`.
@@ -398,7 +398,7 @@ Sub:cancel()
 `config.dir()/agent.toml`: default model, `max_turns`,
 `max_retries`/`retry_base_ms` (stream-opening retries, G42), compaction
 threshold and model, **default reasoning** (`[thinking]` with `mode` and
-`budget`, ADR-016), session retention policy ([P10](pospuesto.md)), global
+`budget`, ADR-016), session retention policy ([P10](../postponed/pospuesto.md)), global
 permissions. Precedence is the standard one: defaults < global <
 project (`<repo>/.nu/agent.toml`) < session (`opts`) — with §11's
 security exception: project permissions only trim.
@@ -414,7 +414,7 @@ The `model` field (`"provider/model"`) is **mandatory** to open a session:
 `agent.session` fails with an actionable `EINVAL` if it's not in `opts`
 nor in `agent.toml`. That's why the `nu --default-config` onramp leaves an
 **active** `agent.toml` template with a default `model` (`anthropic/opus`)
-and its matching `providers.toml` ([ADR-017](adr.md), [G35](problemas.md)):
+and its matching `providers.toml` ([ADR-017](../decisions/adr/README.md), [G35](../findings/README.md)):
 the first startup already comes with a model configured (only the API key
 needs exporting from the environment). Templates are written only if the
 files don't already exist; they never overwrite user config.
@@ -445,8 +445,8 @@ installing a plugin.
 
 ## 12. Relationship to what's postponed
 
-Parallel tool calls ([P12](pospuesto.md)), nested workers for subagents
-([P11](pospuesto.md)) and session retention ([P10](pospuesto.md)) have
+Parallel tool calls ([P12](../postponed/pospuesto.md)), nested workers for subagents
+([P11](../postponed/pospuesto.md)) and session retention ([P10](../postponed/pospuesto.md)) have
 entries in the postponed register with their trigger.
 
 <!-- /enu:interno -->

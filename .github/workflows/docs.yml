@@ -6,6 +6,9 @@ on:
     branches: [main]
     paths:
       - 'web/**'
+      # La wiki publica contratos de docs/ leídos en build: un cambio en la
+      # fuente debe redesplegar la web (antes derivaba en silencio).
+      - 'docs/**'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -43,6 +46,9 @@ jobs:
       # Gate de limpieza (fuente): los pares <!-- nu:interno --> de docs/ deben
       # estar balanceados antes de renderizar. Si falla, revisa los marcadores.
       - run: npm run check:limpieza:fuente
+      # Gate de los plugins remark: comportamiento de limpieza y de enlaces
+      # (api.md → /api, resolución de subcarpetas) + pareo WIKI_SLUGS ↔ docmap.
+      - run: node scripts/test-limpieza.mjs --slugs
       - run: npm run build
       # Gate de limpieza (HTML): ningún marcador de proceso (G##/P##/✅/nu:interno)
       # puede haberse filtrado al HTML publicado. Si falla, skill /alta-wiki.

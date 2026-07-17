@@ -108,7 +108,7 @@ to the origin session. **The fork copies the prefix into the child's
 transcript (G39)**: the child session is **self-contained** — its replay
 doesn't follow the parent chain, and its file travels alone (which makes
 exporting a fork or moving it between machines trivial: the format is the
-API, [P9](pospuesto.md)). The cost of duplicating the prefix is irrelevant
+API, [P9](../postponed/pospuesto.md)). The cost of duplicating the prefix is irrelevant
 against that robustness. `meta.parent = { id, entry }` is **navigational**,
 not a replay pointer: it serves to reconstruct the variant tree by reading
 the `meta` entries; `entry` is the message index of the parent's current

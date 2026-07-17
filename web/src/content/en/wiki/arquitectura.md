@@ -2,14 +2,14 @@
 
 Status: foundational draft. This describes the shape of the system, not a
 closed specification. Decisions and their reasoning live in
-[adr.md](adr.md); the formal definition of the core's v1 API, in
+[adr.md](../decisions/adr/README.md); the formal definition of the core's v1 API, in
 [api.md](api.md); the dynamic view (communication, orchestration and
 limitations, with diagrams), in [modelo-ejecucion.md](modelo-ejecucion.md).
 Contracts of the official extensions: [providers.md](providers.md),
 [sesiones.md](sesiones.md), [agente.md](agente.md), [chat.md](chat.md).
 Practical conventions for authors: [guia-plugins.md](guia-plugins.md). What's
-been postponed, with its reopening trigger: [pospuesto.md](pospuesto.md).
-Cracks pending resolution before freezing: [problemas.md](problemas.md).
+been postponed, with its reopening trigger: [pospuesto.md](../postponed/pospuesto.md).
+Cracks pending resolution before freezing: [problemas.md](../findings/README.md).
 
 ## Overview
 
@@ -54,7 +54,7 @@ Notes:
   cells/regions and a compositor; the **widget toolkit is an official
   Lua extension** (retained internally: dirty tree + nodes) that provides
   slots, focus, composition across plugins, **decoration** (box/border,
-  padding, spinner, multi-span text — [ADR-018](adr.md)) and the theme
+  padding, spinner, multi-span text — [ADR-018](../decisions/adr/README.md)) and the theme
   system — semantic color names are resolved here, not in the core (G22),
   and the theme wires its palette to markdown rendering
   (`Theme:markdown_opts`) —, and is versioned separately from the sacred
@@ -132,22 +132,22 @@ recompile. The adapter contract and the registry format are in
 - Static Go binary, `CGO_ENABLED=0`, cross-compiled to every platform. v1
   support: native Linux and macOS; on Windows, **WSL2** (G9) — this way
   the POSIX contract holds in full without a conditional spec. Native
-  Windows: [P18](pospuesto.md).
+  Windows: [P18](../postponed/pospuesto.md).
 - Official extensions embedded with `go:embed` but **inactive by
   default** (ADR-010): explicit activation (bare runtime screen with a
   TTY — api.md §14 —, the `nu --default-config` flag without a TTY, or a
   hand-written `enu.toml`), no network; overridable by the user from
   their config directory. The **official product set** is the embedded
   extensions minus the `example` scaffolding and the `mesh` (ADR-015;
-  [malla.md](malla.md) §1.4): besides the
+  [malla.md](../contracts/malla.md) §1.4): besides the
   harness (agent, chat, providers, MCP, toolkit), an **`repl`** —a Lua
   REPL over the public API, standalone-activatable, the starting point for
   extension authors who don't want the harness (G21)—. With a TTY, **a
   single primary UI owns the screen**: the repl **yields to chat** (it
   only auto-mounts its UI if chat isn't active, via `enu.plugin.list`), so
   `enu` with the official set opens a single TUI and not chat *and* the
-  REPL overlapping ([G36](problemas.md#g36), [ADR-018](adr.md)). The
-  **`mesh`** ([malla.md](malla.md), born from pseudocode round 8) ships
+  REPL overlapping ([G36](../findings/g36-el-conjunto-oficial-de-producto.md), [ADR-018](../decisions/adr/README.md)). The
+  **`mesh`** ([malla.md](../contracts/malla.md), born from pseudocode round 8) ships
   embedded but activates explicitly: it's the agent-mesh orchestration
   tool, not the default harness.
 
@@ -168,7 +168,7 @@ write under `data_dir()/plugins/<name>/`.
    screen and (b) fuzzy picker over ~100k files. Pre-committed veto
    criterion: if it isn't smooth, the toolkit gets implemented in Go
    keeping the same public API.~~ **RESOLVED** by the S28 spike
-   ([ADR-012](adr.md#adr-012--resultado-del-spike-de-adr-007-el-toolkit-se-construye-en-lua)):
+   ([ADR-012](../decisions/adr/adr-012-resultado-del-spike-de-adr.md)):
    the overhead of orchestrating from Lua turned out negligible (the heavy
    work is a Go primitive), so **the veto did NOT fire** and the toolkit
    is built in Lua. ADR-007 was promoted to Accepted.
@@ -183,7 +183,7 @@ write under `data_dir()/plugins/<name>/`.
    (ADR-003, [agente.md](agente.md) §3, layer 2) but without its own
    document — configuration format (which servers, how they're declared),
    process lifecycle, tool mapping and their trust.~~ **RESOLVED** by the
-   S41 implementation (`mcp` extension, [implementacion.md](implementacion.md)).
+   S41 implementation (`mcp` extension, [implementacion.md](../plan/implementacion.md)).
    The contract was fixed while building it —pure Lua on top of the public
    API, without touching the core (the completeness corollary satisfied)—:
    - **Configuration** (data/code split, ADR-005): servers are DECLARED in
@@ -214,7 +214,7 @@ write under `data_dir()/plugins/<name>/`.
    headless behavior, exit codes). The resume sugar (a `--continue` over
    `agent.session{ resume }`) will be decided here: G18 deliberately left
    it out of the contracts.~~ **RESOLVED** by the S45 implementation
-   ([implementacion.md](implementacion.md)). The CLI surface lives in the
+   ([implementacion.md](../plan/implementacion.md)). The CLI surface lives in the
    **binary** (`main.go`), NOT in the sacred `enu.*` API (api.md): it's the
    command-line interface of the executable, and the core still doesn't
    know what an agent is (ADR-003) — the CLI orchestrates the extensions
