@@ -50,9 +50,10 @@ import (
 // `max` corta: alcanzado el límite, el iterador deja de entregar y las goroutines
 // se cancelan (`context`). Al crear el handle, el wrapper wasm registra su cierre
 // en `enu.task.cleanup`, así ninguna goroutine queda colgada aunque el consumidor
-// haga `break` — y el cierre es **síncrono**: `close` espera (`done`) a que el
-// pool haya drenado, para que el desmontaje no dependa del planificador. Como red
-// de seguridad, `Runtime.Close` cancela todos los greps vivos (`stopAllGreps`).
+// haga `break` — y el cierre es **no bloqueante**: `close` cancela y vuelve sin
+// esperar al drenado, porque corre en el hilo de la VM y bloquearse ahí (un worker
+// atascado en una lectura no cancelable) congelaría el event loop. Como red de
+// seguridad, `Runtime.Close` cancela todos los greps vivos (`stopAllGreps`).
 
 // --- enu.search.files ----------------------------------------------------------
 
@@ -323,7 +324,7 @@ type grepIter struct {
 	results chan grepResult
 	ctx     context.Context
 	cancel  context.CancelFunc
-	done    chan struct{} // la cerradora lo sella cuando el pool ha drenado del todo
+	done    chan struct{} // la cerradora lo sella cuando el pool ha drenado del todo (lo espera el test blanco, nunca el hilo de la VM)
 
 	max       int
 	emitted   int
@@ -503,19 +504,25 @@ func readGrepLine(r *bufio.Reader, max int) (string, bool, error) {
 	}
 }
 
-// close cancela el pool de goroutines de fondo, deja de rastrear el iterador y
-// **espera a que el pool haya drenado** antes de volver. **Idempotente**
-// (`closeOnce`): lo llaman el `next` (al alcanzar `max` o EOF), el `cleanup` de
-// la task (al cancelarse/terminar) y `Runtime.Close` (red de seguridad).
-// Cancelar el contexto desbloquea el repartidor y los workers (todos tienen una
-// salida por `ctx.Done` y ninguno toca Lua); cuando el último worker sale, la
-// cerradora cierra `results` y sella `done`. La espera hace el desmontaje
-// **determinista**: al retornar `close`, los workers han salido — sin ella, en
-// runners con pocos núcleos efectivos (cgroups de CI) las goroutines canceladas
-// podían tardar segundos en ser planificadas para morir, y el conteo del DoD
-// "sin fugas" las veía como fuga (flake registrada en la bitácora de salud
-// 2026-07-11). La espera es corta por construcción: como mucho, lo que tarde un
-// worker en terminar la línea que tiene entre manos.
+// close cancela el pool de goroutines de fondo y deja de rastrear el iterador.
+// **NO bloquea**: cancela el contexto, desregistra y vuelve; el drenado del pool
+// ocurre después, en las goroutines de fondo, sin que nadie lo espere aquí.
+// **Idempotente** (`closeOnce`): lo llaman el `next` (al alcanzar `max` o EOF),
+// el `cleanup` de la task (al cancelarse/terminar) y `Runtime.Close`/`stopAllGreps`
+// (red de seguridad). Cancelar el contexto desbloquea el repartidor y los workers
+// (todos tienen una salida por `ctx.Done`); cuando el último worker sale, la
+// cerradora cierra `results` y sella `done`.
+//
+// **Por qué no espera (`<-it.done`)**: `close` corre en el HILO DE LA VM —lo
+// dispara el `cleanup` de la task, y también `Runtime.Close`—, el único hilo que
+// ejecuta Lua y hace girar el event loop. Un worker puede quedar atascado dentro
+// de una lectura NO cancelable (`readGrepLine` sólo mira `ctx.Done` ENTRE líneas:
+// un FIFO en el árbol, un NFS colgado bloquean el `Read` a mitad); si `close`
+// esperara a `done`, ese bloqueo congelaría el event loop entero (viola api.md
+// §1.2, ADR-020 §2 y ADR-008 regla 3) y colgaría el shutdown, y un segundo caller
+// concurrente se atascaría en `closeOnce.Do`. La no-fuga NO se blinda bloqueando
+// el hilo de la VM: se blinda con un test blanco que espera `done` desde la
+// goroutine del test (ver TestGrepCloseDrainaElPool).
 //
 // El rastreo (`untrackGrep`) sólo se deshace si hay scheduler: algunos tests
 // aislados del núcleo vmwasm crean el iterador sin un Runtime completo. Cancelar
@@ -526,6 +533,5 @@ func (it *grepIter) close() {
 		if it.s != nil {
 			it.s.untrackGrep(it)
 		}
-		<-it.done
 	})
 }
