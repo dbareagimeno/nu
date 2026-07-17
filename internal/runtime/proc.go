@@ -112,10 +112,12 @@ type luaProc struct {
 	killMu sync.Mutex
 	killed bool
 
-	// ownerName es el dueño con que se etiquetó el proc al crearse (`currentOwner()`
-	// vigente en `spawn`, S11): `enu.plugin.reload` (S13, G2) mata exactamente los
-	// procesos de ESE plugin —un `spawn` de su `init.lua` no debe sobrevivir a la
-	// recarga, "reload no deja handlers huérfanos"—.
+	// ownerName es el dueño con que se etiquetó el proc al crearse (`ownerForInst`
+	// vigente en `spawn`, S11/G56): el `currentOwner()` del estado principal o, si el
+	// `spawn` nació DENTRO de un worker, la foto CRUDA del plugin dueño del worker
+	// (ADR-024). `enu.plugin.reload` (S13, G2) mata exactamente los procesos de ESE
+	// plugin —un `spawn` de su `init.lua`, o de un worker que él lanzó, no debe
+	// sobrevivir a la recarga, "reload no deja handlers huérfanos"—.
 	ownerName string
 
 	// Recuperación temprana (reap): un proceso TERMINADO cuyos dos streams ya se
@@ -348,7 +350,14 @@ func runBuffered(argv []string, opts procOpts) (int, string, string, error) {
 // gopher, `mapProcStartErrorWasm` en wasm). No cambia el comportamiento observable
 // del backend gopher: allí `rt.sys` y `rt.sched` siempre existen, así que las
 // guardas de nil nunca se toman —solo permiten un `rt` mínimo en los tests de wasm—.
-func (rt *Runtime) spawnProc(argv []string, opts procOpts) (*luaProc, error) {
+//
+// `owner` es el dueño con que se registra el proceso para la supervisión (G56,
+// ADR-024): lo resuelve el HostFn con `rt.ownerForInst(inst)` —el dueño vigente
+// desde el estado principal, o la FOTO del spawn si el proceso nace DENTRO de un
+// worker—. Se guarda CRUDO (sin sufijo `(worker)`): un proceso lanzado por un worker
+// queda bajo su plugin dueño, de modo que `plugin.reload` de ese plugin lo alcanza
+// igual que a los del estado principal (árbol de supervisión sin fugas, P11).
+func (rt *Runtime) spawnProc(argv []string, opts procOpts, owner string) (*luaProc, error) {
 	// Foto del overlay de `enu.sys.setenv` (S17): el subproceso ve los `setenv`
 	// previos a este `spawn` (§7). Corre en el estado principal, así que esta lectura
 	// no compite con un `setenv` concurrente.
@@ -409,7 +418,7 @@ func (rt *Runtime) spawnProc(argv []string, opts procOpts) (*luaProc, error) {
 		stdout:    bufio.NewReader(rOut),
 		stderr:    bufio.NewReader(rErr),
 		waitDone:  make(chan struct{}),
-		ownerName: rt.currentOwner(),
+		ownerName: owner,
 	}
 
 	if rt.sched != nil {
