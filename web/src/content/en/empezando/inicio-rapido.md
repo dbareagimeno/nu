@@ -4,7 +4,7 @@ description: From zero to your first agent turn in three steps — activate the 
 ---
 
 Freshly installed, `enu` is a **bare runtime**: the official extensions ship
-embedded but **inactive by default** ([ADR-010](adr.md)) — the harness is a
+embedded but **inactive by default** ([ADR-010](decisions/adr/adr-010-extensiones-oficiales-distribuidas-con-nu.md)) — the harness is a
 choice you make, not a foregone conclusion. From zero to your first agent
 turn in three steps:
 

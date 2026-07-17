@@ -1,15 +1,14 @@
 #!/usr/bin/env node
-// test-limpieza.mjs — tests unitarios del plugin `remark-limpieza-interno`.
-// Sin dependencias nuevas: parsea markdown real con `unified`+`remark-parse` (ya
-// presentes en node_modules vía Astro), aplica el plugin sobre el mdast y afirma
-// sobre el resultado (texto concatenado con `mdast-util-to-string` o inspección
-// estructural). Cada fixture es un ejemplo REAL del plan / de los contratos.
+// test-limpieza.mjs — tests unitarios de los plugins `remark-limpieza-interno`
+// y `remark-enlaces-wiki`. Sin dependencias nuevas: parsea markdown real con
+// `unified`+`remark-parse` (ya presentes en node_modules vía Astro), aplica el
+// plugin sobre el mdast y afirma sobre el resultado (texto concatenado con
+// `mdast-util-to-string` o inspección estructural). Cada fixture es un ejemplo
+// REAL del plan / de los contratos.
 //
-// Corre con `node web/scripts/test-limpieza.mjs`. La aserción de consistencia
-// WIKI_SLUGS ↔ docmap vive tras el flag `--slugs` (queda FUERA del run por
-// defecto): otro trabajo actualiza en paralelo `docmap.ts` y
-// `remark-enlaces-wiki.mjs` a los 18 slugs nuevos, y no queremos rojo transitorio.
-// Cuando ambos ficheros estén sincronizados, `--slugs` la ejecuta.
+// Corre con `node web/scripts/test-limpieza.mjs`. El flag `--slugs` añade la
+// aserción de consistencia WIKI_SLUGS ↔ docmap; el workflow docs.yml lo
+// ejecuta con el flag como gate del despliegue.
 
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';

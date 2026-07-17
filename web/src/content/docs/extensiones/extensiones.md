@@ -52,7 +52,7 @@ por sí solas:
 - **mesh** (la malla de agentes) — specs Role+Job, claim por CAS de git, runner
   de jobs y torneo de forks. Está fuera del conjunto de producto y su contrato
   sigue en borrador, así que **no tiene aún documentación pública**; su diseño
-  vive en [malla.md](../malla.md).
+  vive en [malla.md](../contracts/malla.md).
 
 ---
 

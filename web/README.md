@@ -38,12 +38,19 @@ web/
 ├── astro.config.mjs              # base /enu/, shiki css-variables, plugins md
 ├── scripts/
 │   ├── check-drift.mjs           # detector de deriva web ↔ docs/contracts/api.md
+│   ├── check-limpieza-html.mjs   # gates de limpieza (fuente y HTML final)
+│   ├── test-limpieza.mjs         # tests de los plugins remark (+ --slugs)
 │   └── generar-og.mjs            # regenera public/og.png desde el wordmark
 ├── src/
-│   ├── content.config.ts         # colecciones: wiki (../docs), empezar, referencia
+│   ├── content.config.ts         # colecciones: wiki (lista EXPLÍCITA de los 8
+│   │                             # contratos publicados de ../docs/core|contracts,
+│   │                             # con generateId por basename), empezar,
+│   │                             # extensiones, referencia + gemelas _en
 │   ├── content/docs/
 │   │   ├── empezando/            # instalación y primeros pasos (→ /docs/…)
+│   │   ├── extensiones/          # mcp, repl, toolkit e índice (→ /docs/…)
 │   │   └── referencia/           # una página por namespace enu.* (→ /api/…)
+│   ├── content/en/               # instantánea EN (wiki plana de 8 + resto)
 │   ├── pages/                    # index (portada), docs/[slug], api/[slug],
 │   │   │                         # plugins, 404
 │   ├── layouts/ · components/    # Base, headers, statusline, sidebars, carriles
@@ -93,7 +100,9 @@ en el estado principal: las funciones suspendientes (⏸) van envueltas en
 ## Despliegue
 
 `.github/workflows/docs.yml` construye y publica el sitio en GitHub Pages al
-hacer push a `main` cuando cambia algo bajo `web/`. El `base` del sitio es
+hacer push a `main` cuando cambia algo bajo `web/` **o bajo `docs/`** (la wiki
+lee los contratos de `docs/core|contracts/` en build: un cambio en la fuente
+redespliega). El `base` del sitio es
 `/enu/` (project page); para un dominio propio, vacía `base` en
 `astro.config.mjs`. El dominio del `curl` de instalación es un placeholder
 centralizado en `src/lib/const.ts` (`DOMAIN`), pendiente de decisión.
