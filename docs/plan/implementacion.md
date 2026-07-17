@@ -149,6 +149,7 @@ sesión antes de cerrarla:
 | 🔒 **S34** | `caps` **deny-by-default**, dos granularidades `"fs"` vs `"fs.read"` (G6); colas acotadas con backpressure. |
 | 🔒 **S35** | Exclusividad `on_message`/`recv` → `EINVAL` en el acto (G8). |
 | 🔒 **G42 (extensión)** | Reintento de la apertura del stream (agente.md §2): SOLO la apertura (a mitad de stream jamás), frontera exacta `max_retries`+1 aperturas, clasificación estricta `detail.retryable == true`, error propagado intacto (con el `retryable` que G43 alza a `agent:error`), cancel durante el backoff aborta sin reabrir. La MISMA política vive **duplicada** en el subagente-worker (herencia del padre incluida): blindar el motor no blinda la copia — tests propios (`agent_g42_test.go`, `agent_g42_worker_test.go`). |
+| 🔒 **G57** | `enu.fs.write{ mode }` fija el modo con chmod **no recortado por el umask**, en ambas direcciones (umask laxo no deja el fichero legible por otros; umask estricto no recorta un modo permisivo), componible con `exclusive`, y ganando sobre la preservación del previo en la sobrescritura; `opts.mode` inválido → `EINVAL`. La extensión `sessions` escribe transcript y lock en `0600` (`fs_test.go`; e2e `sessions_test.go`/`chat_test.go` des-amañados: aserción de modo real bajo el umask heredado). |
 
 Las sesiones **fuera** de esta lista (S01, S03, S05, S12, S17, S19, S21, S24,
 S26, S28, S30, S32, S33 y las de extensiones Lua de la Fase 8) se cierran con

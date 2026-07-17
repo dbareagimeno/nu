@@ -165,7 +165,7 @@ Eventos que emite el core: `core:ready`, `core:shutdown`,
 | Firma | Semántica |
 |---|---|
 | `enu.fs.read(path) -> string` ⏸ | Lee el fichero entero. |
-| `enu.fs.write(path, data, opts?)` ⏸ / `enu.fs.append(path, data)` ⏸ | Escritura atómica (write vía fichero temporal + rename). `opts.exclusive = true` (G17): crea **solo si no existe**, en una única operación indivisible (`O_EXCL` — aquí no hay temporal+rename: rename sobreescribiría); si el fichero ya existe lanza `EEXIST`. Es la pieza para lockfiles ([sesiones.md](sesiones.md) §6). |
+| `enu.fs.write(path, data, opts?)` ⏸ / `enu.fs.append(path, data)` ⏸ | Escritura atómica (write vía fichero temporal + rename). `opts.exclusive = true` (G17): crea **solo si no existe**, en una única operación indivisible (`O_EXCL` — aquí no hay temporal+rename: rename sobreescribiría); si el fichero ya existe lanza `EEXIST`. Es la pieza para lockfiles ([sesiones.md](sesiones.md) §6). `opts.mode?: number` (G57): el modo de creación (entero de permisos `0..0o777`; fuera de rango o no entero → `EINVAL`), fijado con **chmod explícito NO recortado por el umask** y **componible con `exclusive`**; en una sobrescritura gana sobre el modo previo del destino. Sin `opts.mode`, un fichero nuevo se crea con el modo estándar recortado por el umask (como cualquier herramienta de terminal) y una sobrescritura preserva el modo previo. `append` **no** lleva opts y **preserva el modo del fichero existente**: para un fichero con permisos fijos (p. ej. un transcript `0600`, [sesiones.md](sesiones.md) §2) se crea vacío con `write{ mode }` y luego se hace `append`. |
 | `enu.fs.stat(path) -> {size, mtime_ms, is_dir, mode}?` ⏸ | `nil` si no existe (no lanza `ENOENT`). |
 | `enu.fs.list(dir) -> {name, is_dir}[]` ⏸ | Sin recursión; para recursivo ver `enu.search.files`. |
 | `enu.fs.mkdir(path)` ⏸ / `enu.fs.remove(path, opts?)` ⏸ / `enu.fs.rename(from, to)` ⏸ / `enu.fs.copy(from, to)` ⏸ | `remove` exige `opts.recursive=true` para directorios no vacíos. |
@@ -472,13 +472,14 @@ de `proc`) usan dentro de un worker la **identidad capturada en el spawn**
 
 - Congelar v1 = congelar **este documento**: firmas y semánticas solo cambian
   por adición; `enu.version.api` se incrementa con cada adición. **Nivel actual:
-  `api = 4`** — el nivel 1 fue el congelado inicial; `enu.sys.pid()` (G32) lo
+  `api = 5`** — el nivel 1 fue el congelado inicial; `enu.sys.pid()` (G32) lo
   subió a 2; los frames binarios de `enu.ws` (G52: `opts.binary` en `Ws:send`,
   segundo retorno de `Ws:recv`) lo subieron a 3; el control de redirects de
   `enu.http` (G54: `opts.max_redirects` en `request`/`stream` y recorte de
-  cabeceras en saltos cross-host) lo subió a 4. Una adición nunca rompe
-  firmas existentes: el código escrito contra el nivel 1 sigue siendo válido
-  en los niveles siguientes.
+  cabeceras en saltos cross-host) lo subió a 4; el modo de creación de
+  `enu.fs.write` (G57: `opts.mode`, chmod explícito no recortado por el umask)
+  lo subió a 5. Una adición nunca rompe firmas existentes: el código escrito
+  contra el nivel 1 sigue siendo válido en los niveles siguientes.
 - Detección de capacidades con `enu.has()`, nunca sniffing de versión.
 - Namespaces de eventos `core:`/`ui:` y códigos de error de §1.4 reservados.
 - Fuera de esta especificación (deliberadamente): toolkit de widgets, hooks

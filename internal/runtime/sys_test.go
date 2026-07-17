@@ -313,13 +313,14 @@ func TestSysPidDeniedByCaps(t *testing.T) {
 	h.expectEval(`return tostring(HAS)`, "false")
 }
 
-// TestVersionApiIsThree blinda el nivel actual de `enu.version.api`: 3 tras los
-// frames binarios de `enu.ws` (G52/A-38: `opts.binary` en `Ws:send` y el segundo
-// retorno de `Ws:recv`). Antes fue 2 (G32: `enu.sys.pid`, la primera adición tras
-// el congelado). api.md §17: el contador sube con cada adición.
-func TestVersionApiIsThree(t *testing.T) {
+// TestVersionApiMatchesAPILevel blinda que `enu.version.api` refleja el `APILevel`
+// del kernel. El contador sube con cada adición a la superficie sagrada (api.md
+// §17): 2 con `enu.sys.pid` (G32), 3 con los frames binarios de `enu.ws` (G52/A-38),
+// 5 con `opts.mode` de `enu.fs.write` (G57; el 4 de G54 se integra por otra rama).
+// Se afirma contra la constante para no reescribir el test en cada adición.
+func TestVersionApiMatchesAPILevel(t *testing.T) {
 	h := newHarness(t)
-	h.expectEval(`return tostring(enu.version.api)`, "3")
+	h.expectEval(`return tostring(enu.version.api)`, strconv.Itoa(APILevel))
 }
 
 // TestSysAvailableInTask comprueba que `enu.sys` funciona también desde dentro de

@@ -30,16 +30,14 @@ package e2e
 //     `Kill()`. Se añade aquí `Workspace.RunHeadlessBackground` + `HeadlessProc` como
 //     helper PRIVADO de este fichero (no se toca harness_test.go): `cmd.Start()` +
 //     `cmd.Process.Pid`/`Kill()`/`Wait()`, sin pseudo-terminal.
-//  3. La aserción de permisos 0600 del `.jsonl` (sesiones.md §2) depende del UMASK del
-//     proceso que lanza `enu`: `enu.fs.append`/`write` crean con `fsFilePerm` (0644,
-//     internal/runtime/fs.go) recortado por el umask —no hay un `chmod` explícito a
-//     0600 en el binario (confirmado: `internal/runtime/fs_test.go
-//     TestWriteAtomicRespectsUmask` es la prueba de que el 0600 solo sale con umask
-//     0077—. Bajo el umask real de esta máquina (022) el fichero saldría en 0644. Para
-//     poder blindar la promesa del contrato sin depender del umask ambiental del
-//     ejecutor de CI, `TestSessionsE2EContinueAppendsToSameTranscriptFile` fija
-//     `syscall.Umask(0o077)` (mismo patrón que ese test unitario) alrededor de la
-//     ÚNICA invocación que CREA el fichero, y lo restaura enseguida.
+//  3. La aserción de permisos 0600 del `.jsonl` (sesiones.md §2) se blinda **de
+//     verdad**, sin amañar el umask: desde G57 la extensión `sessions` crea el
+//     transcript con `enu.fs.write{ mode = 0600 }` (chmod explícito NO recortado
+//     por el umask, internal/runtime/fs.go), así que el fichero sale en 0600 bajo
+//     cualquier umask heredado. La versión previa fijaba `syscall.Umask(0o077)`
+//     alrededor de la creación porque el binario aún no hacía chmod; ese apaño se
+//     retiró al construir G57 (bajo el umask habitual 022, el código viejo dejaría
+//     el transcript en 0644 y esta aserción lo cazaría).
 
 import (
 	"encoding/json"
@@ -51,7 +49,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -426,12 +423,10 @@ func TestSessionsE2EContinueAppendsToSameTranscriptFile(t *testing.T) {
 
 	// --- proceso 1: arranque en frío -------------------------------------------
 	fp.PushText("primer turno")
-	// Umask 0077 SOLO alrededor de la invocación que CREA el fichero: ver nota 3 de
-	// la cabecera del fichero (fsFilePerm se recorta por el umask del llamante; el
-	// umask real de esta máquina no garantiza 0600).
-	oldUmask := syscall.Umask(0o077)
+	// Sin amañar el umask: el transcript se crea con `mode = 0600` (G57), así que sale
+	// en 0600 bajo el umask heredado (ver nota 3 de la cabecera). La aserción de modo
+	// de más abajo lo comprueba de verdad.
 	res1 := ws.Run(t, RunOpts{Args: []string{"-p", "hola", "--auto-permissions"}})
-	syscall.Umask(oldUmask)
 	if res1.ExitCode != 0 {
 		t.Fatalf("proceso 1: exit got %d, want 0 (stderr=%q)", res1.ExitCode, res1.Stderr)
 	}

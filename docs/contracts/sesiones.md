@@ -57,7 +57,13 @@ enu.config.data_dir()/
   esta especificación.
 - Nombre de fichero = id de sesión: timestamp UTC + sufijo aleatorio.
   Ordenación lexicográfica = ordenación temporal.
-- Permisos `0600`: los transcripts contienen código y salidas de comandos.
+- Permisos `0600`: los transcripts contienen código y salidas de comandos, así
+  que no deben quedar legibles por otros usuarios de la máquina. Se garantiza
+  creando el fichero vacío con `enu.fs.write(path, "", { exclusive = true, mode
+  = 0600 })` ([api.md](api.md) §5, G57: `mode` hace un chmod explícito **no
+  recortado por el umask**) antes del primer `append`; como `append` preserva el
+  modo del fichero existente, el `0600` se conserva en cada anexión. El lockfile
+  (§6) se crea con el mismo modo.
 - Regla general para las demás extensiones: cada plugin escribe solo bajo
   `plugins/<su-nombre>/`. `sessions/` es la única convención compartida.
 
@@ -130,8 +136,9 @@ Dos procesos haciendo append al mismo JSONL = corrupción intercalada. Regla:
 - `<sesión>.jsonl.lock` junto al transcript, contenido
   `{ pid, hostname, started }`. Se adquiere al abrir para escribir
   (crear/reanudar) con creación **exclusiva**
-  (`enu.fs.write(..., { exclusive = true })`, atómica: dos procesos no
-  pueden ganar a la vez — [api.md](api.md) §5), se libera al salir. La
+  (`enu.fs.write(..., { exclusive = true, mode = 0600 })`, atómica: dos
+  procesos no pueden ganar a la vez — [api.md](api.md) §5; `mode` lo deja en
+  `0600`, no world-readable, G57), se libera al salir. La
   identidad del escritor que se graba es la del proceso `enu` actual: el
   `pid`, de `enu.sys.pid()` (G32); el `hostname`, de `enu.sys.hostname()`
   (G17); el `started`, de `enu.sys.now_ms()`. Al *verificar* un lock ajeno se
@@ -164,7 +171,8 @@ Dos procesos haciendo append al mismo JSONL = corrupción intercalada. Regla:
 ## 8. Lo que queda fuera (v1)
 
 - Cifrado en reposo y redacción de secretos en tool results: el transcript
-  es fiel; protegerlo es trabajo del sistema de ficheros (`0600`).
+  es fiel; protegerlo es trabajo del sistema de ficheros (el `0600` que §2
+  fija al crear, G57).
 - Sincronización entre máquinas e índices de búsqueda: construibles encima
   por extensiones (el formato es la API).
 - Garbage collection de sesiones viejas: política de la extensión del

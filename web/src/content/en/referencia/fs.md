@@ -35,12 +35,21 @@ enu.fs.append(path, data)
 **Atomic** write (via temp file + rename: you never leave a half-written
 file). `opts.exclusive = true` creates **only if it doesn't exist**, in a
 single indivisible operation (`O_EXCL`); if it already exists it throws
-`EEXIST`. It's the building block for lockfiles.
+`EEXIST`. It's the building block for lockfiles. `opts.mode` (a permission
+integer, e.g. `0600`) sets the creation mode with a chmod that is **not trimmed
+by the umask** —for credentials or a transcript that must not be world-readable—;
+it composes with `exclusive`. Without `opts.mode`, a new file is created with the
+standard mode trimmed by the umask. `append` takes no opts and **preserves the
+existing file's mode**: for fixed permissions, create the file empty with
+`write{ mode }` and then `append`.
 
 ```lua
 enu.task.spawn(function()
   enu.fs.write("output.txt", "content\n")
   enu.fs.append("output.txt", "another line\n")
+
+  -- Credentials file: 0600, not readable by other users.
+  enu.fs.write("token", secret, { mode = tonumber("600", 8) })
 
   -- Lockfile: only one wins the creation.
   local ok = pcall(function()

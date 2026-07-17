@@ -162,8 +162,10 @@ error({ code = "EINVAL", message = "filtro vacío", detail = { arg = "filter" } 
 
 - **Almacenamiento**: solo bajo `enu.config.data_dir()/plugins/<tu-nombre>/`.
   Las sesiones (`sessions/`) se leen, no se escriben — son del agente.
-  Credenciales y tokens: en tu directorio, `0600`, y jamás en el repo del
-  usuario ni en resultados de tools (acabarían en el transcript).
+  Credenciales y tokens: en tu directorio, `0600` —`enu.fs.write(path, data, {
+  mode = 0600 })` fija el modo con un chmod no recortado por el umask
+  ([api.md](../contracts/api.md) §5, G57)—, y jamás en el repo del usuario ni en
+  resultados de tools (acabarían en el transcript).
 - **Eventos propios**: namespace = tu nombre de plugin
   (`"mi-plugin:cosa.paso"`). Como el loader garantiza que tu nombre es
   único, nadie puede pisarlo. Solo `core:` y `ui:` los reserva el core (son

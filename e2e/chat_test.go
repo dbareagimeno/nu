@@ -191,19 +191,24 @@ func TestChatE2EHappyPathPromptStreamingQuitPersiste(t *testing.T) {
 	if _, ok := entries[2]["model"]; !ok {
 		t.Fatalf("la línea del asistente debía llevar `model`; got %v", entries[2])
 	}
-	_ = path
+	// Permisos del transcript: 0600 (sesiones.md §2). Desde G57 `sessions` crea el
+	// `.jsonl` con `enu.fs.write{ mode = 0600 }` (chmod explícito, no recortado por el
+	// umask), así que la aserción es portable —no depende del umask del runner— y caza
+	// una regresión al modo por defecto (0644 bajo el umask habitual 022).
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat del transcript %q: %v", path, err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("permisos del .jsonl: got %o, want 0600 (sesiones.md §2, G57)", perm)
+	}
 
 	// RECORTE (documentado en la respuesta al orquestador): el escenario proponía
-	// además comprobar que el `.jsonl.lock` desaparece tras salir y que el JSONL es
-	// 0600. Ambas se caen fuera del contrato observable desde el e2e:
-	//   - El lockfile LINGERA tras un `/quit` limpio (exit 0): el apagado por
-	//     `core:shutdown` no garantiza correr el `close` que lo borra; la limpieza
-	//     real es la RECLAMACIÓN de huérfano del siguiente que abra (sesiones.md §6),
-	//     que se ejercita en el escenario de reanudación, no aquí. Asegurar "ya no
-	//     existe" fallaría contra el binario real (candidato a hallazgo, ver respuesta).
-	//   - Los permisos del JSONL son `fsFilePerm` (0o644) filtrados por el UMASK del
-	//     proceso (fs.go), no un 0600 fijo: el 0600 solo se da con umask 077, que el
-	//     runner de tests no impone. Un assert de modo no es portable.
+	// además comprobar que el `.jsonl.lock` desaparece tras salir. Se cae fuera del
+	// contrato observable desde el e2e: el lockfile LINGERA tras un `/quit` limpio
+	// (exit 0), porque el apagado por `core:shutdown` no garantiza correr el `close`
+	// que lo borra; la limpieza real es la RECLAMACIÓN de huérfano del siguiente que
+	// abra (sesiones.md §6), que se ejercita en el escenario de reanudación, no aquí.
 }
 
 // TestChatE2EArranqueDegradadoSaleLimpio — [Escenario 2, camino feo]. Con el conjunto

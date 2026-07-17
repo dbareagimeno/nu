@@ -14,7 +14,15 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 54 registradas, 54 resueltas, 0 abiertas** (G53–G56 añadidas
+**Estado: 55 registradas, 55 resueltas, 0 abiertas** (G57 añadida
+2026-07-18 desde la suite e2e de los plugins oficiales: la aserción de permisos
+del transcript destapó que `sessions` no alcanza el `0600` que `sesiones.md`
+§2/§8 prometen —crea el fichero con `fsFilePerm` (0644) recortado por el umask,
+sin chmod— y que la API pública no dejaba fijar el modo (corolario de
+completitud); **resuelta el mismo día** por adición a `api.md` §5
+(`opts.mode`: chmod explícito no recortado por el umask, componible con
+`exclusive`), con `sessions` creando transcript y lock en `0600` y `append`
+preservando el modo, nivel de API 4→5. G53–G56 añadidas
 2026-07-16 desde la auditoría de seguridad
 ([auditoria-seguridad-2026-07-16.md](../audits/auditoria-seguridad-2026-07-16.md)):
 grietas de diseño de SEC-02/03/04/07 —semántica de emparejamiento de permisos,
@@ -101,7 +109,7 @@ añaden aquí con el mismo método.
 ## Índice
 
 > Los números G24–G25 no existen como fichero: son un hueco histórico que
-> nunca se asignó. La numeración es append-only: el próximo hallazgo es G57,
+> nunca se asignó. La numeración es append-only: el próximo hallazgo es G58,
 > los huecos no se reutilizan.
 
 | # | Título | Docs afectados | Estado | Fichero |
@@ -160,3 +168,4 @@ añaden aquí con el mismo método.
 | G54 | `enu.http`/`enu.http.stream` siguen redirects sin control: no es expresable no-seguirlos ni observar la cadena | `api.md` §8 | RESUELTO | [g54-http-http-stream-siguen-redirects.md](g54-http-http-stream-siguen-redirects.md) |
 | G55 | Los secretos del provider se heredan por defecto en el entorno de todo subproceso lanzado por la tool `bash`/`enu.proc` | extensión `agent` / `enu.proc` §6 | RESUELTO | [g55-los-secretos-del-provider.md](g55-los-secretos-del-provider.md) |
 | G56 | El contrato [W] no define la identidad/dueño de un worker para las primitivas atribuidas por owner | `api.md` §13/§16 / `agente.md` | RESUELTO | [g56-el-contrato-w-no-define.md](g56-el-contrato-w-no-define.md) |
+| G57 | El transcript y el lock de sesiones no alcanzan el `0600` prometido: la API no dejaba fijar el modo de creación | `api.md` §5/§17 / `sesiones.md` §2/§6/§8 / `guia-plugins.md` §7 | RESUELTO | [g57-transcript-y-lock-de-sesiones-no-alcanzan-0600.md](g57-transcript-y-lock-de-sesiones-no-alcanzan-0600.md) |

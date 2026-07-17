@@ -50,7 +50,13 @@ enu.config.data_dir()/
   tools compose it from this specification.
 - File name = session id: UTC timestamp + random suffix. Lexicographic
   ordering = temporal ordering.
-- `0600` permissions: transcripts contain code and command output.
+- `0600` permissions: transcripts contain code and command output, so they
+  must not be readable by other users on the machine. Guaranteed by creating
+  the file empty with `enu.fs.write(path, "", { exclusive = true, mode = 0600
+  })` ([api.md](api.md) §5, G57: `mode` does an explicit chmod **not trimmed by
+  the umask**) before the first `append`; since `append` preserves the existing
+  file's mode, `0600` is kept on every append. The lockfile (§6) is created
+  with the same mode.
 - General rule for the other extensions: each plugin only writes under
   `plugins/<its-name>/`. `sessions/` is the only shared convention.
 
@@ -123,8 +129,9 @@ Two processes appending to the same JSONL = interleaved corruption. Rule:
 - `<session>.jsonl.lock` next to the transcript, content
   `{ pid, hostname, started }`. It's acquired on opening for writing
   (create/resume) with **exclusive** creation
-  (`enu.fs.write(..., { exclusive = true })`, atomic: two processes can't
-  win at the same time — [api.md](api.md) §5), and released on exit. The
+  (`enu.fs.write(..., { exclusive = true, mode = 0600 })`, atomic: two
+  processes can't win at the same time — [api.md](api.md) §5; `mode` leaves it
+  at `0600`, not world-readable, G57), and released on exit. The
   writer identity recorded is that of the current `enu` process: `pid`,
   from `enu.sys.pid()` (G32); `hostname`, from `enu.sys.hostname()` (G17);
   `started`, from `enu.sys.now_ms()`. When *verifying* someone else's lock,
@@ -157,7 +164,8 @@ Two processes appending to the same JSONL = interleaved corruption. Rule:
 ## 8. What's out of scope (v1)
 
 - Encryption at rest and secret redaction in tool results: the transcript
-  is faithful; protecting it is the filesystem's job (`0600`).
+  is faithful; protecting it is the filesystem's job (the `0600` §2 sets at
+  creation, G57).
 - Cross-machine sync and search indexes: buildable on top by extensions
   (the format is the API).
 - Garbage collection of old sessions: the agent extension's policy
