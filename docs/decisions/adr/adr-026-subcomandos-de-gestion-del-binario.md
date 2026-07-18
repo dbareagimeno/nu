@@ -47,13 +47,19 @@ superficie CLI vive en `main.go`, orquesta extensiones por la API pública y
    `anthropic`, la plantilla de ADR-017) → activar el conjunto oficial de
    producto (sí/no; el conjunto es el `officialProductSet` de ADR-015, única
    fuente de verdad). Escribe los mismos tres ficheros que ADR-017
-   (`enu.toml`, `agent.toml`, `providers.toml`) con las mismas primitivas
-   (atómico; **nunca sobrescribe** ficheros existentes — sobre config previa
-   muestra qué existe y termina con aviso, sin tocarla) y cierra con el mensaje
-   honesto de ADR-017 (qué se creó, qué variable exportar, cómo arrancar).
-   **Sin TTY** (o con `--yes`): sin preguntas — equivale exactamente a
-   `--default-config` persistente (plantillas Anthropic de ADR-017) y lo dice.
-   `init` no usa red (ADR-010: activar sale del binario embebido).
+   (`enu.toml`, `agent.toml`, `providers.toml`) con las mismas primitivas y la
+   misma semántica **por fichero**: atómico, escribe **los que faltan** y
+   **respeta y lista** los que ya existen — nunca sobrescribe ninguno, en
+   ningún modo; `config.dir()` se crea si no existe (como ya hace ADR-017).
+   Cierra con el mensaje honesto de ADR-017 (qué se creó, qué se respetó, qué
+   variable exportar, cómo arrancar); con la config ya completa es un **no-op
+   honesto** (lo dice y sale con 0). Códigos de salida: **0** éxito o no-op,
+   **1** error de escritura, **2** uso inválido. **Sin TTY** (o con `--yes`):
+   sin preguntas — equivale **exactamente** a `--default-config` persistente
+   (plantillas Anthropic de ADR-017, misma semántica por fichero: la
+   equivalencia es posible precisamente porque ambos modos escriben-lo-que-
+   falta) y lo dice. `init` no usa red (ADR-010: activar sale del binario
+   embebido).
 
 3. **`enu doctor` — diagnóstico de solo lectura.** Ejecuta una batería de
    comprobaciones **sin efectos y sin red por defecto**: versión/arquitectura
@@ -62,12 +68,20 @@ superficie CLI vive en `main.go`, orquesta extensiones por la API pública y
    resoluble contra `providers.toml`; variable de la clave **presente o
    ausente, sin imprimir jamás su valor** (ni en `--json`); permisos de
    `sessions/` (el `0600` de G57); TTY y capacidades del terminal;
-   herramientas externas que las tools usan (`git`, `rg` si aplica). Salida
-   humana legible y `--json` con **esquema versionado** (`doctor.v1`) para CI.
-   Códigos de salida coherentes con la convención de S45: **0** todo verde,
-   **1** al menos una comprobación falló, **2** uso inválido. Cada fallo
-   emite un remedio accionable (qué fichero/variable tocar). Una comprobación
-   de alcanzabilidad del provider (red) existe solo como opt-in explícito
+   herramientas externas que las tools usan. Salida humana legible y `--json`
+   con **esquema versionado** (`doctor.v1`), cuya espec vive en
+   [docs/ops/doctor.md](../../ops/doctor.md) (fichero propio, redactado con
+   este ADR; dentro de `v1` el esquema solo crece por adición y un campo
+   nunca cambia de significado). Regla anti-duplicación (la lección del
+   `officialProductSet` de ADR-015): los checks **de producto** (modelo
+   resoluble, dependencias de plugins, herramientas de tools) consultan a las
+   extensiones o a su fuente única por la API pública — nunca re-implementan
+   esa semántica en Go; la lista de herramientas externas la declara cada
+   extensión, no una tabla cableada en el binario. Códigos de salida
+   coherentes con la convención de S45: **0** todo verde, **1** al menos una
+   comprobación falló, **2** uso inválido. Cada fallo emite un remedio
+   accionable (qué fichero/variable tocar). Una comprobación de
+   alcanzabilidad del provider (red) existe solo como opt-in explícito
    (`--net`), apagada por defecto.
 
 4. **`enu update` y `enu uninstall` — el ciclo de vida del binario.**
@@ -76,10 +90,16 @@ superficie CLI vive en `main.go`, orquesta extensiones por la API pública y
    (obligatorio: sin verificación no hay reemplazo), y reemplaza el binario en
    uso de forma atómica (escribir al lado + rename), respetando dónde está
    instalado; `ENU_VERSION` pineado también vale aquí (`enu update` a una
-   versión concreta). `uninstall`: elimina el binario e imprime qué **no**
-   borra (config y sesiones del usuario); `--purge` borra además la config
-   **pidiendo confirmación explícita** (las sesiones/transcripts no se tocan
-   nunca desde `uninstall`: son datos del usuario). Ambos son los únicos
+   versión concreta). Si el destino **no es escribible sin privilegios**
+   (instalación vía gestor de paquetes ajeno, o `/usr/local/bin` con sudo
+   previo), `update` **aborta con remedio** («tu enu lo gestiona X; actualiza
+   por ahí») — nunca eleva privilegios, la misma regla que el instalador.
+   `uninstall`: elimina el binario e imprime qué **no** borra; `--purge`
+   borra además **exclusivamente `config.dir()`** (`~/.config/enu`), pidiendo
+   confirmación explícita. `data_dir()` (`~/.local/share/enu`:
+   sesiones/transcripts, plugins instalados, log) no se toca **nunca** desde
+   `uninstall`, ni con `--purge`: son datos del usuario, y su borrado es una
+   decisión que se toma con `rm`, no con un flag. Ambos son los únicos
    subcomandos con red (update) y efectos fuera de `config.dir()` — por eso
    viven en subcomandos explícitos y no en flags que se activan por accidente.
 

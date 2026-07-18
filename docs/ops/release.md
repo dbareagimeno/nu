@@ -142,9 +142,15 @@ espec que la sesión S51 implementa; los *steps* del YAML siguen sin ser API
   añadir — no lo añade él.
 - **Idempotente y atómico.** Reinstalar la misma versión es un no-op honesto;
   el reemplazo del binario es escribir-al-lado + `rename`.
+- **`enu update` hereda todo lo anterior** y añade: si el binario en uso vive
+  en un destino no escribible sin privilegios (gestor de paquetes ajeno,
+  `/usr/local/bin` con sudo previo), **aborta con remedio** («tu enu lo
+  gestiona X; actualiza por ahí») — nunca eleva privilegios.
 - **Desinstalación simétrica.** `enu uninstall` elimina el binario e informa
-  de qué no borra (config y sesiones); `--purge` borra además la config con
-  confirmación explícita. Las sesiones/transcripts no se tocan nunca.
+  de qué no borra; `--purge` borra además **exclusivamente `config.dir()`**
+  (`~/.config/enu`) con confirmación explícita. `data_dir()`
+  (`~/.local/share/enu`: sesiones/transcripts, plugins instalados, log) no se
+  toca nunca, ni con `--purge`.
 
 ## Reposo
 
