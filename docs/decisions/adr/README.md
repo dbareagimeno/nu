@@ -44,3 +44,4 @@ Estados: **Aceptada** · **Propuesta** · **Abierta** (aún sin decisión) ·
 | ADR-024 | Identidad de un worker: foto del plugin dueño en el spawn, inmutable | Aceptada | [adr-024-identidad-de-un-worker-foto.md](adr-024-identidad-de-un-worker-foto.md) |
 | ADR-025 | Reposicionamiento: motor para construir coding harnesses; Pi como referencia; pre-1.0 con roturas por ADR; frente público en inglés | Aceptada | [adr-025-reposicionamiento-motor-de-harnesses.md](adr-025-reposicionamiento-motor-de-harnesses.md) |
 | ADR-026 | El binario estrena subcomandos de gestión: `init`, `doctor`, `update`, `uninstall` (refina ADR-015/017) | Aceptada | [adr-026-subcomandos-de-gestion-del-binario.md](adr-026-subcomandos-de-gestion-del-binario.md) |
+| ADR-027 | El release no publica binario para Mac Intel (`darwin/amd64`); el macOS soportado es Apple Silicon (refina el alcance de G9) | Aceptada | [adr-027-sin-binario-de-mac-intel.md](adr-027-sin-binario-de-mac-intel.md) |

@@ -141,6 +141,12 @@ main() {
 	OS="$(detect_os)"
 	ARCH="$(detect_arch)"
 
+	# Mac Intel no se publica (ADR-027): el macOS soportado es Apple Silicon. Se
+	# rechaza aquí con remedio en vez de intentar bajar un asset inexistente (404).
+	if [ "$OS" = darwin ] && [ "$ARCH" = amd64 ]; then
+		err "enu no publica binario para Mac Intel (darwin/amd64), retirado en ADR-027. Usa Linux o WSL2, o compila desde fuente (GOOS=darwin GOARCH=amd64 go build)."
+	fi
+
 	VERSION="${ENU_VERSION:-}"
 	if [ -z "$VERSION" ]; then
 		info "resolviendo la última release estable…"

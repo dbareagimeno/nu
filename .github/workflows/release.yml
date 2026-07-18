@@ -87,10 +87,11 @@ jobs:
       matrix:
         # Plataformas objetivo v1 (arquitectura.md). NO se publica Windows nativo:
         # está pospuesto (P18) y Windows va por WSL2, que usa el binario linux/amd64.
+        # NO se publica Mac Intel (darwin/amd64): retirado en ADR-027 (hardware
+        # legacy; el macOS soportado es Apple Silicon). Tres binarios, cuatro assets.
         include:
           - { goos: linux, goarch: amd64 }
           - { goos: linux, goarch: arm64 }
-          - { goos: darwin, goarch: amd64 }
           - { goos: darwin, goarch: arm64 }
     steps:
       - uses: actions/checkout@v4

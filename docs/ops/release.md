@@ -116,7 +116,7 @@ GitHub: sería `main → develop` (al revés) y arrastraría solo esos merge com
 ## Verificación
 
 - **Release**: `gh release view vX.Y.Z` → sin draft, sin prerelease (salvo sufijo),
-  **5 assets** (`checksums.txt` + `enu-vX.Y.Z-{linux,darwin}-{amd64,arm64}.tar.gz`);
+  **4 assets** (`checksums.txt` + `enu-vX.Y.Z-linux-amd64.tar.gz` + `-linux-arm64` + `-darwin-arm64`; sin Mac Intel `darwin-amd64`, ADR-027);
   `gh release list` la marca `Latest`.
 - **Web**: `https://dbareagimeno.github.io/enu/` responde `200` y el badge muestra
   `vX.Y.Z` (0 enlaces `/nu/` residuales).
