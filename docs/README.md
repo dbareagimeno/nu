@@ -90,6 +90,9 @@ editarse salvo para anotar ese cierre. Aquí aterrizan las auditorías futuras.
   auditoría del camino no recorrido.
 - [auditoria-seguridad-2026-07-16.md](audits/auditoria-seguridad-2026-07-16.md) —
   auditoría de seguridad (SEC-01…SEC-08); enrutada a G53–G56.
+- [auditoria-externa-concepto-2026-07-18.md](audits/auditoria-externa-concepto-2026-07-18.md) —
+  primera auditoría externa de concepto, producto y comunicación; enrutada a
+  ADR-025 (reposicionamiento), P4→ADR-025 y P40–P42.
 
 ## Capa 4 — [archive/](archive/) (ejecutado, no vigente)
 

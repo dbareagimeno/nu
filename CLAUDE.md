@@ -4,9 +4,10 @@ Guía para asistentes de IA que trabajen en este repositorio.
 
 ## Qué es este proyecto
 
-`enu` es **un runtime de Lua orientado a terminal cuya killer app es un coding
-harness**: un único binario Go con un kernel mínimo donde todo lo demás —
-incluido el propio agente — son extensiones Lua.
+`enu` es **un motor para construir coding harnesses a medida** («a
+self-extensible coding harness with no host runtime», ADR-025): un único
+binario Go con un kernel mínimo donde todo lo demás — incluido el agente
+oficial, que es la demo de referencia del motor — son extensiones Lua.
 
 **Crítico:** por defecto el proyecto está en **fase de diseño**. Los documentos
 en `docs/` **son** el proyecto. La API se valida escribiendo pseudocódigo contra
@@ -24,9 +25,13 @@ código" sigue valiendo para todo lo demás. Cómo operar en esa fase: la secci�
 
 ## Idioma y estilo
 
-- **Todo el repositorio está en español** (documentos, mensajes de commit).
-  Escribe en español, con el mismo registro: prosa densa pero precisa, frases
-  que justifican el *porqué* de cada decisión, no solo el *qué*.
+- **La fuente documental interna está en español** (`docs/` — contratos, ADR,
+  findings, plan, worklog — y los mensajes de commit). Escribe en español, con
+  el mismo registro: prosa densa pero precisa, frases que justifican el
+  *porqué* de cada decisión, no solo el *qué*. **El frente público va en
+  inglés** (ADR-025): README, web de docs, quickstart y cualquier artefacto de
+  adquisición se redactan en inglés primero, con versión española enlazada
+  donde exista.
 - Los **identificadores de la API son en inglés y `snake_case`**
   (`enu.fs.read`, `enu.task.spawn`); la prosa que los rodea, en español.
 - Tono: afirmativo y razonado. Cada decisión se acompaña de su motivación y,
