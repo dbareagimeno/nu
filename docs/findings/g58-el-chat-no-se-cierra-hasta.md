@@ -98,7 +98,8 @@ verdad: si `/quit` empezara a apagar sin nudge, el test seguiría en verde
 > el mismo bug: el lock **no** se orfana en el apagado por falta de `cleanup`
 > LIFO, sino en el **ARRANQUE**, porque el `cleanup` de la task efímera que abre
 > la sesión no puede ⏸ en su vía de liberación. Es un bug **distinto y contiguo**
-> que se registra aparte (será G60, en discusión). El arreglo de esta entrada es
+> que se registra aparte como
+> [G60](g60-el-lock-de-sesion-nace-huerfano.md) (abierto, en discusión). El arreglo de esta entrada es
 > **solo** el despertar del driver; no toca el ciclo de vida del lock ni
 > `enu.task.cleanup` ni las extensiones sessions/chat.
 

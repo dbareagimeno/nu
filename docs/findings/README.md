@@ -14,7 +14,14 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 57 registradas, 56 resueltas, 1 abierta** (G58 y G59 añadidas
+**Estado: 58 registradas, 56 resueltas, 2 abiertas** (G60 añadida 2026-07-18
+desde la investigación de la opción (c) de G58: el `.jsonl.lock` **nace
+huérfano en el arranque** del chat — la task efímera que abre la sesión
+dispara un `enu.task.cleanup` que no puede ⏸ (`EINVAL`) y que además deja
+`closed=true` antes de borrar, envenenando el cierre explícito posterior —, lo
+que destapa que la promesa de liberación de `sesiones.md` §6 vía cleanup es
+inimplementable tal como está escrita; **queda ABIERTA**, opciones en
+discusión. G58 y G59 añadidas
 2026-07-18 desde la misma suite e2e de los plugins oficiales, caracterizando
 dos bugs de producto PREEXISTENTES en vez de un hueco de API: G58, el bucle del
 driver del chat (`select` sin timeout sobre `<-chunks`) no observaba el
@@ -126,7 +133,7 @@ añaden aquí con el mismo método.
 ## Índice
 
 > Los números G24–G25 no existen como fichero: son un hueco histórico que
-> nunca se asignó. La numeración es append-only: el próximo hallazgo es G60,
+> nunca se asignó. La numeración es append-only: el próximo hallazgo es G61,
 > los huecos no se reutilizan.
 
 | # | Título | Docs afectados | Estado | Fichero |
@@ -188,3 +195,4 @@ añaden aquí con el mismo método.
 | G57 | El transcript y el lock de sesiones no alcanzan el `0600` prometido: la API no dejaba fijar el modo de creación | `api.md` §5/§17 / `sesiones.md` §2/§6/§8 / `guia-plugins.md` §7 | RESUELTO | [g57-transcript-y-lock-de-sesiones-no-alcanzan-0600.md](g57-transcript-y-lock-de-sesiones-no-alcanzan-0600.md) |
 | G58 | El chat no se cierra hasta la siguiente tecla: `/quit` despacha `core:shutdown` desde una task, pero el driver solo lo sondea al llegar más input | `chat.md` §8 / driver | RESUELTO | [g58-el-chat-no-se-cierra-hasta.md](g58-el-chat-no-se-cierra-hasta.md) |
 | G59 | El auto-connect de `mcp.toml` es inservible en headless `-p`: la task efímera desconecta las tools antes del turno, y `env` (array) no llega al subproceso | extensión `mcp` / `enu.proc` | ABIERTO | [g59-el-auto-connect-de-mcp-toml.md](g59-el-auto-connect-de-mcp-toml.md) |
+| G60 | El `.jsonl.lock` nace huérfano en el arranque del chat: `enu.task.cleanup` no puede ⏸ y la promesa de liberación de `sesiones.md` §6 es inimplementable tal como está | `api.md` §3 / `sesiones.md` §6 / `guia-plugins.md` / sessions / chat | ABIERTO | [g60-el-lock-de-sesion-nace-huerfano.md](g60-el-lock-de-sesion-nace-huerfano.md) |
