@@ -18,7 +18,7 @@ import (
 // incorporado, la lógica 🔒)—. Es lo que pide ADR-005: los adaptadores de
 // providers viven en Lua y consumen SSE de un endpoint que va emitiendo tokens.
 //
-// REUSA TODO S19 (docs/decisiones-implementacion.md S19/S20): el parseo de `opts`
+// REUSA TODO S19 (docs/worklog/README.md S19/S20): el parseo de `opts`
 // (`parseReqOpts`), el modelo del cliente reutilizable vs por-petición
 // (`clientFor`, con TLS/proxy de G12) y el mapeo de errores de transporte
 // (`classifyTransportError`/`httpError`, que ya deciden el código del core fuera
@@ -314,10 +314,15 @@ func (st *httpStream) close() {
 // cierra `Stream:close`), así que el `cancel` se entrega al `httpStream`, no se
 // difiere aquí.
 func (st *httpState) openStream(sched *scheduler, o reqOpts, idle time.Duration) (*httpStream, error) {
-	client, err := st.clientFor(o)
+	base, err := st.clientFor(o)
 	if err != nil {
 		return nil, &httpError{code: CodeEINVAL, msg: err.Error()}
 	}
+	// Política de redirects por petición (G54): misma copia con `CheckRedirect` que
+	// `request`. Agotado el presupuesto, `client.Do` devuelve la última respuesta
+	// `3xx` como dato y `openStream` entrega un `Stream` con ese status (con su
+	// `location` en `headers`) —igual que un 200—, coherente con "el status es dato".
+	client := withRedirectPolicy(base, o)
 
 	// El `timeout_ms` cubre HASTA las cabeceras (§8); pasadas éstas, el plazo del
 	// body es el idle-timeout. Por eso NO se usa `context.WithTimeout` para toda la

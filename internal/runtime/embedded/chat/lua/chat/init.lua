@@ -524,10 +524,32 @@ function Chat:_subscribe_agent()
     self:_repaint()
   end)
 
-  -- agent:error — bloque de error (chat.md §2).
+  -- agent:error — bloque de error con el código estructurado y la acción de
+  -- reintento (chat.md §2, G43). El payload trae ahora `code`/`retryable`/`detail`
+  -- (agente.md §4): se pinta `[code] mensaje` y, si el error es retryable, la pista
+  -- del builtin `/retry` → `Session:retry()` (la acción de reintento manual).
   subs[#subs + 1] = enu.events.on("agent:error", function(p)
     if not mine(p) then return end
-    self.transcript:add_error(p.message or "error del agente")
+    local text = p.message or "error del agente"
+    if p.code then
+      text = "[" .. tostring(p.code) .. "] " .. text
+    end
+    if p.retryable then
+      text = text .. " (/retry para reintentar)"
+    end
+    self.transcript:add_error(text)
+    self:_refresh_transcript()
+    self:_repaint()
+  end)
+
+  -- agent:retry — nota atenuada mientras el motor espera el backoff de un reintento
+  -- automático de la apertura del stream (chat.md §2, G42): "reintentando (n/m) en
+  -- Xs…". Así el usuario ve que el turno no está colgado, sino esperando.
+  subs[#subs + 1] = enu.events.on("agent:retry", function(p)
+    if not mine(p) then return end
+    local secs = (p.delay_ms or 0) / 1000
+    self.transcript:add_system(string.format("reintentando (%d/%d) en %gs…",
+      p.attempt or 0, p.max_retries or 0, secs))
     self:_refresh_transcript()
     self:_repaint()
   end)

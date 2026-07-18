@@ -252,6 +252,11 @@ function M.attach(agent)
       max_turns   = self.opts.max_turns,
       max_tokens  = self.opts.max_tokens,
       temperature = self.opts.temperature,
+      -- Reintentos de la apertura del stream (G42): el worker aplica la misma
+      -- política que el padre, sin evento (no hay bus). Toma el override del spec del
+      -- subagente si lo trae, si no hereda el de la sesión padre.
+      max_retries   = self.opts.max_retries or self.parent.max_retries,
+      retry_base_ms = self.opts.retry_base_ms or self.parent.retry_base_ms,
     })
 
     -- Bucle de proxy: el worker pide tools, el padre las corre y responde, hasta el

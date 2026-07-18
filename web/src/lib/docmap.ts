@@ -115,12 +115,33 @@ export function gitPathLang(collection: Coleccion, slug: string, lang: Lang = 'e
   }
   switch (collection) {
     case 'wiki':
-      return `docs/${slug}.md`;
+      // docs/ se organiza por capas (core/ y contracts/); el slug de la web
+      // sigue siendo el basename, así que aquí se recupera la subcarpeta.
+      return `docs/${WIKI_DIR[slug] ?? 'contracts'}/${slug}.md`;
     case 'empezar':
       return `web/src/content/docs/empezando/${slug}.md`;
     case 'extensiones':
       return `web/src/content/docs/extensiones/${slug}.md`;
   }
+}
+
+// Subcarpeta de docs/ de cada página wiki publicada (el resto de contratos
+// publicados vive en contracts/).
+const WIKI_DIR: Record<string, string> = {
+  filosofia: 'core',
+  arquitectura: 'core',
+  'modelo-ejecucion': 'core',
+};
+
+// Ruta que el chrome MUESTRA como contexto (cabecera, statusline, drawer,
+// resultados de búsqueda), en estilo terminal. Para la wiki es la ruta REAL
+// del fichero en el repo (docs/core|contracts/<slug>.md — la misma en ES y
+// EN: la fuente de verdad es la ES); para las páginas locales (empezar,
+// extensiones) se mantiene la convención docs/<slug>.md, que es identidad de
+// la web, no un fichero del repo.
+export function repoPath(collection: Coleccion, slug: string): string {
+  if (collection === 'wiki') return `docs/${WIKI_DIR[slug] ?? 'contracts'}/${slug}.md`;
+  return `docs/${slug}.md`;
 }
 
 // Compat: la ruta ES baked en cada DocEntry (la usa el wrapper ES; el EN pasa

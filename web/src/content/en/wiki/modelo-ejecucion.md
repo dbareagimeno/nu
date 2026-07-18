@@ -104,7 +104,7 @@ placing it.
    **does not interrupt the in-flight ⏸ primitive**: the task sees
    `ECANCELED` instantly, but the Go operation in progress (`fs.write`,
    `http.request`…) runs to its natural end and its effects may land after
-   the cleanup ([P33](pospuesto.md)).
+   the cleanup ([P33](../postponed/pospuesto.md)).
 3. **The worker boundary only crosses data, never references.** Messages =
    copied JSON-able values. What doesn't cross: closures, userdata, or
    **Blocks**. Practical consequence: a worker can't pre-render UI; it sends
@@ -119,7 +119,7 @@ placing it.
    timers (`enu.task.every`) don't tick — they get **paused** (their
    in-flight request keeps running and the result waits) and the next drain
    resumes them. In interactive mode the pumping is **continuous**
-   ([G44](problemas.md#g44), resolved and built 2026-07-13): `PumpTasks`
+   ([G44](../findings/g44-el-scheduler-no-se-bombea.md), resolved and built 2026-07-13): `PumpTasks`
    lives alongside the driver's loop — the pump's state lives in the
    `Instance`, a *kick* from `Eval`/`EmitEvent`/`FeedInput` wakes up the
    `select`, and `inst.mu` is the only entry token into the VM — so the

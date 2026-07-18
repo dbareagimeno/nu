@@ -11,7 +11,8 @@
 --      `done` del adaptador (S37) entrega se persiste tal cual en una entrada
 --      `message`.
 --   2. **Un escritor por sesión** (§6, G5): un lockfile `<sesión>.jsonl.lock`
---      creado con `enu.fs.write{ exclusive = true }` (atómico, G17). Su contenido
+--      creado con `enu.fs.write{ exclusive = true, mode = 0600 }` (atómico, G17;
+--      permisos no world-readable, G57). Su contenido
 --      es la identidad del escritor —`{ pid, hostname, started }`— con el pid de
 --      `enu.sys.pid()` (G32) y el hostname de `enu.sys.hostname()` (G17). Un lock
 --      huérfano (pid muerto en esta máquina) se reclama en silencio; uno de otro
@@ -28,6 +29,15 @@ local M = {}
 -- líneas con `t` desconocido (forward-compatible); este número solo sube si el
 -- significado de una entrada existente cambiase.
 local FORMAT_VERSION = 1
+
+-- Permisos del transcript y del lockfile (sesiones.md §2/§6): 0600, solo el dueño.
+-- Contienen código y salidas de comandos (transcript) e identidad del escritor
+-- (lock): no deben quedar legibles por otros usuarios. Se aplican con `opts.mode`
+-- (G57), que hace chmod explícito NO recortado por el umask —Lua no tiene literal
+-- octal, de ahí `tonumber("600", 8)`—. El transcript se crea VACÍO con este modo
+-- antes del primer append; los append siguientes preservan el modo del fichero
+-- existente (`O_CREATE` no re-chmod-ea lo ya creado), así que basta fijarlo al crear.
+local SESSION_MODE = tonumber("600", 8)
 
 -- ---------------------------------------------------------------------------
 -- Errores estructurados de la extensión (ESESSION, ADR-009 / api.md §1.4).
@@ -109,16 +119,18 @@ end
 
 -- write_lock(lock_path) intenta crear el lockfile con creación EXCLUSIVA (G17):
 -- `enu.fs.write{ exclusive = true }` es atómico (O_EXCL) —dos procesos no pueden
--- ganar a la vez—, lanza `EEXIST` si ya existe. El contenido es la identidad del
--- escritor (§6): pid de `enu.sys.pid()` (G32), hostname de `enu.sys.hostname()`
--- (G17), started de `enu.sys.now_ms()`. Devuelve true si lo adquirió.
+-- ganar a la vez—, lanza `EEXIST` si ya existe. `mode = 0600` fija los permisos con
+-- chmod explícito, no recortado por el umask (§2/§6, G57): el lockfile guarda la
+-- identidad del escritor y no debe quedar world-readable bajo un umask laxo. El
+-- contenido es la identidad del escritor (§6): pid de `enu.sys.pid()` (G32),
+-- hostname de `enu.sys.hostname()` (G17), started de `enu.sys.now_ms()`.
 local function write_lock(lock_path)
   local meta = {
     pid      = enu.sys.pid(),
     hostname = enu.sys.hostname(),
     started  = enu.sys.now_ms(),
   }
-  enu.fs.write(lock_path, enu.json.encode(meta), { exclusive = true })
+  enu.fs.write(lock_path, enu.json.encode(meta), { exclusive = true, mode = SESSION_MODE })
 end
 
 -- read_lock(lock_path) -> meta? Lee y decodifica el lockfile, o nil si no existe
@@ -354,6 +366,13 @@ function M.open(opts)
   end
 
   if creating then
+    -- Crea el transcript VACÍO con 0600 (sesiones.md §2, G57) ANTES del primer
+    -- append: `enu.fs.write{ mode }` hace el chmod explícito no recortado por el
+    -- umask, y los append posteriores preservan ese modo (`enu.fs.append` no
+    -- re-chmod-ea un fichero existente). Creación exclusiva: el id es fresco, así
+    -- que el fichero no debería existir; si existiera (colisión de id), `EEXIST`
+    -- evita pisar un transcript ajeno.
+    enu.fs.write(path, "", { exclusive = true, mode = SESSION_MODE })
     -- Primera línea: la entrada `meta` (§3). Sin `ts` (no es actividad).
     self:append({
       t       = "meta",

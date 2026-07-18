@@ -32,7 +32,7 @@ func TestWriteAtomicLeavesNoResidue(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "out.txt")
 
-	if err := writeAtomic(path, []byte("contenido")); err != nil {
+	if err := writeAtomic(path, []byte("contenido"), nil); err != nil {
 		t.Fatalf("writeAtomic falló: %v", err)
 	}
 
@@ -68,7 +68,7 @@ func TestWriteAtomicOverwrites(t *testing.T) {
 	if err := os.WriteFile(path, []byte("viejo y muy largo"), 0o644); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	if err := writeAtomic(path, []byte("nuevo")); err != nil {
+	if err := writeAtomic(path, []byte("nuevo"), nil); err != nil {
 		t.Fatalf("writeAtomic falló: %v", err)
 	}
 	got, err := os.ReadFile(path)
@@ -92,7 +92,7 @@ func TestWriteAtomicRespectsUmask(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "secreto.txt")
-	if err := writeAtomic(path, []byte("dato sensible")); err != nil {
+	if err := writeAtomic(path, []byte("dato sensible"), nil); err != nil {
 		t.Fatalf("writeAtomic falló: %v", err)
 	}
 	info, err := os.Stat(path)
@@ -118,7 +118,7 @@ func TestWriteAtomicPreservesExistingMode(t *testing.T) {
 	if err := os.Chmod(path, 0o640); err != nil {
 		t.Fatalf("setup chmod: %v", err)
 	}
-	if err := writeAtomic(path, []byte("nuevo")); err != nil {
+	if err := writeAtomic(path, []byte("nuevo"), nil); err != nil {
 		t.Fatalf("writeAtomic falló: %v", err)
 	}
 	info, err := os.Stat(path)
@@ -128,6 +128,95 @@ func TestWriteAtomicPreservesExistingMode(t *testing.T) {
 	if got := info.Mode().Perm(); got != 0o640 {
 		t.Fatalf("sobrescritura debe preservar el modo previo: got %o, want 0640", got)
 	}
+}
+
+// --- Lógica 🔒: G57, opts.mode (chmod explícito, no recortado por el umask) ---
+
+// TestWriteAtomicModeIndependentOfUmask blinda G57 sobre el camino atómico: con
+// `mode` explícito el fichero resultante tiene EXACTAMENTE ese modo,
+// **independientemente del umask del proceso** —ni recortado hacia abajo ni dejado
+// world-readable—. Se comprueba en las dos direcciones que un `umask` mal razonado
+// rompería: (a) umask laxo (022, que dejaría un default 0644 legible por otros) +
+// `mode = 0600` → 0600; (b) umask estricto (077, que recortaría 0644→0600) +
+// `mode = 0644` → 0644. Ambas exigen que el modo se fije con `Chmod` (bits tal
+// cual), no con el `perm` de `OpenFile` que el SO tamiza por el umask. Toca el
+// umask del proceso (global): NO corre en paralelo y lo restaura al salir.
+func TestWriteAtomicModeIndependentOfUmask(t *testing.T) {
+	dir := t.TempDir()
+
+	// (a) umask laxo + mode restrictivo: el chmod debe bajar a 0600 pese al umask 022.
+	old := syscall.Umask(0o022)
+	p1 := filepath.Join(dir, "a.txt")
+	mode600 := os.FileMode(0o600)
+	if err := writeAtomic(p1, []byte("secreto"), &mode600); err != nil {
+		syscall.Umask(old)
+		t.Fatalf("writeAtomic con mode falló: %v", err)
+	}
+	syscall.Umask(old)
+	if got := statPerm(t, p1); got != 0o600 {
+		t.Fatalf("umask 022 + mode 0600: got %o, want 0600 (mode explícito, no world-readable)", got)
+	}
+
+	// (b) umask estricto + mode permisivo: el chmod debe SUBIR a 0644 pese al umask 077.
+	old = syscall.Umask(0o077)
+	p2 := filepath.Join(dir, "b.txt")
+	mode644 := os.FileMode(0o644)
+	if err := writeAtomic(p2, []byte("publico"), &mode644); err != nil {
+		syscall.Umask(old)
+		t.Fatalf("writeAtomic con mode falló: %v", err)
+	}
+	syscall.Umask(old)
+	if got := statPerm(t, p2); got != 0o644 {
+		t.Fatalf("umask 077 + mode 0644: got %o, want 0644 (mode NO recortado por el umask)", got)
+	}
+}
+
+// TestWriteAtomicModeOverridesExistingMode blinda que, en la sobrescritura, un
+// `mode` explícito GANA sobre la preservación del modo previo del destino (G57): un
+// 0640 preexistente que se reescribe con `mode = 0600` queda en 0600, no en 0640.
+func TestWriteAtomicModeOverridesExistingMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+	if err := os.WriteFile(path, []byte("viejo"), 0o640); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := os.Chmod(path, 0o640); err != nil {
+		t.Fatalf("setup chmod: %v", err)
+	}
+	mode600 := os.FileMode(0o600)
+	if err := writeAtomic(path, []byte("nuevo"), &mode600); err != nil {
+		t.Fatalf("writeAtomic con mode falló: %v", err)
+	}
+	if got := statPerm(t, path); got != 0o600 {
+		t.Fatalf("mode explícito debe ganar a la preservación: got %o, want 0600", got)
+	}
+}
+
+// TestWriteExclusiveModeIndependentOfUmask blinda G57 sobre el camino exclusivo (la
+// pieza del lockfile de sesiones, §6): `write{exclusive=true, mode=0600}` bajo umask
+// laxo (022) crea el lock en 0600, no world-readable. Toca el umask del proceso.
+func TestWriteExclusiveModeIndependentOfUmask(t *testing.T) {
+	old := syscall.Umask(0o022)
+	defer syscall.Umask(old)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s.jsonl.lock")
+	mode600 := os.FileMode(0o600)
+	if err := writeExclusive(path, []byte(`{"pid":1}`), &mode600); err != nil {
+		t.Fatalf("writeExclusive con mode falló: %v", err)
+	}
+	if got := statPerm(t, path); got != 0o600 {
+		t.Fatalf("umask 022 + exclusive mode 0600: got %o, want 0600", got)
+	}
+}
+
+// statPerm es un helper de test: los bits de permiso del fichero en `path`.
+func statPerm(t *testing.T, path string) os.FileMode {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %q: %v", path, err)
+	}
+	return info.Mode().Perm()
 }
 
 // --- Lógica 🔒: G17, write{exclusive} = O_EXCL ---
@@ -141,7 +230,7 @@ func TestWriteExclusiveG17(t *testing.T) {
 	path := filepath.Join(dir, "lock")
 
 	// Inexistente: lo crea.
-	if err := writeExclusive(path, []byte("pid:1")); err != nil {
+	if err := writeExclusive(path, []byte("pid:1"), nil); err != nil {
 		t.Fatalf("G17: exclusive sobre inexistente debió crear, falló: %v", err)
 	}
 	got, _ := os.ReadFile(path)
@@ -150,7 +239,7 @@ func TestWriteExclusiveG17(t *testing.T) {
 	}
 
 	// Existente: falla con EEXIST (os.ErrExist), sin tocar el contenido.
-	err := writeExclusive(path, []byte("pid:2"))
+	err := writeExclusive(path, []byte("pid:2"), nil)
 	if err == nil {
 		t.Fatal("G17: exclusive sobre existente debió fallar, no falló")
 	}
@@ -325,6 +414,77 @@ func residualTmp(t *testing.T, root string) string {
 		return nil
 	})
 	return found
+}
+
+// TestFsWriteModeAppliesAndValidates blinda G57 de extremo a extremo por el puente
+// ⏸ real: (1) `enu.fs.write{ mode }` fija el modo del fichero (comprobado con el
+// `mode` que devuelve `enu.fs.stat`, que sería el default del umask si no se
+// aplicara); componible con `exclusive`; (2) un `opts.mode` inválido (no entero,
+// negativo o fuera de 0..0o777) lanza `EINVAL` en el acto. El modo se afirma con
+// `stat().mode`, que no depende del umask del ejecutor (la independencia del umask
+// la blindan los tests Go directos de arriba). 0o600 = 384, 0o755 = 493. Además de
+// los valores "cómodos" de en medio, se prueban los EXTREMOS del rango válido —
+// 0 (sin permisos) y 0o777 (todos)— como aceptados, y 0o1000 = 512 (el primer
+// entero inválido por exceso, justo en el límite) como rechazado: sin estos casos,
+// una mutación off-by-one en `n > 0o777`/`n < 0` (p. ej. `>=`/`<=`) sobreviviría.
+func TestFsWriteModeAppliesAndValidates(t *testing.T) {
+	h := newHarness(t)
+	_ = withFsDir(h)
+	h.eval(`
+		ok = false
+		badcodes = {}
+		enu.task.spawn(function()
+			local base = BASE()
+
+			-- write con mode explícito: stat().mode refleja el modo fijado.
+			local p = base .. "/m.txt"
+			enu.fs.write(p, "x", { mode = tonumber("600", 8) })
+			assert(enu.fs.stat(p).mode == tonumber("600", 8), "write{mode} fija 0600")
+
+			-- componible con exclusive: crea el lock con 0600.
+			local lk = base .. "/l.lock"
+			enu.fs.write(lk, "pid", { exclusive = true, mode = tonumber("600", 8) })
+			assert(enu.fs.stat(lk).mode == tonumber("600", 8), "write{exclusive,mode} fija 0600")
+
+			-- mode distinto (0755) para descartar que case por el default del umask.
+			local p2 = base .. "/s.sh"
+			enu.fs.write(p2, "#!/bin/sh", { mode = tonumber("755", 8) })
+			assert(enu.fs.stat(p2).mode == tonumber("755", 8), "write{mode=0755} fija 0755")
+
+			-- Límites válidos: 0 (sin permisos) y 0o777 (todos) también deben
+			-- aceptarse y fijarse tal cual, no solo los valores "cómodos" de
+			-- en medio (0600/0755) — una mutación de n > 0o777 a n >= 0o777 solo
+			-- la pillaría un caso que toque el propio 0o777.
+			local p3 = base .. "/full.txt"
+			enu.fs.write(p3, "x", { mode = tonumber("777", 8) })
+			assert(enu.fs.stat(p3).mode == tonumber("777", 8), "write{mode=0o777} fija 0777 (límite superior válido)")
+
+			-- mode = 0: sin permisos para nadie, ni siquiera el dueño. No podemos
+			-- leer el contenido después (el propio proceso, dueño, no tiene bit de
+			-- lectura), así que solo comprobamos vía os.Stat/enu.fs.stat (metadatos,
+			-- no requieren permiso de lectura del fichero).
+			local p4 = base .. "/none.txt"
+			enu.fs.write(p4, "x", { mode = 0 })
+			assert(enu.fs.stat(p4).mode == 0, "write{mode=0} fija 0 (límite inferior válido)")
+
+			-- opts.mode inválido → EINVAL en el acto.
+			local function code_of(m)
+				local _, e = pcall(function() enu.fs.write(base .. "/bad", "x", { mode = m }) end)
+				return type(e) == "table" and e.code or "NO-ERROR"
+			end
+			badcodes.frac = code_of(0.5)     -- no entero
+			badcodes.neg  = code_of(-1)      -- negativo
+			badcodes.big  = code_of(4096)    -- muy por encima de 0o777
+			badcodes.edge = code_of(512)     -- 0o1000: primer entero inválido por exceso (0o777 + 1)
+			badcodes.str  = code_of("600")   -- no numérico
+
+			ok = true
+		end)
+	`)
+	h.expectEval(`return tostring(ok)`, "true")
+	for _, k := range []string{"frac", "neg", "big", "edge", "str"} {
+		h.expectEval(`return badcodes.`+k, "EINVAL")
+	}
 }
 
 // TestFsReadMissingIsENOENT blinda que `read` de un fichero inexistente lanza un

@@ -140,8 +140,10 @@ error({ code = "EINVAL", message = "empty filter", detail = { arg = "filter" } }
 
 - **Storage**: only under `enu.config.data_dir()/plugins/<your-name>/`.
   Sessions (`sessions/`) are read, not written — they belong to the agent.
-  Credentials and tokens: in your own directory, `0600`, and never in the
-  user's repo or in tool results (they'd end up in the transcript).
+  Credentials and tokens: in your own directory, `0600` —`enu.fs.write(path,
+  data, { mode = 0600 })` sets the mode with a chmod not trimmed by the umask
+  ([api.md](api.md) §5, G57)—, and never in the user's repo or in tool results
+  (they'd end up in the transcript).
 - **Your own events**: namespace = your plugin name
   (`"my-plugin:thing.happened"`). Since the loader guarantees your name is
   unique, nobody can step on it. Only `core:` and `ui:` are reserved by the

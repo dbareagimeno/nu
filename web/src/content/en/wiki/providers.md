@@ -63,7 +63,7 @@ give an actionable error on the first request, not on resolve). The
 provider `anthropic` with `api_key_env = "ANTHROPIC_API_KEY"` and the
 `claude-opus-4-8` model (alias `opus`) — written only if it doesn't exist,
 so the harness is usable with a single command
-([ADR-017](adr.md), [G35](problemas.md)).
+([ADR-017](../decisions/adr/README.md), [G35](../findings/README.md)).
 
 ---
 
@@ -89,7 +89,7 @@ Request = {
 Message = { role: "user"|"assistant", content: Block[] }
 ```
 
-**Extended reasoning (`thinking`)** ([ADR-016](adr.md#adr-016--modelo-canónico-de-thinking-con-mode-y-traducción-por-modelo-en-el-adaptador), closes [G34](problemas.md#g34)): `mode` requests the reasoning *mode* —`"adaptive"` (the model decides the effort, what modern models expect), `"budget"` with `budget = N` (a budget of N tokens, *legacy* extended thinking), `"off"`—; `thinking` absent = no reasoning. For **compatibility**, `{ budget = N }` without `mode` is equivalent to `mode = "budget"`. Which form each model understands is a **registry datum**: each model entry in `providers.toml` declares `thinking = "adaptive" | "budget" | "none"` (default `"budget"`), which travels in the `ModelInfo` (§3) and the adapter reads it to **translate per-model** (e.g. `mode="budget"` on a model with dialect `"adaptive"` degrades to `{type="adaptive"}`, because Opus 4.6+ removed `budget_tokens`). Requesting reasoning from a model with dialect `"none"` is a **declared degradation** (§3 obligation 5): the adapter does not simulate it. This way the adapter doesn't hardcode tables of model versions (ADR-003/ADR-005).
+**Extended reasoning (`thinking`)** ([ADR-016](../decisions/adr/adr-016-modelo-canonico-de-thinking.md), closes [G34](../findings/g34-el-modelo-canonico-de-thinking.md)): `mode` requests the reasoning *mode* —`"adaptive"` (the model decides the effort, what modern models expect), `"budget"` with `budget = N` (a budget of N tokens, *legacy* extended thinking), `"off"`—; `thinking` absent = no reasoning. For **compatibility**, `{ budget = N }` without `mode` is equivalent to `mode = "budget"`. Which form each model understands is a **registry datum**: each model entry in `providers.toml` declares `thinking = "adaptive" | "budget" | "none"` (default `"budget"`), which travels in the `ModelInfo` (§3) and the adapter reads it to **translate per-model** (e.g. `mode="budget"` on a model with dialect `"adaptive"` degrades to `{type="adaptive"}`, because Opus 4.6+ removed `budget_tokens`). Requesting reasoning from a model with dialect `"none"` is a **declared degradation** (§3 obligation 5): the adapter does not simulate it. This way the adapter doesn't hardcode tables of model versions (ADR-003/ADR-005).
 
 ### 2.2 Content blocks
 
@@ -174,7 +174,7 @@ Adapter obligations:
    sessions) have their escape valve in `meta`/`extra`. *(✅ Implemented for
    `anthropic`: places breakpoints on the last tool, the system prompt and the
    last two messages, without overwriting any `cache_control` that arrives in
-   `meta` — [pospuesto.md](pospuesto.md) **P31**.)*
+   `meta` — [pospuesto.md](../postponed/pospuesto.md) **P31**.)*
 
 Illustrative skeleton (not normative):
 
@@ -214,7 +214,7 @@ guidance in [guia-plugins.md](guia-plugins.md) §5 has the why.)*
 
 - The official adapters (`anthropic`, `openai-compat`, `gemini`) ship
   embedded as part of the providers extension. *(✅ All three are
-  embedded: [pospuesto.md](pospuesto.md) **P30** resolved. `openai-compat` serves
+  embedded: [pospuesto.md](../postponed/pospuesto.md) **P30** resolved. `openai-compat` serves
   the whole Chat Completions ecosystem —OpenAI, Together, Groq, OpenRouter, vLLM,
   Ollama `/v1`—; `gemini` serves the Generative Language API.)*
 - A plugin contributes its own by registering it:
@@ -234,10 +234,10 @@ guidance in [guia-plugins.md](guia-plugins.md) §5 has the why.)*
 local server: **device flow or manually pasted code** (`enu.http.request`
 in polling + opening the browser with `enu.proc` — the `gh` or `gcloud`
 pattern). Refresh tokens: in `data_dir()/plugins/<name>/`, `0600`
-permissions, in the clear (consistent with [P7](pospuesto.md): at-rest
+permissions, in the clear (consistent with [P7](../postponed/pospuesto.md): at-rest
 encryption is the filesystem's job). The localhost-callback flow would
 require an HTTP listener the core doesn't have: postponed
-([P19](pospuesto.md)).
+([P19](../postponed/pospuesto.md)).
 
 ---
 

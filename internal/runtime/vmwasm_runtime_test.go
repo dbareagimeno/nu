@@ -18,6 +18,7 @@ package runtime
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -74,12 +75,15 @@ func evalTaskOne(t *testing.T, rt *Runtime, code string) string {
 	return res[0]
 }
 
-// M13d.1: enu.version.api por el Runtime → "3" (el APILevel que buildWasmState
-// inyecta con SetAPIVersion). Es el smoke test que el binario `enu -e` reproduce.
+// M13d.1: enu.version.api por el Runtime → el `APILevel` que buildWasmState inyecta
+// con SetAPIVersion. Es el smoke test que el binario `enu -e` reproduce. Se afirma
+// contra la constante (no un literal) para no tener que tocar este test en cada
+// adición a la superficie sagrada (G54 lo subió a 4, G57 a 5).
 func TestRuntimeWasmVersionAPI(t *testing.T) {
 	rt := newWasmRuntime(t)
-	if got := evalStringOne(t, rt, `return enu.version.api`); got != "3" {
-		t.Fatalf("enu.version.api = %q, esperado 3", got)
+	want := strconv.Itoa(APILevel)
+	if got := evalStringOne(t, rt, `return enu.version.api`); got != want {
+		t.Fatalf("enu.version.api = %q, esperado %q", got, want)
 	}
 }
 

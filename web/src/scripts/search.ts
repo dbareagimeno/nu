@@ -22,6 +22,7 @@
 import '../styles/search.css';
 import { setStatusLeft } from './keyboard';
 import { i18n, type Lang } from '../lib/i18n';
+import { docDe, repoPath } from '../lib/docmap';
 
 const BASE: string = import.meta.env.BASE_URL; // p. ej. '/enu/'
 
@@ -184,7 +185,7 @@ function renderStatusRight(): void {
 }
 
 // ── Etiquetas ─────────────────────────────────────────────────────────────────
-// Nombre del documento en estilo ruta (docs/agente.md, api/fs, plugins),
+// Nombre del documento en estilo ruta (docs/contracts/agente.md, api/fs, plugins),
 // derivado de la URL del resultado — coherente con el chrome del terminal.
 function etiquetaDoc(url: string): string {
   let p = url;
@@ -200,6 +201,13 @@ function etiquetaDoc(url: string): string {
     .replace(/\.html$/, '')
     .replace(/\/+$/, '');
   if (!p) return 'inicio';
+  // Página de la wiki: la etiqueta es la ruta REAL del fichero en el repo
+  // (docs/core|contracts/<slug>.md), la misma que enseña el chrome.
+  const m = p.match(/^(?:en\/)?docs\/([^/]+)$/);
+  if (m) {
+    const entry = docDe(m[1]);
+    if (entry) return repoPath(entry.collection, m[1]);
+  }
   if (/^docs\//.test(p)) p += '.md';
   return p;
 }

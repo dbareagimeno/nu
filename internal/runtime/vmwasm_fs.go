@@ -15,6 +15,7 @@ package runtime
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -52,19 +53,29 @@ func registerFsWasm(p *vmwasm.Pool, rt *Runtime) {
 		return []any{string(data)}, nil
 	})
 
-	// enu.fs.write(path, data, opts?) ⏸ — escritura atómica; opts.exclusive = O_EXCL.
+	// enu.fs.write(path, data, opts?) ⏸ — escritura atómica; opts.exclusive = O_EXCL;
+	// opts.mode = modo de creación fijado con chmod explícito, NO recortado por el
+	// umask (§5, G57), componible con exclusive.
 	p.RegisterSuspending("fs.write", func(inst *vmwasm.Instance, args []any) ([]any, error) {
 		path, _ := args[0].(string)
 		data := []byte(argString(args, 1))
 		exclusive := false
+		var mode *os.FileMode
 		if opts, ok := arg(args, 2).(map[string]any); ok {
 			exclusive, _ = opts["exclusive"].(bool)
+			if v, present := opts["mode"]; present && v != nil {
+				m, err := parseFileMode(v)
+				if err != nil {
+					return nil, err
+				}
+				mode = &m
+			}
 		}
 		var err error
 		if exclusive {
-			err = writeExclusive(path, data)
+			err = writeExclusive(path, data, mode)
 		} else {
-			err = writeAtomic(path, data)
+			err = writeAtomic(path, data, mode)
 		}
 		if err != nil {
 			return nil, mapFsErrorWasm(err)
@@ -205,6 +216,25 @@ func argString(args []any, i int) string {
 	return s
 }
 
+// parseFileMode valida el `opts.mode` de `enu.fs.write` (§5, G57): un entero de
+// permisos en el rango `0..0o777`. Un valor no numérico, con parte fraccionaria,
+// negativo o fuera de rango → `EINVAL` (no se adivina: un modo mal puesto es un
+// error de programación, no un default silencioso). Los números de Lua cruzan la
+// frontera wasm como `float64`/`int64` (httpNum los normaliza), así que se
+// comprueba que sea entero exacto antes de estrecharlo a `os.FileMode`. El rango
+// se acota a los bits de permiso: los bits especiales (setuid/setgid/sticky)
+// quedan fuera de v1 —la API es aburrida y crece por adición—.
+func parseFileMode(v any) (os.FileMode, error) {
+	n, ok := httpNum(v)
+	if !ok {
+		return 0, &vmwasm.StructuredError{Code: CodeEINVAL, Message: "enu.fs.write: opts.mode debe ser un número (entero de permisos, p. ej. 0o600)"}
+	}
+	if n != math.Trunc(n) || n < 0 || n > 0o777 {
+		return 0, &vmwasm.StructuredError{Code: CodeEINVAL, Message: "enu.fs.write: opts.mode debe ser un entero de permisos en 0..0o777 (p. ej. 0o600)"}
+	}
+	return os.FileMode(uint32(n)), nil
+}
+
 // --- enu.fs.watch sobre el backend wasm (S15, §5, §16, inventario 🔒 G7) ---
 //
 // Contraparte de watch.go. El RETO es que en gopher la goroutine de fondo del
@@ -317,13 +347,20 @@ func registerWatchWasm(p *vmwasm.Pool, rt *Runtime) {
 			}
 		}
 
+		// Dueño de supervisión del watcher: se resuelve con el canónico `ownerForInst`
+		// (G56, ADR-024). Hoy enu.fs.watch NO es worker-safe (su entrega depende de
+		// enu.events, ausente en un worker), así que `inst` es siempre el principal y
+		// esto equivale a `rt.currentOwner()`; usar el resolvedor común garantiza que, si
+		// mañana cruzara al worker, tome la foto del spawn y no lea el ownerStack del
+		// padre (la regla de superficie futura de ADR-024).
+		fsOwner, _ := rt.ownerForInst(inst)
 		w := &wasmWatcher{
 			fsw:       fsw,
 			recursive: recursive,
 			debounce:  time.Duration(debounceMs) * time.Millisecond,
 			gi:        gi,
 			stopCh:    make(chan struct{}),
-			ownerName: rt.currentOwner(),
+			ownerName: fsOwner,
 			sched:     rt.sched,
 		}
 		if err := w.addTree(root, info.IsDir()); err != nil {

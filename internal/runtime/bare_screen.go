@@ -367,7 +367,7 @@ func writeEnabledPlugins(configDir string, names []string) error {
 		return &StructuredError{Code: CodeEIO,
 			Message: fmt.Sprintf("no se pudo serializar %s: %v", nuTomlName, err)}
 	}
-	if err := writeAtomic(path, buf.Bytes()); err != nil {
+	if err := writeAtomic(path, buf.Bytes(), nil); err != nil {
 		return &StructuredError{Code: CodeEIO,
 			Message: fmt.Sprintf("no se pudo escribir %q: %v", path, err)}
 	}
@@ -437,7 +437,7 @@ func writeTemplateIfAbsent(configDir, name, content string) (created bool, err e
 		return false, &StructuredError{Code: CodeEIO,
 			Message: fmt.Sprintf("no se pudo crear el directorio de configuración %q: %v", configDir, err)}
 	}
-	if err := writeAtomic(path, []byte(content)); err != nil {
+	if err := writeAtomic(path, []byte(content), nil); err != nil {
 		return false, &StructuredError{Code: CodeEIO,
 			Message: fmt.Sprintf("no se pudo escribir %q: %v", path, err)}
 	}

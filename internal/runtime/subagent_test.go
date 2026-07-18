@@ -138,6 +138,14 @@ base_url = "http://localhost/unused"
 [[providers.test2.models]]
 id      = "m2"
 aliases = ["e"]
+
+[providers.testr]
+adapter  = "wretry"
+base_url = "http://localhost/unused"
+
+[[providers.testr.models]]
+id      = "m3"
+aliases = ["r"]
 `
 
 // bootSubagent arranca un runtime con providers+sessions+agent activadas Y un
@@ -174,6 +182,11 @@ func bootSubagent(t *testing.T) (*harness, string) {
 	// `wecho`: adaptador de eco para auditar el reenvío de thinking/system (A-22).
 	if err := os.WriteFile(filepath.Join(pdir, "lua", "wecho.lua"), []byte(wsEchoModule), 0o644); err != nil {
 		t.Fatalf("write wecho.lua: %v", err)
+	}
+	// `wretry`: adaptador que falla la apertura del stream N veces (G42, dirigido por
+	// el prompt: los globales del principal no cruzan al worker). agent_g42_worker_test.go.
+	if err := os.WriteFile(filepath.Join(pdir, "lua", "wretry.lua"), []byte(wsRetryAdapterModule), 0o644); err != nil {
+		t.Fatalf("write wretry.lua: %v", err)
 	}
 
 	writeNuToml(t, cfg, "[plugins]\nenabled = [\"providers\", \"sessions\", \"agent\", \"wstub_plugin\"]\n")

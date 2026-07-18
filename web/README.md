@@ -8,9 +8,9 @@ pager tipo `less(1)` y toda la navegación funciona con teclado real. La
 especificación de diseño completa vive en `design_handoff_nu_web/README.md`
 (tokens de los 4 themes, gramática visual TTY, las 8 pantallas canónicas).
 
-> La **fuente de verdad** de la API es [`docs/api.md`](../docs/api.md) (la
+> La **fuente de verdad** de la API es [`docs/contracts/api.md`](../docs/contracts/api.md) (la
 > "superficie sagrada" v1). La sección `/api` de este sitio la presenta de forma
-> orientada a tareas y con ejemplos. Si algo discrepa, manda `docs/api.md`.
+> orientada a tareas y con ejemplos. Si algo discrepa, manda `docs/contracts/api.md`.
 
 Esa relación se **verifica mecánicamente**: `npm run check:drift`
 ([`scripts/check-drift.mjs`](scripts/check-drift.mjs), sin dependencias) extrae
@@ -37,13 +37,20 @@ npm run preview  # sirve el build (necesario para probar la búsqueda)
 web/
 ├── astro.config.mjs              # base /enu/, shiki css-variables, plugins md
 ├── scripts/
-│   ├── check-drift.mjs           # detector de deriva web ↔ docs/api.md
+│   ├── check-drift.mjs           # detector de deriva web ↔ docs/contracts/api.md
+│   ├── check-limpieza-html.mjs   # gates de limpieza (fuente y HTML final)
+│   ├── test-limpieza.mjs         # tests de los plugins remark (+ --slugs)
 │   └── generar-og.mjs            # regenera public/og.png desde el wordmark
 ├── src/
-│   ├── content.config.ts         # colecciones: wiki (../docs), empezar, referencia
+│   ├── content.config.ts         # colecciones: wiki (lista EXPLÍCITA de los 8
+│   │                             # contratos publicados de ../docs/core|contracts,
+│   │                             # con generateId por basename), empezar,
+│   │                             # extensiones, referencia + gemelas _en
 │   ├── content/docs/
 │   │   ├── empezando/            # instalación y primeros pasos (→ /docs/…)
+│   │   ├── extensiones/          # mcp, repl, toolkit e índice (→ /docs/…)
 │   │   └── referencia/           # una página por namespace enu.* (→ /api/…)
+│   ├── content/en/               # instantánea EN (wiki plana de 8 + resto)
 │   ├── pages/                    # index (portada), docs/[slug], api/[slug],
 │   │   │                         # plugins, 404
 │   ├── layouts/ · components/    # Base, headers, statusline, sidebars, carriles
@@ -80,7 +87,7 @@ la colección de origen.
 EN afectada** —no se actualiza sola—. El picker de idioma navega a la página
 homóloga (`/enu/docs/x` ↔ `/enu/en/docs/x`), así que una página EN ausente sería
 un 404. Nota: `check:drift` vigila **solo la referencia ES** frente a
-`docs/api.md` (la superficie sagrada); la referencia EN, al ser instantánea, no
+`docs/contracts/api.md` (la superficie sagrada); la referencia EN, al ser instantánea, no
 entra en ese gate.
 
 ## Ejemplos verificados
@@ -93,7 +100,9 @@ en el estado principal: las funciones suspendientes (⏸) van envueltas en
 ## Despliegue
 
 `.github/workflows/docs.yml` construye y publica el sitio en GitHub Pages al
-hacer push a `main` cuando cambia algo bajo `web/`. El `base` del sitio es
+hacer push a `main` cuando cambia algo bajo `web/` **o bajo `docs/`** (la wiki
+lee los contratos de `docs/core|contracts/` en build: un cambio en la fuente
+redespliega). El `base` del sitio es
 `/enu/` (project page); para un dominio propio, vacía `base` en
 `astro.config.mjs`. El dominio del `curl` de instalación es un placeholder
 centralizado en `src/lib/const.ts` (`DOMAIN`), pendiente de decisión.

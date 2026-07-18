@@ -1,15 +1,14 @@
 #!/usr/bin/env node
-// test-limpieza.mjs — tests unitarios del plugin `remark-limpieza-interno`.
-// Sin dependencias nuevas: parsea markdown real con `unified`+`remark-parse` (ya
-// presentes en node_modules vía Astro), aplica el plugin sobre el mdast y afirma
-// sobre el resultado (texto concatenado con `mdast-util-to-string` o inspección
-// estructural). Cada fixture es un ejemplo REAL del plan / de los contratos.
+// test-limpieza.mjs — tests unitarios de los plugins `remark-limpieza-interno`
+// y `remark-enlaces-wiki`. Sin dependencias nuevas: parsea markdown real con
+// `unified`+`remark-parse` (ya presentes en node_modules vía Astro), aplica el
+// plugin sobre el mdast y afirma sobre el resultado (texto concatenado con
+// `mdast-util-to-string` o inspección estructural). Cada fixture es un ejemplo
+// REAL del plan / de los contratos.
 //
-// Corre con `node web/scripts/test-limpieza.mjs`. La aserción de consistencia
-// WIKI_SLUGS ↔ docmap vive tras el flag `--slugs` (queda FUERA del run por
-// defecto): otro trabajo actualiza en paralelo `docmap.ts` y
-// `remark-enlaces-wiki.mjs` a los 18 slugs nuevos, y no queremos rojo transitorio.
-// Cuando ambos ficheros estén sincronizados, `--slugs` la ejecuta.
+// Corre con `node web/scripts/test-limpieza.mjs`. El flag `--slugs` añade la
+// aserción de consistencia WIKI_SLUGS ↔ docmap; el workflow docs.yml lo
+// ejecuta con el flag como gate del despliegue.
 
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -18,13 +17,14 @@ import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import { toString as mdastToString } from 'mdast-util-to-string';
 import { remarkLimpiezaInterno } from '../src/lib/markdown/remark-limpieza-interno.mjs';
+import { remarkEnlacesWiki } from '../src/lib/markdown/remark-enlaces-wiki.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = resolve(AQUI, '..', '..');
 
 // Aplica el plugin sobre `md` con una ruta que cae dentro de su jurisdicción
 // (un contrato del repo `docs/<x>.md`) salvo que se indique otra.
-function procesa(md, path = join(RAIZ, 'docs', 'fixture.md')) {
+function procesa(md, path = join(RAIZ, 'docs', 'contracts', 'fixture.md')) {
   const tree = unified().use(remarkParse).parse(md);
   remarkLimpiezaInterno()(tree, { path });
   return tree;
@@ -213,6 +213,48 @@ const contiene = (s, sub) => s.includes(sub);
   comprueba('gate/sin marcadores parentéticos',
     !/\((?:G|P|S)\d/.test(t) && !/\(ADR-\d/.test(t) && !t.includes('✅') && !t.includes('enu:interno') && !t.includes('oculto'),
     `→ "${t}"`);
+}
+
+// --- remark-enlaces-wiki: resolución de rutas y caso api.md -------------------
+
+{
+  const procesaEnlaces = (md, path) => {
+    const tree = unified().use(remarkParse).parse(md);
+    remarkEnlacesWiki()(tree, { path });
+    const urls = [];
+    (function anda(n) {
+      if (n.type === 'link') urls.push(n.url);
+      (n.children || []).forEach(anda);
+    })(tree);
+    return urls;
+  };
+
+  const desdeContracts = procesaEnlaces(
+    '[a](api.md#8) [b](desconocido.md) [c](../findings/g42-x.md) [d](agente.md#2) [e](../audits/informe.md)',
+    join(RAIZ, 'docs', 'contracts', 'agente.md'),
+  );
+  comprueba('enlaces/api.md → página /api', desdeContracts[0] === '/enu/api', `→ ${desdeContracts[0]}`);
+  comprueba('enlaces/mismo-dir desconocido → blob con subcarpeta',
+    desdeContracts[1] === 'https://github.com/dbareagimeno/enu/blob/main/docs/contracts/desconocido.md',
+    `→ ${desdeContracts[1]}`);
+  comprueba('enlaces/../findings → blob findings/',
+    desdeContracts[2] === 'https://github.com/dbareagimeno/enu/blob/main/docs/findings/g42-x.md',
+    `→ ${desdeContracts[2]}`);
+  comprueba('enlaces/contrato publicado → página wiki con ancla',
+    desdeContracts[3] === '/enu/docs/agente#2', `→ ${desdeContracts[3]}`);
+  comprueba('enlaces/audits → blob resuelto',
+    desdeContracts[4] === 'https://github.com/dbareagimeno/enu/blob/main/docs/audits/informe.md',
+    `→ ${desdeContracts[4]}`);
+
+  const desdeEn = procesaEnlaces(
+    '[a](api.md) [b](../findings/g42-x.md) [c](chat.md)',
+    join(RAIZ, 'web', 'src', 'content', 'en', 'wiki', 'agente.md'),
+  );
+  comprueba('enlaces/EN api.md → /en/api', desdeEn[0] === '/enu/en/api', `→ ${desdeEn[0]}`);
+  comprueba('enlaces/EN findings → blob (fuente ES)',
+    desdeEn[1] === 'https://github.com/dbareagimeno/enu/blob/main/docs/findings/g42-x.md',
+    `→ ${desdeEn[1]}`);
+  comprueba('enlaces/EN wiki → /en/docs', desdeEn[2] === '/enu/en/docs/chat', `→ ${desdeEn[2]}`);
 }
 
 // --- (opcional, tras --slugs) consistencia WIKI_SLUGS ↔ docmap ----------------

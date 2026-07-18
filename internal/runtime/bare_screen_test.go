@@ -3,7 +3,7 @@ package runtime
 // Tests de la PANTALLA DE RUNTIME DESNUDO (api.md §14, G21, S33). Blindan lo
 // AUTOMATIZABLE en este entorno headless (sin TTY); la interacción de teclado, el
 // streaming visible y el resize/paste visibles son el CP-7 MANUAL con TTY (ver
-// docs/decisiones-implementacion.md). Lo que sí se cubre por unidad:
+// docs/worklog/README.md). Lo que sí se cubre por unidad:
 //
 //   - CONDICIÓN: la pantalla se muestra SSI hay superficie de UI (`uiActive`) Y no
 //     hay plugins activos. Sin UI (headless) → no se muestra (arranca desnudo). Con
@@ -18,6 +18,7 @@ package runtime
 //   - NO REGRESIÓN: headless (`WithForceUI(false)`) → `bareScreenActive` es false.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,9 +105,11 @@ func TestBareScreenContent(t *testing.T) {
 	lines := rt.RenderBareScreen()
 	joined := strings.Join(lines, "\n")
 
-	// Versión + nivel de API (§2). El nivel subió a 2 en S38 (enu.sys.pid, G32)
-	// y a 3 con los frames binarios de enu.ws (G52).
-	wantVer := "enu 0.1.4 · API 3"
+	// Versión + nivel de API (§2). El nivel sube con cada adición a la superficie
+	// sagrada (G32 enu.sys.pid → 2, G52 frames binarios de enu.ws → 3, G54 control de
+	// redirects de enu.http → 4, G57 opts.mode de enu.fs.write → 5); se compone desde
+	// las constantes para no reescribirlo.
+	wantVer := fmt.Sprintf("enu %d.%d.%d · API %d", VersionMajor, VersionMinor, VersionPatch, APILevel)
 	if !strings.Contains(joined, wantVer) {
 		t.Errorf("falta la versión/API %q en la pantalla:\n%s", wantVer, joined)
 	}

@@ -6,7 +6,7 @@ package runtime
 // chat—), construida sobre el toolkit de widgets (S42), el agente (S39), providers
 // (S36/S37) y sessions (S38). La prueba arranca un Runtime con las CINCO
 // extensiones (toolkit, providers, sessions, agent, chat) activadas por `enu.toml`
-// y ejercita el contrato de [chat.md](../../docs/chat.md) desde Lua.
+// y ejercita el contrato de [chat.md](../../docs/contracts/chat.md) desde Lua.
 //
 // Blinda:
 //   - **layout** (§1): una `toolkit.app` con vbox transcript/input/statusline +
@@ -22,7 +22,7 @@ package runtime
 //     agente corre el turno → `agent:delta` streaming se pinta con markdown en el
 //     transcript del chat (el Block compuesto crece). El provider REAL (CP-11
 //     original) requiere red/credenciales y NO es ejecutable headless en CI
-//     (limitación del entorno, documentada en docs/decisiones-implementacion.md S43).
+//     (limitación del entorno, documentada en docs/worklog/README.md S43).
 //
 // La UI es headless en los tests (sin TTY, G20): el arnés fuerza `enu.ui` con
 // `WithForceUI(true)` (como toolkit_test.go) y un tamaño conocido (`WithUISize`)
@@ -40,6 +40,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // bootChat arranca un Runtime con toolkit+providers+sessions+agent+chat activadas
@@ -58,7 +59,19 @@ func bootChat(t *testing.T, providersToml string, w, h int) (*harness, string) {
 			t.Fatalf("write providers.toml: %v", err)
 		}
 	}
-	rt := New(WithDataDir(dataDir), WithConfigDir(cfg), WithForceUI(true), WithUISize(w, h))
+	// Presupuesto de slice GENEROSO para el watchdog (S09), no el de producción
+	// (100 ms). `chat.start` construye TODA la UI en un único slice síncrono largo
+	// pero acotado (registries + agent.session + _build_ui + subs + keymaps +
+	// refresh + repaint): no quema CPU, sólo encadena muchas operaciones pequeñas.
+	// En producción termina muy por debajo de 100 ms, pero bajo `-race` (que ralentiza
+	// Lua ~10×) más contención de CPU en CI ese slice legítimo puede rebasar los 100 ms
+	// y el watchdog lo abortaría con EBUDGET no capturable, dejando el Chat a medias
+	// (`C` global = nil) — un falso positivo del watchdog EXCLUSIVO del entorno de test
+	// (los usuarios reales no corren bajo `-race`). Un margen amplio (10 s) evita ese
+	// aborto espurio sin desactivar el watchdog: un bucle infinito real en código de
+	// chat seguiría cortándose muy antes del timeout de `go test`.
+	rt := New(WithDataDir(dataDir), WithConfigDir(cfg), WithForceUI(true), WithUISize(w, h),
+		WithSliceBudget(10*time.Second))
 	t.Cleanup(rt.Close)
 	if err := rt.Boot(); err != nil {
 		t.Fatalf("Boot falló: %v", err)
@@ -544,7 +557,7 @@ func TestChatStatusline(t *testing.T) {
 // CP-11 (dogfooding): la sesión de chat de extremo a extremo contra un SSE
 // GRABADO del adaptador anthropic. ADAPTACIÓN: el CP-11 original pide un provider
 // REAL; en este entorno NO hay red ni credenciales, así que se ejercita contra el
-// SSE grabado (como CP-9). Documentado en docs/decisiones-implementacion.md S43.
+// SSE grabado (como CP-9). Documentado en docs/worklog/README.md S43.
 // ---------------------------------------------------------------------------
 
 // chatAnthropicProvidersToml: un providers.toml cuyo provider `anthropic` apunta su

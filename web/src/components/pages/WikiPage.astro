@@ -13,7 +13,7 @@ import Base from '../../layouts/Base.astro';
 import HeaderInternal from '../HeaderInternal.astro';
 import Statusline from '../Statusline.astro';
 import Sidebar from '../wiki/Sidebar.astro';
-import { TOTAL, urlDoc, gitPathLang, type DocEntry } from '../../lib/docmap';
+import { TOTAL, urlDoc, gitPathLang, repoPath, type DocEntry } from '../../lib/docmap';
 import { gitMeta } from '../../lib/gitmeta';
 import { i18n, type Lang } from '../../lib/i18n';
 import '../../styles/markdown.css';
@@ -31,12 +31,13 @@ const t = i18n[lang]; // build-time en el idioma de la página; el swap es en cl
 
 const { Content, headings } = await render(entry);
 
-// Título: frontmatter (empezar, extensiones) o el primer H1 del .md (wiki). Las
-// páginas locales (empezar y extensiones) no traen H1 en el cuerpo: se pinta
-// aquí para que reciba el mismo estilo (═) que un H1 de markdown.
-const usaFrontmatter = doc.collection === 'empezar' || doc.collection === 'extensiones';
+// Título: el frontmatter manda (todos los .md de docs/ lo traen desde la
+// reestructuración; la instantánea EN aún no, y cae al primer H1 del cuerpo).
+// Las páginas locales (empezar y extensiones) no traen H1 en el cuerpo: se
+// pinta aquí para que reciba el mismo estilo (═) que un H1 de markdown.
+const pintaH1 = doc.collection === 'empezar' || doc.collection === 'extensiones';
 const tituloH1 = headings.find((h) => h.depth === 1)?.text;
-const titulo = usaFrontmatter ? (entry.data.title as string) : (tituloH1 ?? doc.slug);
+const titulo = (entry.data.title as string) ?? tituloH1 ?? doc.slug;
 
 // Índice del carril: los h2 del documento.
 const toc = headings.filter((h) => h.depth === 2);
@@ -46,7 +47,9 @@ const toc = headings.filter((h) => h.depth === 2);
 const meta = gitMeta(gitPathLang(doc.collection, doc.slug, lang));
 const posicion = `${index + 1}/${TOTAL}`;
 
-const routePath = `docs/${doc.slug}.md`;
+const routePath = repoPath(doc.collection, doc.slug);
+const routeDir = routePath.slice(0, routePath.lastIndexOf('/') + 1);
+const routeFile = routePath.slice(routePath.lastIndexOf('/') + 1);
 const nextUrl = next ? urlDoc(next.slug, lang) : null;
 const prevUrl = prev ? urlDoc(prev.slug, lang) : null;
 
@@ -90,7 +93,7 @@ function agoLabel(n: number): string {
       <!-- Contenido. -->
       <main class="col-main">
         <article class="markdown">
-          {usaFrontmatter && <h1>{titulo}</h1>}
+          {pintaH1 && <h1>{titulo}</h1>}
           <Content />
         </article>
 
@@ -142,7 +145,7 @@ function agoLabel(n: number): string {
       <div class="drawer-backdrop" data-drawer-toggle></div>
       <div class="drawer-panel">
         <div class="drawer-head">
-          <span class="dim">docs/</span><span class="bright">{doc.slug}.md</span>
+          <span class="dim">{routeDir}</span><span class="bright">{routeFile}</span>
           <button type="button" class="drawer-cierra" data-drawer-toggle aria-label="cerrar">[×]</button>
         </div>
         <Sidebar activeSlug={doc.slug} lang={lang} />

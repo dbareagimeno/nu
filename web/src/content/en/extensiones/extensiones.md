@@ -53,7 +53,7 @@ standalone:
 - **mesh** (the agent mesh) — Role+Job specs, claim by git CAS, job runner,
   and fork tournament. It's outside the product set and its contract is
   still in draft, so it **has no public documentation yet**; its design
-  lives in [malla.md](../malla.md).
+  lives in [malla.md](../contracts/malla.md).
 
 ---
 

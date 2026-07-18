@@ -63,25 +63,34 @@ type fsState struct {
 // ni siquiera funciona con `os.Rename`)—. Si algo falla tras crear el temporal,
 // se borra para no dejar residuo (la prueba 🔒 verifica "no queda temporal").
 //
-// Permisos: el temporal se crea con `O_CREATE|O_EXCL` y `fsFilePerm`, así que el
-// SO le aplica el umask del proceso en la creación —a diferencia de un
-// `CreateTemp`+`Chmod`, que forzaría 0644 saltándose el umask y sería un fichero
-// world-readable con umask 077—. Al **sobrescribir** un destino existente
-// preservamos su modo previo (se hace `Stat` antes y un `Chmod` al modo actual),
-// igual que las rutas `OpenFile` que no tocan los permisos de un fichero que ya
-// existe. Sobre un destino inexistente no hay `Chmod`: el modo queda `fsFilePerm`
-// recortado por el umask.
-func writeAtomic(path string, data []byte) error {
+// Permisos (§5, G57): `mode` es el modo explícito de `opts.mode` (nil = ausente).
+// Prioridad del modo del fichero resultante:
+//  1. `mode != nil` → `Chmod` al valor EXACTO, **no recortado por el umask**
+//     (chmod fija los bits tal cual). Gana sobre el default y sobre la
+//     preservación del previo: es la vía para forzar `0600` en un transcript o
+//     lockfile independientemente del umask ambiental (G57).
+//  2. `mode == nil` y destino existente → se preserva su modo previo (`Stat`
+//     antes + `Chmod` al modo actual), igual que las rutas `OpenFile` que no
+//     tocan los permisos de un fichero que ya existe.
+//  3. `mode == nil` y destino inexistente → sin `Chmod`: el temporal se crea con
+//     `O_CREATE|O_EXCL` y `fsFilePerm`, así que el SO le aplica el umask del
+//     proceso —a diferencia de un `CreateTemp`+`Chmod`, que forzaría 0644
+//     saltándose el umask y sería world-readable con umask 077—.
+func writeAtomic(path string, data []byte, mode *os.FileMode) error {
 	dir := filepath.Dir(path)
 
-	// Modo a preservar si sobrescribimos: capturamos el modo actual del destino
-	// ANTES de crear el temporal. Si no existe, `preserveMode` queda false y el
-	// modo del fichero nuevo será `fsFilePerm` recortado por el umask.
-	preserveMode := false
-	var existingMode os.FileMode
-	if info, err := os.Stat(path); err == nil {
-		preserveMode = true
-		existingMode = info.Mode().Perm()
+	// Modo a aplicar al fichero resultante (ver prioridad arriba). Con `mode`
+	// explícito, se aplica ese valor exacto; sin él, se preserva el modo del
+	// destino existente; sobre un destino nuevo sin `mode`, no se toca (queda
+	// `fsFilePerm` recortado por el umask).
+	applyMode := false
+	var wantMode os.FileMode
+	if mode != nil {
+		applyMode = true
+		wantMode = *mode
+	} else if info, err := os.Stat(path); err == nil {
+		applyMode = true
+		wantMode = info.Mode().Perm()
 	}
 
 	tmpName, tmp, err := createExclTemp(dir, fsFilePerm)
@@ -105,11 +114,12 @@ func writeAtomic(path string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	// Sobrescritura: iguala el modo del temporal al del fichero que reemplaza, para
-	// conservar sus permisos previos (igual que las rutas `OpenFile`). Sobre un
-	// destino inexistente NO tocamos el modo: queda `fsFilePerm` bajo el umask.
-	if preserveMode {
-		if err := os.Chmod(tmpName, existingMode); err != nil {
+	// Aplica el modo al temporal ANTES del rename (para que el fichero final nunca
+	// exista con permisos distintos ni un instante): modo explícito (`opts.mode`,
+	// no recortado por el umask), o el previo del destino en la sobrescritura. Sin
+	// nada que aplicar (destino nuevo sin `mode`), queda `fsFilePerm` bajo el umask.
+	if applyMode {
+		if err := os.Chmod(tmpName, wantMode); err != nil {
 			return err
 		}
 	}
@@ -152,7 +162,13 @@ func createExclTemp(dir string, perm os.FileMode) (string, *os.File, error) {
 // falla con un error que envuelve `os.ErrExist` → `mapFsError` lo rinde como
 // `EEXIST`. No hay temporal+rename: la exclusión exige que la creación misma sea
 // la operación indivisible.
-func writeExclusive(path string, data []byte) error {
+//
+// Permisos (§5, G57): la creación usa `fsFilePerm` recortado por el umask; si
+// `mode != nil` (`opts.mode`), un `Chmod` posterior fija el modo EXACTO no
+// recortado por el umask —la vía para un lockfile `0600` bajo cualquier umask—.
+// El `Chmod` va sobre un fichero que este proceso acaba de crear en exclusiva, así
+// que la ventana entre creación y chmod no la ve otro escritor de esta sesión.
+func writeExclusive(path string, data []byte, mode *os.FileMode) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, fsFilePerm)
 	if err != nil {
 		return err
@@ -161,7 +177,15 @@ func writeExclusive(path string, data []byte) error {
 		_ = f.Close()
 		return err
 	}
-	return f.Close()
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if mode != nil {
+		if err := os.Chmod(path, *mode); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // copyFile copia el contenido de `from` a `to` en streaming. Abre el origen
