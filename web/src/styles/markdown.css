@@ -8,7 +8,7 @@
   font-size: var(--fs-8);
   line-height: 1.92;
   color: var(--fg);
-  max-width: 68ch;
+  max-width: 72ch; /* 68→72 por legibilidad de doc larga (S47/ADR-025; rango 70-75) */
 }
 
 .markdown > *:first-child {

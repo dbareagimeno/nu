@@ -3,15 +3,15 @@ title: Qué es enu
 description: La idea de enu en una página — un kernel mínimo de Lua sobre el terminal donde todo, incluido el agente, es una extensión.
 ---
 
-`enu` es **un runtime de Lua orientado a terminal cuya killer app es un coding
-harness**: un único binario Go con un kernel mínimo donde todo lo demás —
-incluido el propio agente— son extensiones Lua.
+`enu` es **un motor para construir coding harnesses a medida**: un único binario
+Go con un kernel mínimo donde todo lo demás —incluido el agente oficial, que es
+la demo de referencia del motor— son extensiones Lua.
 
-Dicho de otra forma: `enu` es un coding harness de CLI/TUI, pero esa frase
-describe el *producto*. El *proyecto* es un **kernel diminuto y un sistema de
-extensiones** donde el loop del agente, la UI de chat, el soporte de MCP y los
-providers de LLM no tienen privilegio arquitectónico alguno: son Lua, como lo
-que tú escribas.
+Dicho de otra forma: `enu` se usa como un coding harness de CLI/TUI —trae uno
+oficial de serie—, pero esa frase describe el *producto*. El *proyecto* es el
+**motor**: un kernel diminuto y un sistema de extensiones donde el loop del
+agente, la UI de chat, el soporte de MCP y los providers de LLM no tienen
+privilegio arquitectónico alguno: son Lua, como lo que tú escribas.
 
 ## Las ideas que no debes perder de vista
 
@@ -26,7 +26,9 @@ que tú escribas.
    paralela por dentro. Si una extensión quema CPU en Lua, falta una primitiva
    o el trabajo va a un worker.
 4. **La API del core es sagrada.** Pequeña, aburrida, **crece solo por
-   adición**. Romper una firma rompe el mundo.
+   adición**. Romper una firma rompe el mundo — y mientras enu sea pre-1.0, las
+   roturas justificadas van por una decisión registrada (ADR), nunca por la vía
+   de hecho.
 5. **Batteries included, pero no enchufadas.** El binario trae las extensiones
    oficiales embebidas, pero ninguna se activa sola: `enu` recién instalado es un
    runtime desnudo, y el harness es una elección del usuario.
