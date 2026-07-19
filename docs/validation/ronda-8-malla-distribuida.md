@@ -67,6 +67,12 @@ local function run_job(job, role)
   local wt = enu.fs.tmpdir() .. "/" .. job.id                           -- ⏸
   enu.proc.run({ "git", "worktree", "add", wt, job.base })              -- ⏸
   enu.task.cleanup(function()
+    -- ⚠️ Patrón SUPERADO por G60/ADR-029: worktree remove es ⏸ y un cleanup
+    -- no puede suspender (lanzaría EINVAL). La corrección es cleanup→spawn o
+    -- release explícito + reaper (ver malla.md §5). Y la liveness del lock de
+    -- §6 (comentario de arriba, "pid + proc.alive") pasó a lease renovable +
+    -- reclamación por rancidez (proc.alive = señal secundaria). Se conserva el
+    -- pseudocódigo original como registro de la ronda; el contrato ya está fijo.
     enu.proc.run({ "git", "worktree", "remove", "--force", wt })
   end)
 

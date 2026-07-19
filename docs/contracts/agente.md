@@ -44,7 +44,7 @@ Session:fork(at?: integer, opts?: tabla) ⏸ -> Session -- bifurca y re-aloja; c
 Session:compact() ⏸                                  -- compactación manual
 Session:set_model(model: string)                     -- cambio en caliente (G19)
 Session:set_thinking(thinking)                        -- razonamiento en caliente (ADR-016)
-Session:close()                                      -- suelta el lock de escritor (G39); síncrona a propósito: llamable desde enu.task.cleanup
+Session:close() ⏸                                    -- suelta el lock de escritor (G39): hace I/O (borra el lock, ⏸). Llámala explícitamente antes de core:shutdown, bajo task de vida larga; NO desde enu.task.cleanup (un cleanup no puede ⏸ — G60 / api.md §3)
 Session.id / Session.usage -> { context_tokens, cost_usd, turns }
 ```
 
@@ -118,11 +118,16 @@ max_turns, tools...) salvo los que `opts` sobreescriba, con la regla de
 `opts` son efímeros como en `resume` (G18): no se persisten ni reescriben
 historia. Es la pieza del *fork-como-replicación* (pseudocódigo, ronda 8):
 K variantes que comparten el prefijo exacto, cada una re-alojada en su
-worktree vía `opts.cwd`. `Session:close()` suelta el lock de escritor
+worktree vía `opts.cwd`. `Session:close()` **⏸** suelta el lock de escritor
 ([sesiones.md](sesiones.md) §6) y marca la sesión cerrada (idempotente;
 los métodos posteriores fallan con error accionable). La regla de la casa:
-quien abre sesiones las cierra (`enu.task.cleanup`); el GC como red de
-seguridad no determinista, igual que los `Proc` de [api.md](api.md) §6.
+quien abre sesiones las cierra **explícitamente antes de `core:shutdown`,
+bajo task de vida larga** — **nunca desde `enu.task.cleanup`**, porque `close`
+hace I/O ⏸ y un cleanup no puede suspender (a diferencia de `Proc:kill`, que es
+síncrono y por eso sí vale en un cleanup; G60, [api.md](api.md) §3). La red de
+seguridad no es el GC sino la **reclamación por lease** del lock rancio
+([ADR-029](../decisions/adr/adr-029-resiliencia-lease-reclamable-reconciliacion.md)):
+si el proceso muere sin cerrar, el siguiente que abra lo reclama.
 
 **Control de razonamiento ([ADR-016](../decisions/adr/adr-016-modelo-canonico-de-thinking.md))**:
 `opts.thinking` (o el default de `agent.toml [thinking]`, §10) fija el modo de

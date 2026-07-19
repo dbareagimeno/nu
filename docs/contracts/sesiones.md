@@ -133,29 +133,58 @@ original queda intacto.
 Dos procesos haciendo append al mismo JSONL = corrupción intercalada. Regla:
 **una sesión tiene como máximo un escritor**, garantizado por lockfile.
 
+**Doctrina de resiliencia (G60, [ADR-029](../decisions/adr/adr-029-resiliencia-lease-reclamable-reconciliacion.md)).**
+Un recurso persistente —el lock aquí, los worktrees y claims de
+[malla.md](malla.md) allá— no se protege prometiendo «liberar al salir»: ningún
+proceso controla su propia muerte (`kill -9`, crash, corte de corriente). Se
+protege haciéndolo **reclamable desde fuera por identidad verificable**: el
+dueño **renueva** su tenencia mientras vive, y lo que queda **rancio** lo
+reconcilia el siguiente proceso que abre —o un reaper—. La liberación explícita
+al salir es *prontitud*, no la garantía; la garantía es la reclamación. Tres
+capas contables a un cliente: el `enu.task.cleanup` síncrono da **prontitud en
+memoria**; el drenaje del apagado
+([modelo-ejecucion.md](../core/modelo-ejecucion.md) §limitaciones) da
+**prontitud de I/O en salida limpia**; el lease renovable + reconciliación da
+**corrección pase lo que pase**.
+
 - `<sesión>.jsonl.lock` junto al transcript, contenido
   `{ pid, hostname, started }`. Se adquiere al abrir para escribir
   (crear/reanudar) con creación **exclusiva**
   (`enu.fs.write(..., { exclusive = true, mode = 0600 })`, atómica: dos
   procesos no pueden ganar a la vez — [api.md](api.md) §5; `mode` lo deja en
-  `0600`, no world-readable, G57), se libera al salir. La
-  identidad del escritor que se graba es la del proceso `enu` actual: el
-  `pid`, de `enu.sys.pid()` (G32); el `hostname`, de `enu.sys.hostname()`
-  (G17); el `started`, de `enu.sys.now_ms()`. Al *verificar* un lock ajeno se
-  comprueba su `pid` con `enu.proc.alive` (existencia en esta máquina, no
-  identidad — G17). **Leer nunca requiere lock** (un append-only es seguro
-  de leer a medias).
-- **Lock huérfano** (crash): si el `pid` no está vivo en esta máquina, es
-  basura — se limpia en silencio. Si el lock es de otro `hostname`
-  (directorio sincronizado), no se puede verificar: se pregunta, nunca se
-  asume.
-- **Conflicto real** (pid vivo): el segundo proceso recibe aviso claro con
-  tres salidas — **fork** (por defecto: continúa en rama nueva vía
-  `meta.parent`, §5, sin pisar a nadie), **solo lectura**, o **forzar**
-  (robar el lock, explícito y con confirmación).
-- Se eligió lockfile sobre `flock` del SO por semántica predecible en
-  Windows y filesystems de red; el auto-fork silencioso se descartó por
-  bifurcar el historial sin conocimiento del usuario.
+  `0600`, no world-readable, G57). La identidad del escritor que se graba es la
+  del proceso `enu` actual: el `pid`, de `enu.sys.pid()` (G32); el `hostname`,
+  de `enu.sys.hostname()` (G17); el `started`, de `enu.sys.now_ms()`. El dueño
+  **renueva** el lock mientras vive (re-graba `started` como marca de frescura,
+  o toca el mtime); un lock cuya frescura no se ha renovado en un umbral
+  **generoso** (minutos, no segundos) está **rancio**. Al salir se **cierra
+  explícitamente** (`Session:close`, ⏸, bajo task de vida larga —
+  [agente.md](agente.md) §2), que borra el lock; el cierre **nunca** se registra
+  en un `enu.task.cleanup`, porque un cleanup no puede hacer I/O suspendente
+  (G60, [api.md](api.md) §3). **Leer nunca requiere lock** (un append-only es
+  seguro de leer a medias).
+- **Lock rancio o huérfano** (crash, `kill -9`, pid muerto): la reclamación se
+  decide por **frescura del lease**, no solo por el `pid`. Si el lease está
+  rancio (no renovado en el umbral) es basura y se reclama en silencio.
+  Consultar `enu.proc.alive` sobre el `pid` es una señal **secundaria** que
+  refuerza la decisión pero no la funda: un pid reciclado por el SO informaría
+  «vivo» sobre un escritor muerto (H-F), por eso manda el lease. Si el lock es
+  de otro `hostname` (directorio sincronizado), no se puede verificar la
+  liveness local: se aplica el mismo criterio de rancidez y, en la duda, se
+  pregunta, nunca se asume.
+- **Conflicto real** (lease fresco, dueño vivo): el segundo proceso recibe aviso
+  claro con tres salidas — **fork** (por defecto: continúa en rama nueva vía
+  `meta.parent`, §5, sin pisar a nadie), **solo lectura**, o **forzar** (robar
+  el lock, explícito y con confirmación).
+- Se eligió **lockfile con lease renovable** sobre `flock` del SO. El rechazo
+  original de `flock` («semántica predecible en Windows») quedó caduco cuando G9
+  sacó Windows nativo de la v1 (solo WSL2, POSIX íntegro — H-E), pero `flock` se
+  descarta igualmente como **columna vertebral**: es **mono-host** (inservible
+  para la malla, cuyos claims cruzan máquinas) y poco fiable sobre filesystems de
+  red (frecuentes en entornos corporativos). Reconsiderable solo como
+  optimización **local** si algún día un lease local resultara insuficiente. El
+  auto-fork silencioso se descartó por bifurcar el historial sin conocimiento
+  del usuario.
 
 ## 7. Listado y reanudación
 

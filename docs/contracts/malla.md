@@ -97,9 +97,15 @@ mesh.release(job_id, opts?) ⏸               -- borra la claim-ref (job termina
 - El contenido del commit de claim/heartbeat es `{ hostname, ts }`
   (`enu.sys.hostname/now_ms`). **Los relojes de los nodos no están
   sincronizados**: el umbral de staleness que un re-claimer aplique sobre
-  `claim_info().ts` debe ser generoso (minutos, no segundos). El lock local de
-  [sesiones.md](sesiones.md) §6 (pid + `proc.alive`) no cruza máquinas — aquí
-  la liveness es el heartbeat, deliberadamente.
+  `claim_info().ts` debe ser generoso (minutos, no segundos). `heartbeat` +
+  staleness **es** la doctrina de lease reclamable de
+  [sesiones.md](sesiones.md) §6
+  ([ADR-029](../decisions/adr/adr-029-resiliencia-lease-reclamable-reconciliacion.md))
+  llevada al plano distribuido: el dueño renueva (`--force-with-lease`) y lo
+  rancio se reconcilia. El lock local de sesión sigue el mismo principio en un
+  solo host, pero su lease **no cruza máquinas** — entre nodos la liveness es el
+  heartbeat sobre git, deliberadamente (`enu.proc.alive` solo vería su propia
+  máquina).
 - Robar un claim viejo = `release` + `claim` (el CAS arbitra si dos re-claimers
   compiten).
 
@@ -126,7 +132,11 @@ mesh.run_job(job, role, opts?) ⏸ -> Result
 Pasos (todo sobre contratos públicos; cada paso es sustituible componiendo las
 piezas de §2-§4 a mano):
 
-1. Worktree desde `job.base` (§4) con `cleanup` garantizado.
+1. Worktree desde `job.base` (§4), liberado con `cleanup` — pero su `remove` es
+   ⏸: un `enu.task.cleanup` no puede borrarlo directamente (G60, [api.md](api.md)
+   §3), así que el runner lo cierra explícitamente al terminar o vía
+   *cleanup→spawn*, y lo que quede huérfano lo reconcilia un reaper por la
+   doctrina de lease (§3, [ADR-029](../decisions/adr/adr-029-resiliencia-lease-reclamable-reconciliacion.md)).
 2. **Verificación de skills pineadas** (§9): el hash de cada skill del Role se
    comprueba contra el worktree (`git hash-object`); mismatch → `EMESH`
    accionable y el job falla ANTES de abrir sesión.

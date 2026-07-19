@@ -145,3 +145,16 @@ recibir el chunk ya parseado, pedir el Block, colocarlo.
    escale con el tamaño de la pantalla o del repo debe ser primitiva Go
    ("Lua decide, Go ejecuta"). Si una extensión necesita CPU en Lua, su
    herramienta es un worker — nunca el estado principal.
+10. **El apagado limpio drena con plazo antes de demoler.** Al salir del modo
+    interactivo, el runtime **cancela** las tasks vivas y **bombea** el
+    scheduler con un presupuesto acotado —un plazo **genérico** de drenaje, del
+    mismo espíritu que el watchdog (punto 1: configurable, no dimensionado a
+    ningún recurso concreto)— para que corran sus `enu.task.cleanup`, incluidas
+    las tasks que un cleanup *spawnee* para hacer I/O de cierre (patrón
+    *cleanup→spawn*, [api.md](../contracts/api.md) §3), antes de destruir la VM.
+    Da **prontitud de I/O en salida limpia** y simetriza el interactivo con el
+    headless (donde `RunTasks` ya drena). No cubre el crash ni `kill -9` —para
+    eso está la reclamación por lease
+    ([sesiones.md](../contracts/sesiones.md) §6,
+    [ADR-029](../decisions/adr/adr-029-resiliencia-lease-reclamable-reconciliacion.md))—:
+    el drenaje es prontitud, no la garantía última (G60).
