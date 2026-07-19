@@ -49,7 +49,8 @@ solo `id` para tres ficheros sin decir cómo se reporta un fallo parcial.
 > del Runtime que envuelve `discover()`+`topoSort()` sin `Boot()`: reusa el
 > loader, no re-implementa nada). Los **cuatro checks de producto**
 > (`provider.model`, `provider.key`, `tools.external`, `provider.reach`) salen
-> con `status: "skip"` y un `remedy` que apunta a este hallazgo: `doctor.v1`
+> con `status: "skip"` y la pista en `detail` apuntando a este hallazgo
+> (`remedy: null`, la regla del esquema: `remedy` solo en `fail`): `doctor.v1`
 > **nunca miente con un `ok` fabricado**. El diseño de la introspección que
 > necesitan se difiere como [P45](../postponed/pospuesto.md).
 >
