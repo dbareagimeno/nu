@@ -252,7 +252,20 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
      `plugins.enabled` en `enu.toml` —y plantillas activas de
      `agent.toml`/`providers.toml` si no existen, para dejar el harness usable,
      ADR-017/G35— y sale; con `-p`/`-e`, lo activa solo para ese
-     proceso sin tocar disco. ADR-015, G33).
+     proceso sin tocar disco. ADR-015, G33); `--version`/`-V` (imprime la
+     identidad del binario —`enu <major>.<minor>.<patch> · API <n> (<os>/<arch>)`,
+     leyendo `enu.version` de api.md más `runtime.GOOS/GOARCH` de Go— y sale 0,
+     **sin arrancar el runtime ni leer config**). **Por qué es un flag y no el
+     subcomando `enu version`** (S53, tensión con la frontera de ADR-026 que el
+     juez de filosofía levantó): `--version` es un **meta-flag de introspección
+     universal y sin efectos**, la misma categoría que `--help`/`-h` —que ningún
+     CLI modela como subcomando—, distinta de los **verbos de acción** de gestión
+     (`init`/`doctor`/`update`/`uninstall`, ADR-026: tienen efectos, red o leen
+     la semántica de config). La frontera de ADR-026 gobierna esos verbos, no la
+     categoría meta; por eso `--version`/`-V` viven aquí, con los flags. El
+     diagnóstico RICO de la versión (más checks) sigue en `enu doctor`
+     (`binary.version`): `--version` es el afijo mínimo y convencional, `doctor`
+     el informe.
    - **Headless / códigos de salida**: `enu -e` y el modo agente corren SIN TTY
      (G20) con códigos de salida coherentes para CI/scripts — **0** éxito;
      **1** error de ejecución (el chunk, el turno o el provider lanzaron, o el
