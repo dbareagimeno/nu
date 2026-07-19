@@ -1,11 +1,11 @@
 ---
 title: "Política estable de contribuciones: DCO (Developer Certificate of Origin); el contribuidor conserva su copyright y se retira la reserva de cesión/CLA caso por caso"
 type: "adr"
-id: "ADR-029"
+id: "ADR-030"
 status: "aceptada"
 date: "2026-07-19"
 ---
-# ADR-029 · Política de contribuciones: DCO
+# ADR-030 · Política de contribuciones: DCO
 
 **Estado:** Aceptada · 2026-07-19 (decidida en la
 [auditoría del feedback «10/10»](../../audits/auditoria-feedback-10-de-10-2026-07-19.md),

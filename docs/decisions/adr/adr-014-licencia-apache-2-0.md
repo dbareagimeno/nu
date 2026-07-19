@@ -8,7 +8,7 @@ date: "2026-06"
 # ADR-014 · Licencia: Apache 2.0
 
 **Estado:** Aceptada · 2026-06 · **Parcialmente reemplazada por
-[ADR-029](adr-029-politica-de-contribuciones-dco.md)** (2026-07-19): la
+[ADR-030](adr-030-politica-de-contribuciones-dco.md)** (2026-07-19): la
 elección de licencia (Apache 2.0) sigue íntegra y vigente, pero la política de
 contribuciones «caso por caso, con reserva de pedir cesión o CLA» que este ADR
 describía queda retirada — la política estable es DCO y el contribuidor

@@ -58,7 +58,17 @@ masivos; el principal renderiza.
 - **Todo recurso que crees, regístralo en `enu.task.cleanup`** (matar el
   proceso, destruir la región, desapilar el input handler). Los cleanups
   corren siempre — éxito, error o cancelación; es la única forma de no
-  dejar basura cuando el usuario pulsa `esc` a mitad de tu código.
+  dejar basura cuando el usuario pulsa `esc` a mitad de tu código. Pero el
+  liberador es **síncrono y solo-memoria**: corre sin contexto de task, así que
+  **no puede llamar funciones ⏸** (lo intenta → `EINVAL`). Para cierres
+  síncronos (matar proceso, destruir región, desapilar input) el registro
+  directo basta; para un recurso cuyo cierre necesita I/O suspendente (borrar un
+  lock o un worktree en disco), **ciérralo explícitamente** antes de emitir
+  `core:shutdown`, o haz que el cleanup **lance una task** que haga el I/O
+  (patrón *cleanup→spawn*, que corre en salida limpia por el drenaje del apagado)
+  — G60. Y no confíes el cierre solo al cleanup: un recurso *persistente* (un
+  lock en disco) debe ser **reclamable** por el siguiente proceso, porque un
+  `kill -9` no corre ningún cleanup ([ADR-029](../decisions/adr/adr-029-resiliencia-lease-reclamable-reconciliacion.md)).
 - Si escribes listas de `caps` a mano, cuida las parejas prácticas:
   `proc.spawn` sin `proc.kill` = procesos que no puedes matar. Los paquetes
   oficiales (`agent.caps.*`) ya las curan juntas — imprímelos para ver
@@ -211,6 +221,9 @@ error({ code = "EINVAL", message = "filtro vacío", detail = { arg = "filter" } 
 - [ ] Errores estructurados; nada de strings "exitosos" con errores dentro.
 - [ ] Tools mutantes con `default = "ask"`; schemas descriptivos.
 - [ ] Regiones e input handlers limpiados también en errores.
+- [ ] Los cleanups que borran algo del disco (locks, worktrees) usan
+      *cleanup→spawn* o cierre explícito, nunca ⏸ directo; los recursos
+      persistentes son además reclamables desde fuera (no dependen del cleanup).
 - [ ] Solo colores semánticos; keymaps remapeables.
 - [ ] Escribo solo en mi directorio; mis eventos llevan mi namespace.
 - [ ] API de Lua 5.4 (nada de `loadstring`/`unpack`/`setfenv`/`getfenv` de 5.1).

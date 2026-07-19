@@ -211,7 +211,7 @@ proponer el *qué*.
 Las contribuciones siguen el **DCO** (Developer Certificate of Origin):
 conservas el copyright de tu aportación y certificas su origen firmando tus
 commits (`git commit -s`). Sin CLA ni cesión de derechos — ver
-[CONTRIBUTING.md](CONTRIBUTING.md) y el ADR-029.
+[CONTRIBUTING.md](CONTRIBUTING.md) y el ADR-030.
 
 ## Licencia
 

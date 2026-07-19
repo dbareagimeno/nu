@@ -208,7 +208,7 @@ the *what*.
 Contributions follow the **DCO** (Developer Certificate of Origin): you keep
 the copyright of your work and certify its origin by signing off your commits
 (`git commit -s`). No CLA, no copyright assignment — see
-[CONTRIBUTING.md](CONTRIBUTING.md) and ADR-029.
+[CONTRIBUTING.md](CONTRIBUTING.md) and ADR-030.
 
 ## License
 

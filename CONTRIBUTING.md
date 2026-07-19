@@ -73,7 +73,7 @@ falta algo, ábrelo como discusión antes de implementarlo.
 
 La política de contribuciones es el **DCO** (Developer Certificate of Origin,
 v1.1), decidida en
-[ADR-029](docs/decisions/adr/adr-029-politica-de-contribuciones-dco.md):
+[ADR-030](docs/decisions/adr/adr-030-politica-de-contribuciones-dco.md):
 
 - **Conservas el copyright de tu aportación.** No se pide cesión de derechos
   ni la firma de un CLA — ni caso por caso ni en general. Tu código entra en

@@ -274,7 +274,7 @@ relajan.
 - **No abras un Pull Request salvo que se pida explícitamente.**
 - **Licencia:** el proyecto es **Apache 2.0** ([LICENSE](LICENSE)), copyright de
   Diego Barea, que conserva la titularidad (ADR-014); las contribuciones
-  externas siguen el DCO (ADR-029), sin cesión ni CLA. No introduzcas código de
+  externas siguen el DCO (ADR-030), sin cesión ni CLA. No introduzcas código de
   terceros con licencia incompatible ni cabeceras de copyright ajenas sin
   acordarlo; las contribuciones externas se rigen por [CONTRIBUTING.md](CONTRIBUTING.md).
 

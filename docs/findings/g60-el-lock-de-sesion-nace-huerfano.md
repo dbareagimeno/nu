@@ -2,12 +2,53 @@
 title: "El `.jsonl.lock` nace huérfano en el arranque del chat: `enu.task.cleanup` no puede ⏸, así que la promesa de liberación de `sesiones.md` §6 es inimplementable tal como está escrita"
 type: "hallazgo"
 id: "G60"
-status: "abierto"
-date: "2026-07-18"
+status: "resuelto"
+date: "2026-07-19"
 origin: "investigación de la opción (c) de G58 (reproducido empíricamente con el binario)"
-affected: ["api.md §3 (`enu.task.cleanup`)", "sesiones.md §6", "agente.md (`Session:close`)", "guia-plugins.md", "extensión sessions (init.lua)", "extensión chat (ciclo de vida de la sesión)", "malla.md (worktrees y locks de subagentes)"]
+resolution: "Doctrina de lease reclamable + reconciliación (ADR-029) escrita en sesiones.md §6 y reconocida en malla.md §3/§5; drenaje del apagado (A2) documentado en modelo-ejecucion.md §limitaciones; cleanups aclarados síncronos/solo-memoria en api.md §3 y guia-plugins.md (patrón cleanup→spawn); H-D corregido en agente.md; H-A absorbido (resuelto por A2, sin G## propio); A1→P46; flock/C1 descartado. Construcción (drenaje, orden de Session:close, ciclo de vida del chat, renovación/reaper) diferida a sesión de plan."
+adr: "ADR-029"
+affected: ["api.md §3 (`enu.task.cleanup`)", "sesiones.md §6", "agente.md (`Session:close`)", "guia-plugins.md", "modelo-ejecucion.md (§limitaciones, apagado)", "malla.md (claim/heartbeat §3 y worktree §5)", "pospuesto.md (P46, P41)", "ADR-029", "extensión sessions (init.lua) — construcción diferida", "extensión chat (ciclo de vida de la sesión) — construcción diferida"]
 ---
-# G60 · El `.jsonl.lock` nace huérfano en el arranque del chat: `enu.task.cleanup` no puede ⏸ y la promesa de `sesiones.md` §6 es inimplementable — `api.md` §3 / `sesiones.md` §6 / sessions / chat
+# G60 · El `.jsonl.lock` nace huérfano en el arranque del chat: `enu.task.cleanup` no puede ⏸ y la promesa de `sesiones.md` §6 es inimplementable — **RESUELTO** — `api.md` §3 / `sesiones.md` §6 / sessions / chat
+
+> ✅ **RESUELTO (2026-07-19, [ADR-029](../decisions/adr/adr-029-resiliencia-lease-reclamable-reconciliacion.md)).**
+> Decisión confirmada por el operador y aplicada a todos los documentos. Panel de
+> filosofía: VÍA LIBRE (sin objeción). Paquete de cuatro piezas, en capas de
+> garantía:
+>
+> 1. **Doctrina B2 (ADR-029), unificada.** «Recurso persistente = lease reclamable
+>    por identidad verificable + reconciliación»: el dueño renueva, lo rancio lo
+>    reconcilia el siguiente proceso o un reaper; `enu.proc.alive` pasa a señal
+>    secundaria (cierra **H-F**). Escrita en [sesiones.md](../contracts/sesiones.md)
+>    §6, reconociendo que el claim/heartbeat de [malla.md](../contracts/malla.md)
+>    §3 (`--force-with-lease`, `ts` generoso, robar=`release`+`claim`) **ya la
+>    encarna** — no un principio nuevo colgado de la §11 abierta.
+> 2. **A2: el apagado cancela y drena con plazo.** Cambio interno del kernel, sin
+>    API nueva; el plazo es un presupuesto **genérico** de drenaje (al estilo del
+>    watchdog). Documentado en [modelo-ejecucion.md](../core/modelo-ejecucion.md)
+>    §limitaciones. Con el patrón cleanup→spawn (H-B) da prontitud de I/O en toda
+>    salida limpia y cierra el agujero general **H-A**, que queda **absorbido aquí**
+>    (sin G## propio).
+> 3. **Capas 1+2 + honestidad documental.** Los cleanups se aclaran **síncronos y
+>    solo-memoria** (⏸ → `EINVAL`), con el patrón cleanup→spawn, en
+>    [api.md](../contracts/api.md) §3 y [guia-plugins.md](../contracts/guia-plugins.md);
+>    se corrige la afirmación falsa **H-D** de `agente.md` (`Session:close` es ⏸, no
+>    llamable desde cleanup). El orden de `Session:close` y el ciclo de vida del chat
+>    bajo task de vida larga son **construcción diferida** (abajo).
+> 4. **A1 → [P46](../postponed/pospuesto.md)** (permitir ⏸ directo en cleanups, con
+>    disparador de fricción real). **flock/C1 descartado** como columna vertebral
+>    (mono-host + NFS; **H-E**), reconsiderable solo como optimización local.
+>
+> **Trabajo de implementación pendiente** (no es este hallazgo; se registra vía
+> `/planificar-sesion`): drenaje del apagado (A2), orden de `Session:close` (borrar
+> el lock antes de `closed=true`), sesión del chat bajo task de vida larga, y la
+> renovación/reaper del lease. Al construirlo, restaurar la aserción «el
+> `.jsonl.lock` desaparece» retirada de `e2e/chat_test.go`. La construcción de A2
+> debe tener presente [P33](../postponed/pospuesto.md): al cancelar tasks
+> suspendidas en una primitiva ⏸ en vuelo (p. ej. el `fs.remove`/`proc.run` de un
+> cleanup→spawn), sus efectos pueden aterrizar tras el desmontaje.
+>
+> Lo que sigue es el registro original del hallazgo.
 
 **Problema.** La investigación de la opción (c) de [G58](g58-el-chat-no-se-cierra-hasta.md)
 refutó la hipótesis de que el `.jsonl.lock` sobreviviera por el camino de
@@ -154,7 +195,7 @@ verificados en código y, donde se indica, ejecutando el binario:
   y el ciclo de vida del chat, corregir H-D, documentar que la garantía es la
   reclamación. Con H-A y H-F sobre la mesa, insuficiente por sí sola.
 
-## Propuesta de resolución (2026-07-18 — PENDIENTE de confirmación)
+## Propuesta de resolución (2026-07-18 — CONFIRMADA 2026-07-19, ADR-029)
 
 > Contexto que pesa en la elección: el reposicionamiento del proyecto como
 > **motor para construir coding harnesses a medida** en entornos
@@ -190,10 +231,13 @@ Jerarquía de garantías resultante, contable a un cliente: *cleanup* =
 prontitud en memoria; *drenaje* = prontitud de I/O en salida limpia; *lease +
 reaper* = corrección pase lo que pase, incluso quitando el enchufe.
 
-La entrada queda **ABIERTA** hasta confirmar la propuesta; al resolverse,
-aplicar a todos los documentos afectados (y valorar si H-A merece hallazgo
-propio o queda absorbido aquí).
+La propuesta se **confirmó el 2026-07-19** y se aplicó a todos los documentos
+afectados (ver el bloque ✅ RESUELTO de la cabecera). **H-A** quedó **absorbido
+aquí** (lo resuelve A2, sin G## propio). La decisión arquitectónica se registró
+en [ADR-029](../decisions/adr/adr-029-resiliencia-lease-reclamable-reconciliacion.md).
 
-**Disparador de reapertura.** — (abierto). Afecta a: cualquier sesión que
-toque `enu.task.cleanup`, el ciclo de vida de la sesión del chat, el texto de
-`sesiones.md` §6, o la estabilización de `malla.md`.
+**Disparador de reapertura.** — (cerrado). El seguimiento vivo pasa a la
+**construcción**: cualquier sesión de implementación que toque el drenaje del
+apagado, el orden de `Session:close`, el ciclo de vida de la sesión del chat o la
+renovación/reaper del lock se rige por ADR-029 y `sesiones.md` §6. La ergonomía
+de cleanups suspendientes vive ahora en [P46](../postponed/pospuesto.md).
