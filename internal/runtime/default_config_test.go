@@ -109,6 +109,77 @@ func TestWithEnabledPluginsOverridesToml(t *testing.T) {
 	}
 }
 
+// TestWriteInitConfig blinda `WriteInitConfig` (S49, el backend de `enu init`) EN SU
+// PROPIO PAQUETE: hasta CP-12 solo lo ejercitaba el wizard de `package main`, así que la
+// mutación no veía muerta la rama `activateOfficial` ni la semántica por-fichero. Cubre:
+// (a) con activación, escribe `plugins.enabled` + siembra ambas plantillas con el MODELO
+// dado; (b) sin activación, NO escribe `plugins.enabled` pero SÍ siembra plantillas;
+// (c) segunda pasada: respeta las plantillas existentes (created vacío, respected lleno).
+func TestWriteInitConfig(t *testing.T) {
+	t.Run("con_activacion_escribe_enabled_y_plantillas_con_modelo", func(t *testing.T) {
+		rt, cfg := newBareRuntime(t)
+		dir, activated, created, respected, err := rt.WriteInitConfig("anthropic/haiku", true)
+		if err != nil {
+			t.Fatalf("WriteInitConfig: %v", err)
+		}
+		if dir != cfg {
+			t.Fatalf("configDir %q != %q", dir, cfg)
+		}
+		if len(activated) == 0 || contains(activated, "example") {
+			t.Fatalf("con activación debe activar el conjunto oficial sin example; got %v", activated)
+		}
+		if !contains(created, agentTomlName) || !contains(created, providersTomlName) {
+			t.Fatalf("en config virgen ambas plantillas se crean; got created=%v", created)
+		}
+		if len(respected) != 0 {
+			t.Fatalf("config virgen: nada que respetar; got %v", respected)
+		}
+		// El agent.toml sembrado lleva el MODELO pasado (no el default).
+		agentData, rerr := os.ReadFile(filepath.Join(cfg, agentTomlName))
+		if rerr != nil {
+			t.Fatalf("leer agent.toml: %v", rerr)
+		}
+		if !strings.Contains(string(agentData), "anthropic/haiku") {
+			t.Fatalf("agent.toml debe fijar el modelo dado; got:\n%s", agentData)
+		}
+	})
+
+	t.Run("sin_activacion_no_escribe_enabled_pero_siembra_plantillas", func(t *testing.T) {
+		rt, cfg := newBareRuntime(t)
+		_, activated, created, _, err := rt.WriteInitConfig("anthropic/opus", false)
+		if err != nil {
+			t.Fatalf("WriteInitConfig: %v", err)
+		}
+		if len(activated) != 0 {
+			t.Fatalf("sin activación no debe activar nada; got %v", activated)
+		}
+		if !contains(created, agentTomlName) {
+			t.Fatalf("sin activación las plantillas SÍ se siembran; got %v", created)
+		}
+		// Sin activación no se escribe enu.toml (no hay plugins.enabled que fijar).
+		if _, serr := os.Stat(filepath.Join(cfg, "enu.toml")); serr == nil {
+			t.Fatalf("sin activación no debe crearse enu.toml")
+		}
+	})
+
+	t.Run("segunda_pasada_respeta_plantillas_existentes", func(t *testing.T) {
+		rt, _ := newBareRuntime(t)
+		if _, _, _, _, err := rt.WriteInitConfig("anthropic/opus", true); err != nil {
+			t.Fatalf("primera WriteInitConfig: %v", err)
+		}
+		_, _, created, respected, err := rt.WriteInitConfig("anthropic/opus", true)
+		if err != nil {
+			t.Fatalf("segunda WriteInitConfig: %v", err)
+		}
+		if len(created) != 0 {
+			t.Fatalf("segunda pasada: nada nuevo que crear; got %v", created)
+		}
+		if !contains(respected, agentTomlName) || !contains(respected, providersTomlName) {
+			t.Fatalf("segunda pasada: ambas plantillas se respetan; got %v", respected)
+		}
+	})
+}
+
 // TestWriteDefaultConfigPersistent blinda el modo PERSISTENTE: `WriteDefaultConfig`
 // escribe el conjunto de producto en `enu.toml`, devuelve qué escribió y dónde, y es
 // idempotente.

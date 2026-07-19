@@ -56,6 +56,15 @@ debe poder reconstruir.
 | S43 | Extensión oficial `chat` (UI del harness sobre toolkit + agente; streaming markdown); CP-11 (chat.md) | [s43-extension-oficial-chat-ui.md](s43-extension-oficial-chat-ui.md) |
 | S44 | Extensión oficial `repl` (REPL de Lua sobre la API pública, activable solo, G21) (arquitectura §Distribución) | [s44-extension-oficial-repl-repl.md](s44-extension-oficial-repl-repl.md) |
 | S45 | Superficie CLI (flags, --auto-permissions, --continue/G18, códigos de salida); cierra la Fase 8 y el plan (arquitectura nº5) | [s45-superficie-cli-flags-auto-permissions.md](s45-superficie-cli-flags-auto-permissions.md) |
+| S46 | README raíz en inglés y filosofía a la tesis de motor de harnesses (Fase 9, ADR-025 Fase 1) | [s46-readme-raiz-en-ingles.md](s46-readme-raiz-en-ingles.md) |
+| S47 | Copy de la web a la tesis de motor de harnesses + legibilidad de doc larga (Fase 9, ADR-025 Fase 1) | [s47-copy-web-a-la-tesis-y-legibilidad.md](s47-copy-web-a-la-tesis-y-legibilidad.md) |
+| S48 | Matriz de smoke tests de instalación en sistemas limpios (Fase 9, ADR-025 Fase 1; refina ADR-013) | [s48-matriz-smoke-instalacion-sistemas-limpios.md](s48-matriz-smoke-instalacion-sistemas-limpios.md) |
+| S49 | `enu init`: el primer subcomando del binario y el dispatch de gestión (Fase 9, ADR-026; G61) | [s49-enu-init-primer-subcomando.md](s49-enu-init-primer-subcomando.md) |
+| S50 | `enu doctor`: diagnóstico de solo lectura, 7 checks kernel (4 de producto skip por G62) (Fase 9, ADR-026) | [s50-enu-doctor-diagnostico.md](s50-enu-doctor-diagnostico.md) |
+| S51 | Instalador endurecido (sin sudo, atómico) + `enu update`/`enu uninstall`; verifyChecksum Go compartido 🔒 (Fase 9, ADR-026 piezas 4-5) | [s51-instalador-endurecido-update-uninstall.md](s51-instalador-endurecido-update-uninstall.md) |
+| S52 | Limpieza nu→enu en las traducciones inglesas de la web (residuo de ADR-022; editorial, exenta SDD) (Fase 9) | [s52-limpieza-nu-enu-traducciones-web.md](s52-limpieza-nu-enu-traducciones-web.md) |
+| CP-12 | Cierre de la Fase 9: funnel smoke contra el binario real + mutación 🔒 batcheada de S49/S50/S51 (5 tests nuevos) | [cp12-cierre-fase-9.md](cp12-cierre-fase-9.md) |
+| S53 | Flag `--version`/`-V` (Fase 10 — Convenciones CLI): identidad del binario, meta-flag estilo `--help`, `versionString()` compartida con doctor | [s53-flag-version.md](s53-flag-version.md) |
 | Cierre | coherencia post-plan — P21 (thinking adaptativo, pospuesto) + fix del log espurio de `EvalTaskString` | [cierre-post-plan.md](cierre-post-plan.md) |
 | G42+G43 | Retry con backoff en el motor + `agent:error` estructurado con reintento manual (agente.md §2/§4/§10, chat.md §2/§4) | [g42-g43-retry-backoff.md](g42-g43-retry-backoff.md) |
 | G53–G56 | Construcción del lote de seguridad G53+G54+G55+G56 (auditoría 2026-07-16) | [g53-g56-seguridad.md](g53-g56-seguridad.md) |

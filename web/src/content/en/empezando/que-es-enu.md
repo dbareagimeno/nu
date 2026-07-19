@@ -3,14 +3,15 @@ title: What is enu
 description: enu's idea in one page — a minimal Lua kernel over the terminal where everything, including the agent, is an extension.
 ---
 
-`enu` is **a terminal-oriented Lua runtime whose killer app is a coding
-harness**: a single Go binary with a minimal kernel where everything else —
-including the agent itself— are Lua extensions.
+`enu` is **an engine for building custom coding harnesses**: a single Go binary
+with a minimal kernel where everything else —including the official agent, which
+is the engine's reference demo— are Lua extensions.
 
-Put another way: `enu` is a CLI/TUI coding harness, but that phrase describes
-the *product*. The *project* is a **tiny kernel and an extension system**
-where the agent loop, the chat UI, MCP support, and LLM providers have no
-architectural privilege whatsoever: they're Lua, just like whatever you write.
+Put another way: `enu` is used as a CLI/TUI coding harness —it ships an official
+one— but that phrase describes the *product*. The *project* is the **engine**: a
+tiny kernel and an extension system where the agent loop, the chat UI, MCP
+support, and LLM providers have no architectural privilege whatsoever: they're
+Lua, just like whatever you write.
 
 ## The ideas you must never lose sight of
 
@@ -25,7 +26,8 @@ architectural privilege whatsoever: they're Lua, just like whatever you write.
    on the inside. If an extension burns CPU in Lua, a primitive is missing or
    the work should go to a worker.
 4. **The core API is sacred.** Small, boring, **grows only by addition**.
-   Breaking a signature breaks the world.
+   Breaking a signature breaks the world — and while enu is pre-1.0, justified
+   breaks go through a recorded decision (an ADR), never by default.
 5. **Batteries included, but not plugged in.** The binary ships with the
    official extensions embedded, but none activates on its own: a freshly
    installed `enu` is a bare runtime, and the harness is a choice made by the

@@ -95,8 +95,13 @@ git push origin vX.Y.Z
 ```
 
 Un tag con sufijo (`-rc1`, `-beta`…) se publica como **pre-release** (no "Latest");
-uno limpio `X.Y.Z` es release normal. `release.yml` cross-compila las 4 plataformas
+uno limpio `X.Y.Z` es release normal. `release.yml` cross-compila los 3 binarios
 objetivo, genera `checksums.txt` y crea la GitHub Release con notas autogeneradas.
+Además, el job `imagen` publica una **imagen de contenedor multi-arch**
+(`linux/amd64`+`arm64`) en GHCR ([ADR-028](../decisions/adr/adr-028-imagen-de-contenedor-publicada.md));
+es independiente de los assets (va al registro, no a la Release), y `latest` solo
+se mueve en releases no pre-release. **La PRIMERA publicación crea el paquete GHCR
+como privado**: hazlo público una vez en *Settings → Packages* (y enlázalo al repo).
 
 ### 6. Reintegrar `main → develop` — cierra el grafo
 
@@ -116,12 +121,44 @@ GitHub: sería `main → develop` (al revés) y arrastraría solo esos merge com
 ## Verificación
 
 - **Release**: `gh release view vX.Y.Z` → sin draft, sin prerelease (salvo sufijo),
-  **5 assets** (`checksums.txt` + `enu-vX.Y.Z-{linux,darwin}-{amd64,arm64}.tar.gz`);
+  **4 assets** (`checksums.txt` + `enu-vX.Y.Z-linux-amd64.tar.gz` + `-linux-arm64` + `-darwin-arm64`; sin Mac Intel `darwin-amd64`, ADR-027);
   `gh release list` la marca `Latest`.
 - **Web**: `https://dbareagimeno.github.io/enu/` responde `200` y el badge muestra
   `vX.Y.Z` (0 enlaces `/nu/` residuales).
 - **Instalador**: `install.sh` resuelve la última estable dinámicamente y baja
   `enu-vX.Y.Z-<os>-<arch>.tar.gz` — mismo nombre que produce `release.yml`.
+- **Imagen**: `docker pull ghcr.io/dbareagimeno/enu:vX.Y.Z` trae el manifiesto
+  multi-arch (`linux/amd64`+`arm64`); `docker run --rm ghcr.io/dbareagimeno/enu:vX.Y.Z -e 'return enu.version.api'`
+  responde con el APILevel. La publica el job `imagen` (ADR-028).
+
+## Instalador (espec operativa — ADR-026, pieza 5)
+
+Contrato de `install.sh` (y de `enu update`, que comparte disciplina). Es la
+espec que la sesión S51 implementa; los *steps* del YAML siguen sin ser API
+(ADR-013), pero estas decisiones sí se mantienen estables:
+
+- **Checksum obligatorio.** Todo artefacto descargado se verifica contra el
+  `checksums.txt` de su release **antes** de instalarse; si no cuadra o falta,
+  el instalador aborta con error claro. No existe modo sin verificación.
+- **Versión pineable.** `ENU_VERSION=vX.Y.Z install.sh` instala esa versión
+  exacta (por defecto, la última estable). Precondición: las releases son
+  **inmutables** — un tag publicado no se reescribe jamás (si algo sale mal,
+  se corta una versión nueva; coherente con este runbook).
+- **Destino controlable y sin sudo.** `ENU_INSTALL_DIR` (default
+  `~/.local/bin`); el instalador nunca eleva privilegios ni escribe fuera del
+  destino. Si el destino no está en `PATH`, lo dice y muestra la línea a
+  añadir — no lo añade él.
+- **Idempotente y atómico.** Reinstalar la misma versión es un no-op honesto;
+  el reemplazo del binario es escribir-al-lado + `rename`.
+- **`enu update` hereda todo lo anterior** y añade: si el binario en uso vive
+  en un destino no escribible sin privilegios (gestor de paquetes ajeno,
+  `/usr/local/bin` con sudo previo), **aborta con remedio** («tu enu lo
+  gestiona X; actualiza por ahí») — nunca eleva privilegios.
+- **Desinstalación simétrica.** `enu uninstall` elimina el binario e informa
+  de qué no borra; `--purge` borra además **exclusivamente `config.dir()`**
+  (`~/.config/enu`) con confirmación explícita. `data_dir()`
+  (`~/.local/share/enu`: sesiones/transcripts, plugins instalados, log) no se
+  toca nunca, ni con `--purge`.
 
 ## Reposo
 

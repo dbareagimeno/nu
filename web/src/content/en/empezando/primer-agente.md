@@ -3,9 +3,9 @@ title: Your first agent
 description: Activate the official extensions, configure an LLM provider, and run a headless agent turn with enu -p.
 ---
 
-The coding harness is `enu`'s *killer app*, but —true to the principle that
-the core doesn't know what an agent is— the agent is an **extension**. This
-page takes you from a bare runtime to a working agent turn.
+The official coding harness is `enu`'s reference demo, but —true to the
+principle that the core doesn't know what an agent is— the agent is an
+**extension**. This page takes you from a bare runtime to a working agent turn.
 
 :::note[Requires network access and an API key]
 Unlike the rest of the manual, this flow talks to a real LLM: it needs a

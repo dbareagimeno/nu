@@ -96,7 +96,7 @@ html {
   --fs-6: 13px;   /* cuerpos mono densos, bloques de código, intros */
   --fs-7: 13.5px; /* cuerpo de plugins, h3 markdown, títulos de paso */
   --fs-8: 14px;   /* cuerpo base, lead, h2 markdown */
-  --fs-9: 15px;   /* cuerpo de PROSA en sans (W-03) */
+  --fs-9: 16px;   /* cuerpo de PROSA en sans (W-03); 15→16 por legibilidad de doc larga (S47/ADR-025) */
   --fs-10: 20px;  /* títulos de sección / h1 de página */
   --fs-11: 24px;  /* slogan (móvil) */
   --fs-12: 40px;  /* slogan (desktop) */

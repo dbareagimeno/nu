@@ -3,9 +3,10 @@ title: Tu primer agente
 description: Activa las extensiones oficiales, configura un provider de LLM y ejecuta un turno de agente headless con enu -p.
 ---
 
-El coding harness es la *killer app* de `enu`, pero —fiel al principio de que el
-core no sabe lo que es un agente— el agente es una **extensión**. Esta página te
-lleva de un runtime desnudo a un turno de agente funcionando.
+El coding harness oficial es la demo de referencia de `enu`, pero —fiel al
+principio de que el core no sabe lo que es un agente— el agente es una
+**extensión**. Esta página te lleva de un runtime desnudo a un turno de agente
+funcionando.
 
 :::note[Requiere red y una API key]
 A diferencia del resto del manual, este flujo habla con un LLM real: necesita

@@ -83,9 +83,9 @@ export interface Dict {
 
 export const i18n: Record<Lang, Dict> = {
   es: {
-    sloganA: 'Tu agente de código.',
-    sloganB: 'Tus reglas.',
-    body: 'Instálalo con una línea. Úsalo tal cual, o cámbialo entero escribiendo Lua. enu es el coding harness que es tuyo de verdad.',
+    sloganA: 'Un coding harness',
+    sloganB: 'que reescribes entero.',
+    body: 'Un binario estático, sin Node ni npm ni Python. El agente, la TUI, los providers y las tools son plugins Lua sobre la misma API pública que usas tú.',
     k1: 'instalar',
     k2: 'documentación',
     k2d: 'la wiki de enu',
@@ -146,9 +146,9 @@ export const i18n: Record<Lang, Dict> = {
     sNoIndex: 'índice no disponible en dev — npm run build',
   },
   en: {
-    sloganA: 'Your coding agent.',
-    sloganB: 'Your rules.',
-    body: 'Install it with one line. Use it as is, or rewrite the whole thing in Lua. enu is the coding harness that is truly yours.',
+    sloganA: 'A coding harness',
+    sloganB: 'you can rewrite.',
+    body: 'One static binary — no Node, no npm, no Python. The agent, TUI, providers and tools are Lua plugins on the same public API you get.',
     k1: 'install',
     k2: 'documentation',
     k2d: 'the enu wiki',

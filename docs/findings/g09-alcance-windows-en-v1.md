@@ -17,6 +17,19 @@ señales. Windows nativo queda en pospuestos ([P18](../postponed/pospuesto.md)) 
 disparador. La promesa "cross-compile a todas las plataformas" se matiza en
 la arquitectura: el binario *compila* para Windows, el soporte v1 es WSL2.
 
+> ✅ **Nota (2026-07-18, [ADR-027](../decisions/adr/adr-027-sin-binario-de-mac-intel.md)):**
+> el «macOS nativo» de esta resolución se estrecha en la práctica a **Apple
+> Silicon** (`darwin/arm64`): el release deja de publicar el binario de Mac
+> Intel (`darwin/amd64`). La resolución de G9 no cambia (Linux/macOS nativos +
+> WSL2); solo el *artefacto publicado* de macOS pasa a ser solo arm64.
+
+> ✅ **Nota (2026-07-19, [ADR-028](../decisions/adr/adr-028-imagen-de-contenedor-publicada.md)):**
+> el release añade una **imagen de contenedor multi-arch** (`linux/amd64`+`arm64`)
+> como canal de *ejecución* para hosts sin binario nativo — señaladamente Mac
+> Intel, vía la VM de Docker. No cambia el alcance de plataforma de G9 ni
+> reintroduce `darwin/amd64`: es una vía de ejecución adicional, no un artefacto
+> nativo nuevo.
+
 **Problema.** La tool `bash` asume `sh`, `Proc:kill` habla señales POSIX,
 y el input de terminal difiere (IME, teclas). Go cross-compila a Windows,
 pero "compila" no es "funciona bien". Sin decisión de alcance, cada

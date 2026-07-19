@@ -113,8 +113,9 @@ compongan, como en Neovim — y la robustez se obtiene con dos guardas del core:
 
 - **Capa 1 — Lua embebido.** El mecanismo universal: hooks del ciclo de vida,
   comandos, UI, keybindings, y también el propio agente y los adaptadores de
-  protocolo de los LLMs. Distribución v1: `~/.config/enu/plugins/` + git clone;
-  sin package manager propio de momento.
+  protocolo de los LLMs. Distribución v1: `~/.config/enu/plugins/` + git clone
+  (P4→ADR-025: el gestor `enu plugin add/remove/update/lock` sobre git está
+  decidido, pendiente de construcción en la Fase 2 del reposicionamiento).
 - **Capa 2 — Procesos externos.** Herramientas pesadas o en otros lenguajes
   vía subproceso (JSON-RPC/stdio). MCP vive aquí, **implementado como
   extensión oficial Lua** sobre las primitivas `io.spawn` + codecs: el core no
@@ -138,9 +139,18 @@ recompilación. El contrato del adaptador y el formato del registro están en
 ## Distribución
 
 - Binario estático Go, `CGO_ENABLED=0`, cross-compile a todas las plataformas.
-  Soporte v1: Linux y macOS nativos; en Windows, **WSL2** (G9) — así el
-  contrato POSIX se cumple íntegro sin especificación condicional. Windows
-  nativo: [P18](../postponed/pospuesto.md).
+  Soporte v1: Linux (`amd64`/`arm64`) y macOS **Apple Silicon** (`arm64`)
+  nativos; en Windows, **WSL2** (G9) — así el contrato POSIX se cumple íntegro
+  sin especificación condicional. **Mac Intel (`darwin/amd64`) no se publica**
+  ([ADR-027](../decisions/adr/adr-027-sin-binario-de-mac-intel.md): legacy;
+  quien lo necesite compila desde fuente o usa Linux). Windows nativo:
+  [P18](../postponed/pospuesto.md).
+- Además del binario, el release publica una **imagen de contenedor multi-arch**
+  (`linux/amd64`+`arm64`) en GHCR
+  ([ADR-028](../decisions/adr/adr-028-imagen-de-contenedor-publicada.md)): el
+  canal de **ejecución** soportado para hosts sin binario nativo — señaladamente
+  Mac Intel, que corre la imagen `linux/amd64` en la VM de Docker, sin
+  reintroducir `darwin/amd64`. El alcance de binarios *publicados* no cambia.
 - Extensiones oficiales embebidas con `go:embed` pero **inactivas por
   defecto** (ADR-010): activación explícita (pantalla de runtime desnudo
   con TTY — api.md §14 —, el flag `enu --default-config` sin TTY, o `enu.toml`
@@ -242,7 +252,20 @@ escriben bajo `data_dir()/plugins/<nombre>/`.
      `plugins.enabled` en `enu.toml` —y plantillas activas de
      `agent.toml`/`providers.toml` si no existen, para dejar el harness usable,
      ADR-017/G35— y sale; con `-p`/`-e`, lo activa solo para ese
-     proceso sin tocar disco. ADR-015, G33).
+     proceso sin tocar disco. ADR-015, G33); `--version`/`-V` (imprime la
+     identidad del binario —`enu <major>.<minor>.<patch> · API <n> (<os>/<arch>)`,
+     leyendo `enu.version` de api.md más `runtime.GOOS/GOARCH` de Go— y sale 0,
+     **sin arrancar el runtime ni leer config**). **Por qué es un flag y no el
+     subcomando `enu version`** (S53, tensión con la frontera de ADR-026 que el
+     juez de filosofía levantó): `--version` es un **meta-flag de introspección
+     universal y sin efectos**, la misma categoría que `--help`/`-h` —que ningún
+     CLI modela como subcomando—, distinta de los **verbos de acción** de gestión
+     (`init`/`doctor`/`update`/`uninstall`, ADR-026: tienen efectos, red o leen
+     la semántica de config). La frontera de ADR-026 gobierna esos verbos, no la
+     categoría meta; por eso `--version`/`-V` viven aquí, con los flags. El
+     diagnóstico RICO de la versión (más checks) sigue en `enu doctor`
+     (`binary.version`): `--version` es el afijo mínimo y convencional, `doctor`
+     el informe.
    - **Headless / códigos de salida**: `enu -e` y el modo agente corren SIN TTY
      (G20) con códigos de salida coherentes para CI/scripts — **0** éxito;
      **1** error de ejecución (el chunk, el turno o el provider lanzaron, o el
