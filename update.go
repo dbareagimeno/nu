@@ -189,7 +189,7 @@ func extractBinaryFromTarGz(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gzip inválido: %w", err)
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }() // solo lectura: el error de cierre no es accionable
 	tr := tar.NewReader(gz)
 	for {
 		hdr, err := tr.Next()
@@ -291,7 +291,7 @@ func (h *httpReleaseFetcher) Download(url string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() // el error de cierre del cuerpo no es accionable
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("GET %s → HTTP %d", url, resp.StatusCode)
 	}
