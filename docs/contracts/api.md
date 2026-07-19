@@ -311,7 +311,7 @@ Pegar una imagen (G30): cuando el portapapeles trae contenido **no-texto**
 vez de `text`. La UI inserta esa ruta igual que una mención `@` y el agente
 decide leerla (no se incrusta el contenido a ciegas); así los bytes binarios
 nunca cruzan las fronteras de texto/JSON (coherente con G11, §12). Pintar la
-imagen en pantalla es otra cosa ([pospuesto.md](../postponed/pospuesto.md) P6).
+imagen en pantalla es otra cosa ([pospuestos](../postponed/README.md) P6).
 
 ---
 
@@ -388,7 +388,7 @@ de `enu.proc` (§6) lanzados desde el worker se registran bajo ese plugin. En
 los artefactos de atribución se anota distinguible como `<plugin> (worker)` —
 p. ej. `agent (worker)`— para que la traza diga quién *y desde dónde*.
 Consecuencia de supervisión: como el estado principal posee todos los workers
-([P11](../postponed/pospuesto.md)), un `enu.plugin.reload` (§14) del plugin dueño sigue
+([P11](../postponed/p11-workers-anidados.md)), un `enu.plugin.reload` (§14) del plugin dueño sigue
 soltando también los procesos lanzados por sus workers — el árbol de
 supervisión no tiene fugas por la frontera del worker.
 

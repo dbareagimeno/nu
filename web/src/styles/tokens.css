@@ -1,8 +1,8 @@
 /* Design tokens — los 4 themes como paletas de terminal.
  *
  * Cada theme define 8+1 tokens (--bg --fg --bright --dim --border --key --c2
- * --c3 --c4). Valores EXACTOS de la tabla del handoff (coinciden con
- * bootPalettes del prototipo). Default: enu. El cambio de theme es instantáneo
+ * --c3 --c4). Valores de referencia y semántica en DISENO.md §«Design tokens»
+ * (los vigentes viven aquí; --dim subido por W-02, abajo). Default: enu. El cambio de theme es instantáneo
  * (sin transition). Se aplican bajo html[data-theme="…"]; un script inline en
  * el <head> fija el atributo antes del primer paint (sin flash).
  *

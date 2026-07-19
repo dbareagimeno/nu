@@ -36,7 +36,7 @@ en `package main` (superficie CLI, S45), NO en la API sagrada `enu.*`.
 
 **Estrechamiento por G61.** El wizard v1 ofrece **solo `anthropic`** (el único
 provider con plantilla, ADR-017). Los otros tres (`openai-compat`/`gemini`/
-`ollama`) se difirieron como [P44](../postponed/pospuesto.md): sus plantillas no
+`ollama`) se difirieron como [P44](../postponed/p44-wizard-init-multi-provider.md): sus plantillas no
 existen y `ollama` (sin API key) rompe el paso «clave por variable de entorno».
 La resolución de G61 se aplicó a los documentos ANTES de este código (commit
 previo en la rama).

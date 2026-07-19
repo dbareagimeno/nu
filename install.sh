@@ -146,7 +146,7 @@ main() {
 	# Remedio principal desde ADR-028: la imagen de contenedor (linux/amd64 en la
 	# VM de Docker), que NO reintroduce el binario darwin/amd64.
 	if [ "$OS" = darwin ] && [ "$ARCH" = amd64 ]; then
-		err "enu no publica binario para Mac Intel (darwin/amd64), retirado en ADR-027. Opciones: ejecútalo en contenedor con 'docker run ghcr.io/dbareagimeno/enu' (ADR-028); usa Linux/WSL2; o compila desde fuente (GOOS=darwin GOARCH=amd64 go build)."
+		err "enu no publica binario para Mac Intel (darwin/amd64), retirado en ADR-027. Opciones: ejecútalo en contenedor con 'docker run ghcr.io/dbareagimeno/enu' (ADR-028); usa Linux/WSL2; o compila desde fuente (GOOS=darwin GOARCH=amd64 go build ./cmd/enu)."
 	fi
 
 	VERSION="${ENU_VERSION:-}"

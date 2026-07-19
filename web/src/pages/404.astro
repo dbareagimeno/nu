@@ -6,7 +6,7 @@
 // se resuelven en CLIENTE: en build-time no se sabe qué URL disparó el 404.
 // Lo que sí sale de build-time es el MANIFIESTO de rutas reales del sitio
 // (docmap + apimap + /plugins + portada), embebido como JSON — no se escribe
-// a mano (ver handoff §14a).
+// a mano (ver DISENO.md §«Dimensiones por pantalla», 404).
 //
 // El chrome (header + statusline + mensaje de error) SÍ es bilingüe (a
 // diferencia de /plugins, que es contenido): son claves nuevas en i18n.ts
@@ -101,7 +101,7 @@ const keys = [
     const cfg = (window as unknown as { __enu404: Enu404Cfg }).__enu404;
 
     // Distancia de Levenshtein (DP clásica), implementada aquí — no hay
-    // dependencia externa para esto (handoff §14a: "distancia de edición").
+    // dependencia externa para esto (DISENO.md, 404: "distancia de edición").
     function levenshtein(a: string, b: string): number {
       const m = a.length;
       const n = b.length;

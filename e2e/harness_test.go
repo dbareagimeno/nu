@@ -47,7 +47,7 @@ func TestMain(m *testing.M) {
 	// estático de producción.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "go", "build", "-o", bin, ".")
+	cmd := exec.CommandContext(ctx, "go", "build", "-o", bin, "./cmd/enu")
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -62,7 +62,7 @@ func TestMain(m *testing.M) {
 }
 
 // repoRoot sube desde el cwd del test (el dir del paquete e2e) hasta encontrar el
-// `go.mod` del módulo: esa es la raíz desde la que `go build .` compila el `package
+// `go.mod` del módulo: esa es la raíz desde la que `go build ./cmd/enu` compila el `package
 // main`. No depende de la profundidad del worktree.
 func repoRoot() (string, error) {
 	dir, err := os.Getwd()

@@ -42,7 +42,7 @@ script no puede hacer: redactar y verificar.
    fence de firma, prosa del porqué y un ejemplo.
 
 5. **Verifica los ejemplos nuevos contra el binario real** (la convención de
-   `web/README.md`): `go build -o nu . && ./nu -e '...'`. Recuerda que el chunk
+   `web/README.md`): `go build -o enu ./cmd/enu && ./enu -e '...'`. Recuerda que el chunk
    de `nu -e` corre en el estado principal: las funciones ⏸ van envueltas en
    `nu.task.spawn(...)`. Un ejemplo que no puedas ejecutar (red, TTY) se marca
    como tal en la página, no se inventa su salida.

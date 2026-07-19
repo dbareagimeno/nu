@@ -177,7 +177,7 @@ Obligaciones del adaptador:
    sesiones) tienen su válvula en `meta`/`extra`. *(✅ Implementado para
    `anthropic`: coloca los breakpoints en la última tool, el system y los dos
    últimos mensajes, sin pisar el `cache_control` que venga en `meta` —
-   [pospuesto.md](../postponed/pospuesto.md) **P31**.)*
+   [pospuestos](../postponed/README.md) **P31**.)*
 
 Esqueleto ilustrativo (no normativo):
 
@@ -217,7 +217,7 @@ de [guia-plugins.md](guia-plugins.md) §5 tiene el porqué.)*
 
 - Los adaptadores oficiales (`anthropic`, `openai-compat`, `gemini`) van
   embebidos como parte de la extensión de providers. *(✅ Los tres están
-  embebidos: [pospuesto.md](../postponed/pospuesto.md) **P30** resuelto. `openai-compat` sirve
+  embebidos: [pospuestos](../postponed/README.md) **P30** resuelto. `openai-compat` sirve
   a todo el ecosistema Chat Completions —OpenAI, Together, Groq, OpenRouter, vLLM,
   Ollama `/v1`—; `gemini` a la Generative Language API.)*
 - Un plugin aporta el suyo registrándolo:
@@ -250,9 +250,9 @@ de [guia-plugins.md](guia-plugins.md) §5 tiene el porqué.)*
 servidor local: **device flow o pegado manual de código** (`enu.http.request`
 en polling + abrir el navegador con `enu.proc` — el patrón de `gh` o
 `gcloud`). Tokens de refresco: en `data_dir()/plugins/<nombre>/`, permisos
-`0600`, en claro (coherente con [P7](../postponed/pospuesto.md): el cifrado en reposo es
+`0600`, en claro (coherente con [P7](../postponed/p07-cifrado-en-reposo-secretos-transcripts.md): el cifrado en reposo es
 del filesystem). El flujo con callback localhost requeriría un listener
-HTTP que el core no tiene: pospuesto ([P19](../postponed/pospuesto.md)).
+HTTP que el core no tiene: pospuesto ([P19](../postponed/p19-listener-http-minimo-callbacks-oauth.md)).
 
 ---
 

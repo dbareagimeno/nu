@@ -23,9 +23,9 @@ docs/
 ├── contracts/     Capa 1 · contratos de API y extensiones
 ├── decisions/adr/ Capa 2 · un fichero por ADR + índice
 ├── findings/      Capa 2 · un fichero por hallazgo G## + índice con el estado vivo
-├── postponed/     Capa 2 · pospuesto.md (la tabla P##, con disparadores)
+├── postponed/     Capa 2 · un fichero por P## (pNN-<slug>.md) + índice, con disparadores
 ├── validation/    Capa 2 · una ronda de pseudocódigo por fichero + índice
-├── plan/          Capa 2 · implementacion.md (el plan) + estado.md (puntero ▶ y bitácora)
+├── plan/          Capa 2 · implementacion.md + inventario-tests.md (🔒) + estado.md (puntero ▶ y tablero)
 ├── worklog/       Capa 2 · una sesión de construcción por fichero + índice
 ├── ops/           Capa 2 · runbooks operativos (release)
 ├── audits/        Capa 3 · informes de auditoría fechados y cerrados
@@ -60,10 +60,10 @@ entrada es un fichero.
 |---|---|
 | [decisions/adr/](decisions/adr/README.md) | Decisiones técnicas, un fichero por ADR (`adr-NNN-<slug>.md`); las reemplazadas se marcan (`superseded_by`), nunca se borran. |
 | [findings/](findings/README.md) | Grietas que la v1 necesita cerradas, un fichero por hallazgo (`gNN-<slug>.md`); el índice concentra el contador y la procedencia por lotes. |
-| [postponed/pospuesto.md](postponed/pospuesto.md) | Lo que se decidió no decidir todavía (P##), cada uno con su disparador. |
+| [postponed/](postponed/README.md) | Lo que se decidió no decidir todavía (P##): un fichero por entrada (`pNN-<slug>.md`) + índice, cada uno con su disparador. |
 | [validation/](validation/README.md) | El ejercicio de validación: una ronda de pseudocódigo por fichero (`ronda-N-<slug>.md`), escenarios con numeración global. |
 | [plan/implementacion.md](plan/implementacion.md) | Plan de construcción por sesiones (S##): protocolo, fases, grafo, política de tests. |
-| [plan/estado.md](plan/estado.md) | **El estado vivo del plan**: puntero ▶, tablero de fases y bitácora append-only. Lo que editan las skills al avanzar. |
+| [plan/estado.md](plan/estado.md) | **El estado vivo del plan**: puntero ▶ y tablero de fases. Lo que editan las skills al avanzar; el registro por sesión vive en `worklog/`. |
 | [worklog/](worklog/README.md) | Bitácora operativa, un fichero por sesión (`sNN-<slug>.md`): decisiones y desviaciones por debajo del umbral de `G##`. |
 | [ops/release.md](ops/release.md) | Runbook operativo para cortar una release estable (los *steps* que ADR-013 deja fuera). |
 

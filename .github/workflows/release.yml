@@ -57,12 +57,12 @@ jobs:
           echo "Tag: $ref (versión $version)"
 
       - name: Comparar con las constantes del runtime
-        # Leemos la versión EJECUTANDO el propio runtime (go run . -e), no con grep:
+        # Leemos la versión EJECUTANDO el propio runtime (go run ./cmd/enu -e), no con grep:
         # usa la misma lógica de composición que el binario real (registerNu
         # construye enu.version), así que validamos exactamente lo que verá el usuario,
         # sin fragilidad ante el orden de las constantes en nu.go.
         run: |
-          constantes=$(go run . -e 'return string.format("%d.%d.%d", enu.version.major, enu.version.minor, enu.version.patch)')
+          constantes=$(go run ./cmd/enu -e 'return string.format("%d.%d.%d", enu.version.major, enu.version.minor, enu.version.patch)')
           # De la versión del tag tomamos solo X.Y.Z (descartando un posible -rcN),
           # porque las constantes son siempre X.Y.Z.
           tag_xyz="${{ steps.tag.outputs.version }}"
@@ -113,7 +113,7 @@ jobs:
         # (eget, asdf, Homebrew...). Nombre: enu-vX.Y.Z-<goos>-<goarch>.tar.gz.
         run: |
           mkdir -p dist
-          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o dist/enu .
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o dist/enu ./cmd/enu
           nombre="enu-v${VERSION}-${GOOS}-${GOARCH}"
           tar -C dist -czf "dist/${nombre}.tar.gz" enu
           rm dist/enu

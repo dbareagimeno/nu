@@ -2,7 +2,7 @@
 .DS_Store
 
 # binario compilado
-/nu
+/enu
 
 # artefactos del build de release a mano (release.yml usa dist/ de salida)
 /dist/

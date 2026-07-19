@@ -6,7 +6,7 @@ status: "resuelto"
 date: "2026-07-18"
 origin: "suite e2e de los plugins oficiales (aserción de permisos del transcript)"
 resolution: "enu.fs.write gana opts.mode (chmod explícito no recortado por el umask, componible con exclusive); sessions crea transcript y lock con mode=0600; append preserva el modo del fichero existente. Nivel de API 4→5."
-affected: ["api.md §5", "api.md §17", "sesiones.md §2/§6/§8", "guia-plugins.md §7", "implementacion.md (inventario 🔒)"]
+affected: ["api.md §5", "api.md §17", "sesiones.md §2/§6/§8", "guia-plugins.md §7", "inventario-tests.md (🔒)"]
 ---
 # G57 · El transcript y el lock de sesiones no alcanzan el 0600 que `sesiones.md` promete: la API no deja fijar el modo de creación — `api.md` §5 / `sesiones.md` §2/§6/§8 — **RESUELTO**
 

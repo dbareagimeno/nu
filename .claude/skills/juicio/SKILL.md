@@ -14,8 +14,8 @@ ninguna de las dos cosas.**
 
 ## Regla de secuencia
 
-El juicio se ejecuta **antes** de escribir la fila de bitácora y mover el
-puntero ▶: la bitácora contiene la racionalización del autor y, si existiera
+El juicio se ejecuta **antes** de escribir el worklog de la sesión y mover el
+puntero ▶: el worklog contiene la racionalización del autor y, si existiera
 ya, contaminaría a cualquier juez que lea `implementacion.md`.
 
 ## Política de coste (cuándo montar qué)
@@ -49,7 +49,7 @@ Emite tu veredicto con tu formato de salida.
 
 **Prohibido incluir**: el razonamiento del autor, "decidimos X porque...",
 alternativas discutidas, fragmentos de esta conversación, resultados de otros
-jueces, o el contenido de la bitácora. Si el orquestador puede improvisar el
+jueces, o el contenido del worklog. Si el orquestador puede improvisar el
 prompt, filtrará su propia justificación sin querer — por eso la plantilla es
 literal.
 
@@ -75,7 +75,7 @@ literal.
      escálalo al usuario. No lo entierres.
 5. Reporta al usuario el resultado: hallazgos reales arreglados, falsos
    positivos descartados (con su evidencia) y veredicto final del panel.
-   Después continúa el cierre normal de la sesión (bitácora, puntero, commit).
+   Después continúa el cierre normal de la sesión (worklog, puntero, commit).
 
 ## Cuándo NO sirve este juicio
 

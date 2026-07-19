@@ -57,9 +57,9 @@ Todo vive en `docs/`. Orden de lectura sugerido (y dependencias conceptuales):
 | `docs/contracts/malla.md` | Contrato de la extensión oficial `mesh` (borrador v0.1; su §11 sigue abierta). |
 | `docs/validation/` | **El ejercicio de validación**: una ronda de pseudocódigo por fichero (`ronda-N-<slug>.md`) + índice. |
 | `docs/findings/` | Grietas que la v1 *necesita* cerradas: un fichero por hallazgo (`gNN-<slug>.md`) + índice con el estado vivo. |
-| `docs/postponed/pospuesto.md` | Lo que se decidió no decidir todavía (P##), cada uno con su *disparador* de reapertura. |
+| `docs/postponed/` | Lo que se decidió no decidir todavía (P##): un fichero por entrada (`pNN-<slug>.md`) + índice, cada uno con su *disparador* de reapertura. |
 | `docs/plan/implementacion.md` | Plan de construcción incremental: una feature por sesión (S##), ordenado por dependencias del kernel. |
-| `docs/plan/estado.md` | **El estado vivo del plan**: puntero ▶, tablero de fases y bitácora append-only. |
+| `docs/plan/estado.md` | **El estado vivo del plan**: puntero ▶ y tablero de fases (el registro por sesión vive en `docs/worklog/`). |
 | `docs/worklog/` | Bitácora operativa: un fichero por sesión (`sNN-<slug>.md`) con las decisiones por debajo del umbral de `G##`. |
 | `docs/ops/release.md` | Runbook operativo para cortar una release estable (los *steps* que ADR-013 deja fuera). |
 
@@ -153,7 +153,7 @@ Este es el corazón del proyecto y debes respetarlo:
    frontmatter). El estado vivo (contador y abiertas) está en la **cabecera de
    `docs/findings/README.md`** — consúltala ahí, no aquí.
 
-3. **Decisiones pospuestas** (`docs/postponed/pospuesto.md`). Lo que se decide *no*
+3. **Decisiones pospuestas** (`docs/postponed/`, un fichero por P##). Lo que se decide *no*
    decidir todavía se numera `P##` y **siempre lleva un disparador**: la señal
    concreta que indica que toca reabrirlo. Nada está rechazado; está esperando.
    Cuando un `P##` se reabre y se decide, sale de aquí y entra en el ADR.
@@ -202,7 +202,7 @@ juntes features: una sesión = una feature. El estado vive en el repo, no en tu
 memoria. Protocolo, sin saltarte pasos:
 
 1. **Antes de tocar nada**, abre `docs/plan/estado.md` y lee el **puntero ▶**
-   ("Próxima sesión") y la **última fila de la bitácora**. Eso es dónde seguir y
+   ("Próxima sesión") y «Último cierre». Eso es dónde seguir y
    en qué estado quedó; el detalle de la sesión (enunciado, dependencias,
    fase) está en `docs/plan/implementacion.md`. Implementa **solo** esa
    sesión; respeta el grafo de
@@ -218,7 +218,7 @@ memoria. Protocolo, sin saltarte pasos:
    *después* se implementa. El código nunca corrige la espec por la vía de hecho.
 4. **Al terminar, en el mismo commit que la feature:** en `docs/plan/estado.md`,
    avanza el puntero ▶,
-   marca el tablero si cerraste una fase, y añade fila a la bitácora. Las
+   marca el tablero si cerraste una fase, y actualiza «Último cierre». Las
    decisiones operativas y desviaciones que no llegan a `G##` se registran
    creando `docs/worklog/sNN-<slug>.md` (un fichero por sesión, con su fila en
    el índice `docs/worklog/README.md`). Si cierras
@@ -284,6 +284,6 @@ relajan.
 - **G##** — grieta/hallazgo que la v1 necesita cerrar (su fichero en `docs/findings/`).
 - **H##, F##** — hallazgos de las rondas 1 y 2 de pseudocódigo (ya resueltos e
   integrados en la API).
-- **P##** — discusión pospuesta con su disparador (en `docs/postponed/pospuesto.md`).
+- **P##** — discusión pospuesta con su disparador (un fichero por entrada en `docs/postponed/`).
 - **§N** — referencia a una sección numerada dentro de un documento.
 - **⏸** — función suspendiente (solo en task). **[W]** — disponible en workers.

@@ -45,7 +45,7 @@ implementación espera a que los documentos cierren.
 
 5. **Auditar.** Lanza `auditor-docs` con la descripción del cambio. Corrige
    cada incoherencia que reporte y presta atención a su barrido de
-   disparadores P##: si un disparador de `docs/postponed/pospuesto.md` suena, díselo al
+   disparadores P##: si un disparador de `docs/postponed/` suena, díselo al
    usuario (reabrir un P## es decisión suya).
 
 6. **ADR si procede.** Si la decisión es arquitectónica (cambia una regla del

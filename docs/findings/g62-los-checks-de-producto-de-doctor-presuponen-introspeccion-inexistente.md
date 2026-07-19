@@ -52,7 +52,7 @@ solo `id` para tres ficheros sin decir cómo se reporta un fallo parcial.
 > con `status: "skip"` y la pista en `detail` apuntando a este hallazgo
 > (`remedy: null`, la regla del esquema: `remedy` solo en `fail`): `doctor.v1`
 > **nunca miente con un `ok` fabricado**. El diseño de la introspección que
-> necesitan se difiere como [P45](../postponed/pospuesto.md).
+> necesitan se difiere como [P45](../postponed/p45-checks-producto-enu-doctor.md).
 >
 > **Aplicación:** nota de estrechamiento en ADR-026 pieza 3 (puntero a este
 > hallazgo, sin reescribir la decisión); doctor.md marca los cuatro checks como

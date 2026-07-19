@@ -96,8 +96,8 @@ enu.task.race(...)    -- (el escenario 4 ya lo asumió para multiplexar
 ```
 
 Menores anotados al pasar: rotación del fichero de `enu.log`
-(→ [P20](../postponed/pospuesto.md)); propiedad de los `Timer` (¿mueren con la task?
+(→ [P20](../postponed/p20-rotacion-limite-fichero-enu-log.md)); propiedad de los `Timer` (¿mueren con la task?
 → convención `cleanup`); restricciones de versión en `requires` (se
-pliega a [P4](../postponed/pospuesto.md) cuando se reabra).
+pliega a [P4](../postponed/p04-package-manager-de-plugins.md) cuando se reabra).
 
 ---

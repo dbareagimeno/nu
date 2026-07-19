@@ -30,7 +30,7 @@ incompletas (ADR-003). La Ronda 8 validó exactamente eso antes de construir
    sería producto encima del producto — cuando duela escribirlo a mano, se
    reabre.
 2. **Pull-only.** enu solo actúa de **cliente** (git, y en el futuro `enu.ws`
-   saliente): sin listener, [P1/P19](../postponed/pospuesto.md) siguen dormidos.
+   saliente): sin listener, [P1/P19](../postponed/README.md) siguen dormidos.
 3. **Git es el único sustrato v0.1**: transporte, almacén y coordinación
    (claim por CAS de refs). La Ronda 8 (escenario 36) validó que la capa
    Role/Job es agnóstica al sustrato; el broker queda pospuesto con disparador
@@ -254,7 +254,7 @@ end
 - **Broker como segundo sustrato** (`enu.ws` saliente): validado como expresable
   (Ronda 8, escenario 36); se construirá cuando exista una malla real donde el
   polling de git no baste.
-- **Tool calls paralelas** ([P12](../postponed/pospuesto.md)): un job sigue siendo secuencial
+- **Tool calls paralelas** ([P12](../postponed/p12-ejecucion-paralela-tool-calls.md)): un job sigue siendo secuencial
   por dentro; el paralelismo de la malla es entre jobs/variantes.
-- **Workers anidados** ([P11](../postponed/pospuesto.md)): irrelevante aquí — la carga es
+- **Workers anidados** ([P11](../postponed/p11-workers-anidados.md)): irrelevante aquí — la carga es
   LLM+IO y se solapa entre tasks (escenario 26).

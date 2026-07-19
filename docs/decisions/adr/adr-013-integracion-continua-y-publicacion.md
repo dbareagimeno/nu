@@ -40,7 +40,7 @@ su tubería.
    cross-compila a **`linux/amd64`, `linux/arm64`, `darwin/amd64`,
    `darwin/arm64`**, empaqueta un `tar.gz` por plataforma más un `checksums.txt`
    (SHA256), y crea la GitHub Release con notas autogeneradas. **No** se publica
-   Windows nativo: está pospuesto ([pospuesto.md](../../postponed/pospuesto.md) P18) y Windows va
+   Windows nativo: está pospuesto ([pospuesto.md](../../postponed/README.md) P18) y Windows va
    por WSL2, que usa el binario `linux/amd64`; un `.exe` daría falsa señal de
    soporte.
 

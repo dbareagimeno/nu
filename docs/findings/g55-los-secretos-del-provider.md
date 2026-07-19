@@ -36,7 +36,7 @@ Advertencia para plugins que lancen subprocesos en
 `enu.proc` (el core no sabe qué es un provider, ADR-003 — sería
 contaminarlo con vocabulario de producto) y el opt-in por argumento de la
 invocación (quien propone los args es el modelo: papel mojado ante prompt
-injection). Distinto de [P7](../postponed/pospuesto.md) —transcripts—, que sigue
+injection). Distinto de [P7](../postponed/p07-cifrado-en-reposo-secretos-transcripts.md) —transcripts—, que sigue
 pospuesto con nota cruzada. (Origen: SEC-04.)
 
 **Implementación** (extensiones, el core queda intacto). `providers.secret_env_vars()`

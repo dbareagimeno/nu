@@ -59,7 +59,7 @@ forma entiende cada modelo. **[G34]**
 
 **G34 — el modelo canónico de `thinking` no expresa el modo adaptativo.**
 Resuelta en [ADR-016](../decisions/adr/adr-016-modelo-canonico-de-thinking.md)
-(que **reabre y cierra [P21](../postponed/pospuesto.md)**, hasta hoy pospuesta): el parámetro
+(que **reabre y cierra [P21](../postponed/p21-modelo-de-thinking-adaptativo.md)**, hasta hoy pospuesta): el parámetro
 canónico crece por adición a `thinking = { mode?: "off"|"adaptive"|"budget",
 budget? }` (con `{budget=N}` como alias compatible de `mode="budget"`), y el
 **dialecto de razonamiento de cada modelo se declara como dato** en el

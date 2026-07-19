@@ -18,11 +18,12 @@ Descubre el corpus **dinámicamente** con Glob (`docs/**/*.md` + `CLAUDE.md` +
 `README.md`): la lista de documentos crece y no debes asumirla. La estructura
 de carpetas: `core/` y `contracts/` (los contratos vivos), `decisions/adr/`
 (un fichero por ADR), `findings/` (un fichero por G##), `postponed/`
-(pospuesto.md, la tabla P##), `validation/` (una ronda de pseudocódigo por
-fichero), `plan/` (implementacion.md + estado.md), `worklog/` (una sesión por
-fichero), `audits/`, `archive/`. Cada carpeta-registro tiene un `README.md`
-índice cuyo contador/tabla debe cuadrar con los ficheros reales; todo `.md`
-lleva frontmatter YAML cuyo `status`/`id` debe cuadrar con el texto.
+(un fichero por P## `pNN-<slug>.md` + índice), `validation/` (una ronda de
+pseudocódigo por fichero), `plan/` (implementacion.md + inventario-tests.md +
+estado.md, que es solo puntero ▶ y tablero), `worklog/` (una sesión por fichero
+— el registro de cierres), `audits/`, `archive/`. Cada carpeta-registro tiene
+un `README.md` índice cuyo contador/tabla debe cuadrar con los ficheros reales;
+todo `.md` lleva frontmatter YAML cuyo `status`/`id` debe cuadrar con el texto.
 
 1. **Propagación de la resolución.** Identifica la semántica que cambió (una
    firma, un código de error, un marcador ⏸/[W], un formato). Con Grep, busca
@@ -32,19 +33,21 @@ lleva frontmatter YAML cuyo `status`/`id` debe cuadrar con el texto.
    que la presuponía y quedó sin tocar.
 2. **Referencias íntegras.** Todo `G##`, `ADR-NNN`, `P##`, `H#`, `F#` citado
    existe en su registro (`findings/gNN-*.md`, `decisions/adr/adr-NNN-*.md`,
-   `postponed/pospuesto.md`) y está en el
+   `postponed/pNN-*.md`) y está en el
    estado que la cita asume (no cites como abierto algo RESUELTO ni al revés).
    Los enlaces `[doc.md](doc.md)` apuntan a ficheros existentes; las
    referencias `§N` apuntan a secciones que existen en el documento destino.
 3. **Formatos del flujo.** Las entradas nuevas respetan su plantilla: G## con
    Problema/Impacto/Opciones (+ Resolución si RESUELTO), ADR con
    contexto→decisión→consecuencias y supersede (nunca reescritura de uno
-   viejo), P## con su disparador, bitácora append-only.
+   viejo), P## con su disparador (un fichero por entrada), worklog una sesión
+   por fichero.
 4. **Marcadores y convenciones.** ⏸ y [W] consistentes entre api.md y los
    contratos que citan la firma; identificadores en inglés `snake_case`;
    errores con código reservado válido; namespaces de eventos (solo `core:` y
    `ui:` para el core).
-5. **Barrido de disparadores P##.** Lee cada entrada de `pospuesto.md` y
+5. **Barrido de disparadores P##.** Lee cada entrada `docs/postponed/pNN-*.md`
+   (o recórrelas por el índice `postponed/README.md`) y
    pregunta: ¿este cambio hace sonar su disparador? Nadie más vigila esto. Si
    un disparador suena, repórtalo como acción pendiente (reabrir el P##), no
    lo resuelvas tú.

@@ -13,7 +13,7 @@ y `ui:resize`— sin una sola línea de Go de producto.
 Desde la raíz del repositorio:
 
 ```sh
-XDG_CONFIG_HOME=examples go run .
+XDG_CONFIG_HOME=examples go run ./cmd/enu
 # o, con el binario ya instalado (install.sh):
 XDG_CONFIG_HOME=examples enu
 ```

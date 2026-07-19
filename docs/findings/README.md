@@ -10,7 +10,7 @@ Lista de trabajo viva: grietas encontradas en las rondas de validación
 **pendientes de resolver**.
 Método: se resuelven una a una, discutiendo opciones; al decidirse, la
 resolución se aplica a los documentos afectados y la entrada pasa a
-"Resuelto" con enlace al cambio. Distinto de [pospuesto.md](../postponed/pospuesto.md):
+"Resuelto" con enlace al cambio. Distinto de [las discusiones pospuestas](../postponed/README.md):
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
@@ -88,7 +88,7 @@ añadidas 2026-07-12 desde la auditoría integral
 ([auditoria-2026-07-12.md](../audits/auditoria-2026-07-12.md)): G47–G51 —incoherencias
 documentales— resueltas el mismo día; G44 —el bombeo del scheduler— resuelta
 y **construida** el 2026-07-13 con la opción (b), `RunTasks` persistente
-(bitácora de [implementacion.md](../plan/implementacion.md)); G45 —la superficie [W]
+([bitácora histórica del plan](../archive/bitacora-plan.md)); G45 —la superficie [W]
 de los workers— resuelta y **construida** el 2026-07-13 con la opción (a),
 marca worker-safe por snippet de preludio; G46 —el replay de `event`—
 resuelta y **construida** el 2026-07-13 con la opción (a) más la (c):

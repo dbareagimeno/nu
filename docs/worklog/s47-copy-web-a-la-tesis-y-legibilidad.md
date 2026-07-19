@@ -37,7 +37,7 @@ BDD/TDD.
    a ≈4.6:1 sobre `--bg`). Cambiarla a ciegas —sin poder previsualizar el
    render— arriesgaría ese trabajo de accesibilidad. Se difiere a la pasada
    visual de la portada (P43), que se hace con preview.
-2. **Toda la pasada VISUAL de la portada se descopó a [P43](../postponed/pospuesto.md)**
+2. **Toda la pasada VISUAL de la portada se descopó a [P43](../postponed/p43-pasada-visual-de-la-portada.md)**
    por decisión del operador: la demo del hero (que pega fuerte solo enseñando
    `forge`+`enu init`, y no se puede fabricar honestamente antes), el snippet de
    plugin en la portada, la jerarquía de enlaces primarios sobre atajos y el

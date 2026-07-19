@@ -7,7 +7,7 @@ date: "2026-06"
 ---
 # ADR-016 · Modelo canónico de `thinking` con `mode` y traducción por-modelo en el adaptador
 
-**Estado:** Aceptada · 2026-06 (resuelve [G34](../../findings/g34-el-modelo-canonico-de-thinking.md); **reabre y cierra** [P21](../../postponed/pospuesto.md), que sale de pospuestos)
+**Estado:** Aceptada · 2026-06 (resuelve [G34](../../findings/g34-el-modelo-canonico-de-thinking.md); **reabre y cierra** [P21](../../postponed/p21-modelo-de-thinking-adaptativo.md), que sale de pospuestos)
 
 **Contexto.** El modelo canónico ([providers.md](../../contracts/providers.md) §2.1) congeló
 `thinking?: { budget?: integer }` y el adaptador `anthropic` lo traduce a la

@@ -5,8 +5,8 @@ función a función de la API del core y guía del primer plugin. Construida con
 [Astro](https://astro.build/), sin ningún theme de terceros: **la web ES un
 terminal** — la portada replica la pantalla de arranque de enu, la wiki es un
 pager tipo `less(1)` y toda la navegación funciona con teclado real. La
-especificación de diseño completa vive en `design_handoff_nu_web/README.md`
-(tokens de los 4 themes, gramática visual TTY, las 8 pantallas canónicas).
+especificación de diseño (gramática visual TTY, tokens, dimensiones, atajos y el
+mini-REPL) vive en [`DISENO.md`](DISENO.md).
 
 > La **fuente de verdad** de la API es [`docs/contracts/api.md`](../docs/contracts/api.md) (la
 > "superficie sagrada" v1). La sección `/api` de este sitio la presenta de forma
@@ -93,7 +93,7 @@ entra en ese gate.
 ## Ejemplos verificados
 
 Los ejemplos `enu -e '...'` de la referencia están comprobados contra el binario
-real (`go build -o enu . && enu -e '...'`). Recuerda que el chunk de `enu -e` corre
+real (`go build -o enu ./cmd/enu && enu -e '...'`). Recuerda que el chunk de `enu -e` corre
 en el estado principal: las funciones suspendientes (⏸) van envueltas en
 `enu.task.spawn(...)`.
 

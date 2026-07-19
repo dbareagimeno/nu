@@ -13,7 +13,7 @@ affected: ["providers.md", "api.md"]
 camino v1 sin listener — device flow o pegado manual de código (patrón
 `gh`/`gcloud`), escribible con `http.request` + `enu.proc`; tokens en
 `data_dir()/plugins/<nombre>/` con `0600`, en claro (coherente con P7). El
-listener localhost (`listen_once`) va a [P19](../postponed/pospuesto.md) con disparador
+listener localhost (`listen_once`) va a [P19](../postponed/p19-listener-http-minimo-callbacks-oauth.md) con disparador
 "provider real sin device flow ni pegado de código".
 
 **Problema.** El device flow es escribible con lo que hay (polling +

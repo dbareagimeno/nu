@@ -56,7 +56,7 @@ Necesitas Go (la versión mínima está en `go.mod`):
 ```sh
 git clone https://github.com/dbareagimeno/enu
 cd enu
-CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o enu .
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o enu ./cmd/enu
 ```
 
 ## Windows

@@ -40,7 +40,7 @@ la vía de hecho para ampliar la API.
 4. **Evaluar 🔒.** Contrasta la lógica de la sesión con los tres criterios de
    la política de tests (§"Política de tests"): ¿la lógica es nuestra?, ¿el
    fallo es silencioso o de borde?, ¿implementa un G##? Si cumple cualquiera,
-   añade la fila al inventario 🔒 con **el caso exacto que el test debe
+   añade la fila al inventario 🔒 (`docs/plan/inventario-tests.md`) con **el caso exacto que el test debe
    blindar**. El inventario crece, nunca se relaja.
 
 5. **Actualizar el plan.** Añade la sesión a su tabla en

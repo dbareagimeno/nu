@@ -32,7 +32,7 @@ de terceros puede hacer todo lo que hace esta.
 ```
 
 Una columna, una sesión visible. Splits y vista multi-sesión: pospuesto
-([P14](../postponed/pospuesto.md)).
+([P14](../postponed/p14-splits-vista-multi-sesion-chat.md)).
 
 > ✅ **Pulido de producto** ([ADR-018](../decisions/adr/README.md)). La columna se ve acabada, no como
 > un kernel pelado: **bienvenida** al arrancar (banner + modelo + cwd + atajos) en vez
@@ -62,7 +62,7 @@ indefinidamente.
 | `agent:permission.asked` | Diálogo modal (§5), encolado FIFO si ya hay uno visible. |
 | `agent:compact` | Marca visual de "historia compactada arriba". |
 
-> ✅ **Implementado** ([pospuesto.md](../postponed/pospuesto.md) **P27**). El chat consume
+> ✅ **Implementado** ([pospuestos](../postponed/README.md) **P27**). El chat consume
 > también `agent:tool.progress` (progreso en vivo bajo la tool en curso) y
 > `agent:compact` (marca "historia compactada arriba", emitida ya por el agente
 > con **P25**). Con G42/G43 consume además `agent:retry` (la nota de backoff) y
@@ -86,7 +86,7 @@ tool de diff pinta diffs con colores y la de tests pinta su tabla, sin que
 - **Menciones `@`**: abre picker difuso de ficheros del repo
   (`enu.search.files` + `enu.search.fuzzy`); la mención inyecta la ruta y el
   agente decide leerla (no se incrusta el contenido a ciegas).
-  *(✅ Implementado: [pospuesto.md](../postponed/pospuesto.md) **P26**, vía `chat.picker`.)*
+  *(✅ Implementado: [pospuestos](../postponed/README.md) **P26**, vía `chat.picker`.)*
 - **`/` al inicio**: autocompletado de comandos (§4) — `tab` abre el picker
   de comandos. *(✅ Implementado: **P29**.)*
 - Pegado multilínea correcto (evento `paste` de `enu.ui`).
@@ -112,7 +112,7 @@ reanuda vía `agent.session{ resume = id }`), `/fork`, `/compact`,
 cambiar el razonamiento, ADR-016), `/retry` (re-ejecuta el turno tras un
 error, `Session:retry`, G43), `/help`, `/quit`.
 
-> ✅ **Implementado** ([pospuesto.md](../postponed/pospuesto.md) **P28**). Además de
+> ✅ **Implementado** ([pospuestos](../postponed/README.md) **P28**). Además de
 > `/model`, `/sessions`, `/compact`, `/clear`, `/help`, `/quit`, el chat trae
 > `/fork` (bifurca con `Session:fork` y sigue en la rama vía `Chat:switch_session`),
 > `/permissions` (ve y edita la política: `allow|deny <patrón>`, `mode ask|auto`),
@@ -139,7 +139,7 @@ truncar lo peligroso: el comando entero, la ruta entera) y opciones:
   encadenado, que bajo la semántica de emparejamiento por subcomando
   ([agente.md](agente.md) §5, G53) solo volvería a casar esa combinación
   exacta; cada patrón propuesto es además auditable por separado.
-  *(✅ Implementado: [pospuesto.md](../postponed/pospuesto.md) **P29**. Tecla `s` = siempre
+  *(✅ Implementado: [pospuestos](../postponed/README.md) **P29**. Tecla `s` = siempre
   (sesión), `g` = siempre (global, persiste a `agent.toml`). La edición inline del
   patrón antes de aceptar queda como pulido menor; v1 usa el patrón sugerido.)*
 - **Denegar** (con nota opcional, que llega al modelo como rechazo).
@@ -224,9 +224,9 @@ chat.statusline.add{ id, side: "left"|"right", priority, render: fn(ctx) -> Span
 
 ## 10. Pospuesto
 
-Splits / vista multi-sesión ([P14](../postponed/pospuesto.md)), búsqueda dentro del
-transcript ([P15](../postponed/pospuesto.md)), modo vim del editor de input
-([P16](../postponed/pospuesto.md)), render de imágenes en el transcript
-([P6](../postponed/pospuesto.md)).
+Splits / vista multi-sesión ([P14](../postponed/p14-splits-vista-multi-sesion-chat.md)), búsqueda dentro del
+transcript ([P15](../postponed/p15-busqueda-dentro-transcript.md)), modo vim del editor de input
+([P16](../postponed/p16-modo-vim-editor-input.md)), render de imágenes en el transcript
+([P6](../postponed/p06-imagenes-archivos-generados-modelo.md)).
 
 <!-- /enu:interno -->

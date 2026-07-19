@@ -51,7 +51,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Binario estático (flags de release)
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o enu .
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o enu ./cmd/enu
       - name: Subir artefacto
         uses: actions/upload-artifact@v4
         with:
@@ -121,7 +121,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Binario estático (flags de release)
-        run: CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o enu .
+        run: CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o enu ./cmd/enu
       - name: Arranque headless
         run: |
           export HOME="$(mktemp -d)"

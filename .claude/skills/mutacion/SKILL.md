@@ -33,7 +33,7 @@ los ficheros de la sesión, o con `-D <rama>` para mutar solo el diff.
 ```sh
 # Modo sesión: solo los ficheros tocados (ejemplo: diff.go)
 gremlins unleash \
-  -E 'spike/.*' -E 'web/.*' -E 'internal/vmwasm/.*' -E 'main\.go' \
+  -E 'web/.*' -E 'internal/vmwasm/.*' -E 'cmd/enu/main\.go' \
   -E 'internal/runtime/[a-ce-z].*' -E 'internal/runtime/d(efault_config|river).*' \
   --timeout-coefficient 300 \
   --output <scratchpad>/gremlins.json \
@@ -53,7 +53,7 @@ Reglas operativas:
   falsamente (pasó en el piloto de 2026-07).
 - **Exclusión dura de `internal/vmwasm`**: cada mutante recompila y re-ejecuta
   la suite; con wazero es prohibitivo (misma razón por la que CI lo separa).
-- Ejecuta desde la raíz del módulo. `spike/` es otro módulo: exclúyelo.
+- Ejecuta desde la raíz del módulo.
 
 ## Interpretación
 
@@ -62,7 +62,7 @@ Reglas operativas:
   → escribe el test que lo mata (o pásalo como evidencia a `juez-tests`
   dentro de `/juicio`: es entrada mecánica permitida); (b) **mutante
   equivalente** (el cambio no altera el comportamiento observable) → anótalo
-  en la fila de bitácora de la sesión para que nadie lo re-investigue.
+  en el worklog de la sesión para que nadie lo re-investigue.
 - **NOT COVERED** — ninguna prueba ejecuta esa línea. Contrasta con la
   política de tests: puede ser wrapper fino legítimo sin unitario, o puede ser
   lógica propia desnuda (entonces es un defecto de la suite, no del mutante).

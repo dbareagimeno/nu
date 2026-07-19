@@ -2,7 +2,7 @@
 // demanda (import dinámico desde pager.ts) al pulsar '/' en cualquier página
 // interna, así el resto de páginas no lo pagan.
 //
-// Comportamiento (ver el handoff §"14c — Búsqueda" y §"Interactions"):
+// Comportamiento (ver DISENO.md §«Búsqueda» y §«Interacción y comportamiento»):
 //   - Panel overlay (fondo bg, borde border) sobre el contenido, entre el
 //     header y la statusline (su geometría se mide al abrir).
 //   - La statusline izquierda (#enu-status-left) se convierte en `/término▊` y
@@ -27,7 +27,7 @@ import { docDe, repoPath } from '../lib/docmap';
 const BASE: string = import.meta.env.BASE_URL; // p. ej. '/enu/'
 
 // Límites de presentación (evitan listas kilométricas; N y M se cuentan sobre
-// lo MOSTRADO, como pide el handoff).
+// lo MOSTRADO, como pide DISENO.md §«Búsqueda»).
 const MAX_DOCS = 8;
 const MAX_SUBS = 6;
 const DEBOUNCE_MS = 120;

@@ -46,7 +46,7 @@ diseño de contrato de providers que no cabe de rebote en una sesión de código
 > intacto. El dispatch de subcomandos (pieza 1) y las piezas 3-5 no se tocan.
 >
 > **Los otros tres providers se difieren** como
-> [P44](../postponed/pospuesto.md): reabrir cuando se especifiquen sus
+> [P44](../postponed/p44-wizard-init-multi-provider.md): reabrir cuando se especifiquen sus
 > plantillas (base_url, convención de `api_key_env`, modelo/`context` por
 > defecto) y cómo encaja el flujo sin-key de ollama. No es una grieta de la
 > API sagrada (`enu.*` intacto): es superficie CLI + contrato de providers.

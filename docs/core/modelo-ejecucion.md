@@ -111,7 +111,7 @@ recibir el chunk ya parseado, pedir el Block, colocarlo.
    Además, cancelar **no interrumpe la primitiva ⏸ en vuelo**: la task ve
    `ECANCELED` al instante, pero la operación Go en curso (`fs.write`,
    `http.request`…) corre hasta su fin natural y sus efectos pueden aterrizar
-   después del cleanup ([P33](../postponed/pospuesto.md)).
+   después del cleanup ([P33](../postponed/p33-cancelar-primitiva-en-vuelo.md)).
 3. **La frontera de workers solo cruza datos, nunca referencias.** Mensajes =
    valores JSON-ables copiados. No cruzan: closures, userdata ni **Blocks**.
    Consecuencia práctica: un worker no puede pre-renderizar UI; manda datos

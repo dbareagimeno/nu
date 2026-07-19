@@ -15,7 +15,7 @@ adr: "ADR-023"
 especificación—, [chat.md](../contracts/chat.md) §5, [guia-plugins.md](../contracts/guia-plugins.md)
 §5 y [arquitectura.md](../core/arquitectura.md) —el ejemplo MCP pasa a allows de
 nombre exacto—; doctrina registrada en [ADR-023](../decisions/adr/README.md); la alternativa
-mayor, pospuesta como [P39](../postponed/pospuesto.md)). **Modelo Claude Code adaptado** — el matcher del
+mayor, pospuesta como [P39](../postponed/p39-permisos-bash-programa-parseado.md)). **Modelo Claude Code adaptado** — el matcher del
 harness de referencia, ajustado a la doctrina fail-closed del proyecto. La
 semántica de match pasa de implícita a contrato: patrón sin `:` = nombre
 exacto de la tool; `tool:arg` = glob anclado (`*` ⇒ `.*`, `^…$`, resto

@@ -112,7 +112,7 @@ jobs:
         # Mismas flags que el release (ADR-013): estático (CGO_ENABLED=0),
         # reproducible (-trimpath), pequeño (-ldflags "-s -w"). Validar aquí que el
         # artefacto distribuible compila en cada OS evita sorpresas en el tag.
-        run: CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o enu .
+        run: CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o enu ./cmd/enu
 
       - name: Smoke test headless
         # Arranca el binario de verdad sin secretos: `enu -e` evalúa Lua headless y

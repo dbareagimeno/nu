@@ -7,7 +7,7 @@ date: "2026-07-19"
 origin: "investigación de la opción (c) de G58 (reproducido empíricamente con el binario)"
 resolution: "Doctrina de lease reclamable + reconciliación (ADR-029) escrita en sesiones.md §6 y reconocida en malla.md §3/§5; drenaje del apagado (A2) documentado en modelo-ejecucion.md §limitaciones; cleanups aclarados síncronos/solo-memoria en api.md §3 y guia-plugins.md (patrón cleanup→spawn); H-D corregido en agente.md; H-A absorbido (resuelto por A2, sin G## propio); A1→P46; flock/C1 descartado. Construcción (drenaje, orden de Session:close, ciclo de vida del chat, renovación/reaper) diferida a sesión de plan."
 adr: "ADR-029"
-affected: ["api.md §3 (`enu.task.cleanup`)", "sesiones.md §6", "agente.md (`Session:close`)", "guia-plugins.md", "modelo-ejecucion.md (§limitaciones, apagado)", "malla.md (claim/heartbeat §3 y worktree §5)", "pospuesto.md (P46, P41)", "ADR-029", "extensión sessions (init.lua) — construcción diferida", "extensión chat (ciclo de vida de la sesión) — construcción diferida"]
+affected: ["api.md §3 (`enu.task.cleanup`)", "sesiones.md §6", "agente.md (`Session:close`)", "guia-plugins.md", "modelo-ejecucion.md (§limitaciones, apagado)", "malla.md (claim/heartbeat §3 y worktree §5)", "postponed/ (P46, P41)", "ADR-029", "extensión sessions (init.lua) — construcción diferida", "extensión chat (ciclo de vida de la sesión) — construcción diferida"]
 ---
 # G60 · El `.jsonl.lock` nace huérfano en el arranque del chat: `enu.task.cleanup` no puede ⏸ y la promesa de `sesiones.md` §6 es inimplementable — **RESUELTO** — `api.md` §3 / `sesiones.md` §6 / sessions / chat
 
@@ -35,7 +35,7 @@ affected: ["api.md §3 (`enu.task.cleanup`)", "sesiones.md §6", "agente.md (`Se
 >    se corrige la afirmación falsa **H-D** de `agente.md` (`Session:close` es ⏸, no
 >    llamable desde cleanup). El orden de `Session:close` y el ciclo de vida del chat
 >    bajo task de vida larga son **construcción diferida** (abajo).
-> 4. **A1 → [P46](../postponed/pospuesto.md)** (permitir ⏸ directo en cleanups, con
+> 4. **A1 → [P46](../postponed/p46-suspension-directa-en-cleanups.md)** (permitir ⏸ directo en cleanups, con
 >    disparador de fricción real). **flock/C1 descartado** como columna vertebral
 >    (mono-host + NFS; **H-E**), reconsiderable solo como optimización local.
 >
@@ -44,7 +44,7 @@ affected: ["api.md §3 (`enu.task.cleanup`)", "sesiones.md §6", "agente.md (`Se
 > el lock antes de `closed=true`), sesión del chat bajo task de vida larga, y la
 > renovación/reaper del lease. Al construirlo, restaurar la aserción «el
 > `.jsonl.lock` desaparece» retirada de `e2e/chat_test.go`. La construcción de A2
-> debe tener presente [P33](../postponed/pospuesto.md): al cancelar tasks
+> debe tener presente [P33](../postponed/p33-cancelar-primitiva-en-vuelo.md): al cancelar tasks
 > suspendidas en una primitiva ⏸ en vuelo (p. ej. el `fs.remove`/`proc.run` de un
 > cleanup→spawn), sus efectos pueden aterrizar tras el desmontaje.
 >
@@ -240,4 +240,4 @@ en [ADR-029](../decisions/adr/adr-029-resiliencia-lease-reclamable-reconciliacio
 **construcción**: cualquier sesión de implementación que toque el drenaje del
 apagado, el orden de `Session:close`, el ciclo de vida de la sesión del chat o la
 renovación/reaper del lock se rige por ADR-029 y `sesiones.md` §6. La ergonomía
-de cleanups suspendientes vive ahora en [P46](../postponed/pospuesto.md).
+de cleanups suspendientes vive ahora en [P46](../postponed/p46-suspension-directa-en-cleanups.md).

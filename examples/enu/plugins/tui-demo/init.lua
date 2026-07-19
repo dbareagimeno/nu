@@ -8,7 +8,7 @@
 -- (extensión oficial) construye sus widgets exactamente sobre estas mismas funciones.
 --
 -- Cómo correrlo (desde la raíz del repo):
---     XDG_CONFIG_HOME=examples go run .
+--     XDG_CONFIG_HOME=examples go run ./cmd/enu
 --   o, con el binario instalado:
 --     XDG_CONFIG_HOME=examples enu
 -- Teclas: ↑/↓ o j/k mueven el contador · escribe para rellenar el campo ·

@@ -69,3 +69,4 @@ debe poder reconstruir.
 | G42+G43 | Retry con backoff en el motor + `agent:error` estructurado con reintento manual (agente.md §2/§4/§10, chat.md §2/§4) | [g42-g43-retry-backoff.md](g42-g43-retry-backoff.md) |
 | G53–G56 | Construcción del lote de seguridad G53+G54+G55+G56 (auditoría 2026-07-16) | [g53-g56-seguridad.md](g53-g56-seguridad.md) |
 | E2E | Suite e2e de los plugins oficiales contra el binario real (paquete e2e/) | [e2e-plugins.md](e2e-plugins.md) |
+| REORG | Reorganización del repo: binario a `cmd/enu/` (ADR-031), archivo del spike, destilado del handoff, `plan`·`postponed` a un-fichero-por-entrada | [reorganizacion-repo.md](reorganizacion-repo.md) |

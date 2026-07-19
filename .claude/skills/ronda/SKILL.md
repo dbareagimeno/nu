@@ -39,7 +39,7 @@ lo que ya se componía.
 
 5. **Triaje** con el usuario, candidato a candidato:
    - `REAL` y la v1 lo necesita → **G##** vía `/hallazgo`.
-   - `REAL` pero puede esperar → **P##** en `docs/postponed/pospuesto.md`, siempre con
+   - `REAL` pero puede esperar → **P##** en `docs/postponed/` (un fichero `pNN-<slug>.md`), siempre con
      su **disparador** (la señal concreta que indica reabrirlo).
    - `FALSO POSITIVO` → *demostrado-expresable*: la composición del
      verificador se documenta en la ronda (es tan valiosa como un hallazgo:

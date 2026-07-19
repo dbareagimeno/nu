@@ -47,7 +47,7 @@ El gate de `release.yml` (job `verificar-version`) **ejecuta el runtime** y abor
 si no casa con el tag. Reprodúcelo en local antes de nada:
 
 ```
-go build ./... && go run . -e 'return string.format("%d.%d.%d", enu.version.major, enu.version.minor, enu.version.patch)'
+go build ./... && go run ./cmd/enu -e 'return string.format("%d.%d.%d", enu.version.major, enu.version.minor, enu.version.patch)'
 ```
 
 ### 2. De-riesgo de los gates de la web

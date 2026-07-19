@@ -34,7 +34,7 @@ services:
     # al ver un dueño de fichero distinto del usuario del proceso.
     command: >
       sh -c "git config --global --add safe.directory /src &&
-             go build -trimpath -ldflags '-s -w' -o dist/enu ."
+             go build -trimpath -ldflags '-s -w' -o dist/enu ./cmd/enu"
 
   # `make test`: mismo filtro que el job "test" de ci.yml (excluye
   # internal/vmwasm, ver Dockerfile). -race necesita cgo (a diferencia del build

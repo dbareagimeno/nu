@@ -49,7 +49,7 @@ Session.id / Session.usage -> { context_tokens, cost_usd, turns }
 ```
 
 > **Estado de implementación.** ✅ Implementado `send/spawn/set_model/close` y
-> también `cancel`, `fork`, `compact` y `clear_queue` ([pospuesto.md](../postponed/pospuesto.md)
+> también `cancel`, `fork`, `compact` y `clear_queue` ([pospuestos](../postponed/README.md)
 > **P22**, resuelto). El turno corre en una task **propia de la sesión** (la que
 > `cancel` cancela); `send` espera el resultado por un future, no por la task, así
 > que cancelar el turno no cancela a quien llamó (su `send` devuelve nil).
@@ -65,7 +65,7 @@ Session.id / Session.usage -> { context_tokens, cost_usd, turns }
 4. Al `done`: persiste el mensaje (con `usage` y modelo), emite
    `agent:message`.
 5. Si `stop_reason == "tool_calls"`: por cada tool call, **en orden** (la
-   ejecución paralela está pospuesta, [P12](../postponed/pospuesto.md)): pipeline de
+   ejecución paralela está pospuesta, [P12](../postponed/p12-ejecucion-paralela-tool-calls.md)): pipeline de
    permisos (§5) → hooks `tool.pre` → handler → hooks `tool.post` →
    `tool_result`. Después, vuelve al paso 2.
 6. Termina cuando el modelo para sin pedir tools, o al agotar
@@ -77,7 +77,7 @@ nunca a mitad de un stream). El usuario puede así corregir al agente
 mientras trabaja ("usa pnpm, no npm"). Todos los `send` consumidos por un
 mismo turno resuelven con el mensaje final de ese turno. `Session:cancel()`
 cancela el turno, **no** vacía la cola (vaciarla es acción aparte:
-`Session:clear_queue()`). *(✅ Implementado: [pospuesto.md](../postponed/pospuesto.md) **P23**.
+`Session:clear_queue()`). *(✅ Implementado: [pospuestos](../postponed/README.md) **P23**.
 El loop drena la cola al inicio de cada iteración; todos los `send` consumidos por
 un turno resuelven con su mensaje final.)*
 
@@ -229,7 +229,7 @@ Dos mecanismos, deliberadamente separados:
 `error`, `retry` (G42: `{ attempt, max_retries, delay_ms, code, message }`,
 uno por cada espera de backoff), `permission.asked`, `permission.denied` (G40, §5). Para pintar, loggear, observar. *(El evento
 `compact` solo se emitirá cuando exista la compactación automática:
-[pospuesto.md](../postponed/pospuesto.md) (P25).)* El namespace
+[pospuestos](../postponed/README.md) (P25).)* El namespace
 `agent:` no es una reserva del core (el core no sabe de agentes, ADR-003):
 es el namespace del plugin `agent`, protegido por la unicidad del nombre de
 plugin como cualquier otro (G26, [api.md](api.md) §4).
@@ -332,9 +332,9 @@ del matcher de Claude Code, adaptado):
    heredocs, subshells y agrupaciones (`( )`, `{ }`), comillas
    desbalanceadas. La lista de constructos modelables es **cerrada por
    contrato** — es un allowlist: lo que el tokenizador no entiende falla
-   hacia `ask`, nunca hacia conceder. Doctrina de [P17](../postponed/pospuesto.md):
+   hacia `ask`, nunca hacia conceder. Doctrina de [P17](../postponed/p17-scoping-de-caps-por-rutas.md):
    hacer esto *casi* bien es peor que no tenerlo; el salto a un parser de
-   shell completo queda pospuesto con disparador ([P39](../postponed/pospuesto.md)).
+   shell completo queda pospuesto con disparador ([P39](../postponed/p39-permisos-bash-programa-parseado.md)).
 4. **`deny` casa si *algún* subcomando casa el patrón**, con la precedencia
    absoluta que ya tiene en el pipeline. Y es **best-effort declarado**
    (doctrina G16): `deny = { "bash:rm *" }` no muerde `/bin/rm`, un alias ni
@@ -404,7 +404,7 @@ worker sin `proc` no ejecuta procesos, opine quien opine.
 
 ## 6. Skills
 
-> ✅ **Implementado** ([pospuesto.md](../postponed/pospuesto.md) **P24**). El ensamblado
+> ✅ **Implementado** ([pospuestos](../postponed/README.md) **P24**). El ensamblado
 > descubre skills, inyecta su índice y expone `agent.skills.list(cwd)`; el
 > contenido completo lo carga la tool interna `skill` bajo demanda. El contenido
 > del repo va tras la puerta TOFU (§11.2, `agent.trust`).
@@ -428,14 +428,14 @@ fichero de contexto del proyecto (`enu.md` en la raíz del repo, si existe) →
 `opts.system`. Los hooks `request.pre` pueden retocar el resultado. Cada
 pieza es sustituible por configuración — no hay prompt mágico inaccesible.
 
-> ✅ **Implementado** ([pospuesto.md](../postponed/pospuesto.md) **P24**). El ensamblado es
+> ✅ **Implementado** ([pospuestos](../postponed/README.md) **P24**). El ensamblado es
 > `base → índice de skills → enu.md (tras TOFU) → opts.system`. El descubrimiento
 > se captura al abrir la sesión; la inclusión del contenido del repo se decide por
 > confianza en cada ensamblado.
 
 ## 8. Compactación
 
-> ✅ **Implementado** ([pospuesto.md](../postponed/pospuesto.md) **P25**). La compactación se
+> ✅ **Implementado** ([pospuestos](../postponed/README.md) **P25**). La compactación se
 > dispara al rebasar el umbral (defecto 80% del `context`) en el **límite del
 > turno** (no entre iteraciones, para no romper el emparejamiento
 > tool_call↔tool_result), y emite `agent:compact`. `Session:compact()` es la vía
@@ -508,7 +508,7 @@ Sub:cancel()
 `config.dir()/agent.toml`: modelo por defecto, `max_turns`,
 `max_retries`/`retry_base_ms` (reintentos de la apertura del stream, G42),
 umbral y modelo de compactación, **razonamiento por defecto** (`[thinking]` con `mode` y
-`budget`, ADR-016), política de retención de sesiones ([P10](../postponed/pospuesto.md)),
+`budget`, ADR-016), política de retención de sesiones ([P10](../postponed/p10-retencion-gc-sesiones.md)),
 permisos globales, herencia de secretos de la tool `bash` (`[tools.bash]
 inherit_secrets`, §3 — G55). La precedencia es la estándar: defaults < global <
 proyecto (`<repo>/.enu/agent.toml`) < sesión (`opts`) — con dos excepciones
@@ -557,8 +557,8 @@ instalar un plugin.
 
 ## 12. Relación con lo pospuesto
 
-Tool calls paralelas ([P12](../postponed/pospuesto.md)), workers anidados para subagentes
-([P11](../postponed/pospuesto.md)) y retención de sesiones ([P10](../postponed/pospuesto.md)) tienen
+Tool calls paralelas ([P12](../postponed/p12-ejecucion-paralela-tool-calls.md)), workers anidados para subagentes
+([P11](../postponed/p11-workers-anidados.md)) y retención de sesiones ([P10](../postponed/p10-retencion-gc-sesiones.md)) tienen
 entrada en el registro de pospuestos con su disparador.
 
 <!-- /enu:interno -->

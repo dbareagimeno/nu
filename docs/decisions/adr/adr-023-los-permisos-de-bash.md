@@ -51,7 +51,7 @@ especificado como contrato en [agente.md](../../contracts/agente.md) §5:
    subcomando** ([chat.md](../../contracts/chat.md) §5, P29), no el string encadenado.
 
 El salto al programa parseado queda pospuesto con disparador doble
-([P39](../../postponed/pospuesto.md)).
+([P39](../../postponed/p39-permisos-bash-programa-parseado.md)).
 
 **Consecuencias.**
 

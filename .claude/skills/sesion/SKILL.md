@@ -1,6 +1,6 @@
 ---
 name: sesion
-description: Ejecuta la sesión de implementación que marca el puntero ▶ de docs/plan/estado.md con el ciclo BDD→TDD→juicio→DoD, y cierra moviendo puntero y bitácora en el mismo commit. Úsala cuando la tarea sea construir (no diseñar) y exista una sesión abierta en el plan; si la feature no está en el plan, antes va /planificar-sesion.
+description: Ejecuta la sesión de implementación que marca el puntero ▶ de docs/plan/estado.md con el ciclo BDD→TDD→juicio→DoD, y cierra moviendo puntero y worklog en el mismo commit. Úsala cuando la tarea sea construir (no diseñar) y exista una sesión abierta en el plan; si la feature no está en el plan, antes va /planificar-sesion.
 ---
 
 # Sesión de implementación (BDD → TDD → juicio → DoD)
@@ -11,9 +11,10 @@ con las disciplinas BDD y TDD y el juicio clean-room.
 
 ## Pasos
 
-1. **Sitúate.** Lee el puntero ▶ y la última fila de la bitácora en
-   `docs/plan/estado.md` (el estado vivo); el detalle de la sesión —su
-   enunciado, dependencias y fase— está en `docs/plan/implementacion.md`.
+1. **Sitúate.** Lee el puntero ▶ y «Último cierre» en `docs/plan/estado.md`
+   (el estado vivo); el registro por sesión —dónde se quedó lo anterior— vive
+   en `docs/worklog/` (un fichero por sesión + índice). El detalle de la sesión
+   —su enunciado, dependencias y fase— está en `docs/plan/implementacion.md`.
    Implementa **solo** la sesión que marca el
    puntero; verifica que sus dependencias ("Depende de") están cerradas. Si el
    puntero está en `—`, no hay nada que implementar: ofrece
@@ -37,14 +38,15 @@ con las disciplinas BDD y TDD y el juicio clean-room.
    - **Si la API no basta para implementar la espec: PÁRATE.** Es un hallazgo
      G##: `/hallazgo` primero (documentos), código después. Nunca al revés.
 
-4. **Mutación (solo sesiones 🔒).** Si la sesión está en el inventario 🔒,
-   ejecuta `/mutacion` acotada a los ficheros tocados. Cada mutante LIVED: o
-   un test nuevo que lo mata, o queda anotado como equivalente en la bitácora.
+4. **Mutación (solo sesiones 🔒).** Si la sesión está en el inventario 🔒
+   (`docs/plan/inventario-tests.md`), ejecuta `/mutacion` acotada a los ficheros
+   tocados. Cada mutante LIVED: o un test nuevo que lo mata, o queda anotado
+   como equivalente en el worklog de la sesión.
 
 5. **Juicio clean-room.** Ejecuta `/juicio` con el diff de la sesión — su
    política de coste decide el panel (sesión 🔒 o que toca API/contratos →
    panel completo; wrapper fino → solo juez-espec; glue → nada). **Siempre
-   antes de escribir la bitácora** (la bitácora contiene tu racionalización y
+   antes de escribir el worklog** (el worklog contiene tu racionalización y
    contaminaría a los jueces). Arregla los hallazgos REALES antes de seguir.
 
 6. **Definition of Done** (las cinco, sin excepción):
@@ -57,16 +59,17 @@ con las disciplinas BDD y TDD y el juicio clean-room.
    4. No regresiona: la suite completa sigue verde.
    5. Deja rastro: `gofmt`, `go vet`, lint limpios.
 
-7. **Cierre — todo en el MISMO commit:** el código; en `docs/plan/estado.md`
-   el puntero ▶ avanzado a la sesión siguiente (o `—`), la fila nueva de la
-   bitácora (fecha, sesión, commit, notas: hallazgos, desviaciones, lo que
-   debe saber la siguiente) y, si cerraste fase, el tablero marcado; y la
-   entrada operativa de la sesión como fichero nuevo
-   `docs/worklog/sNN-<slug>.md` (frontmatter `type: sesion`, `id: SNN`,
-   `phase`, `status: cerrada`; las decisiones y desviaciones por debajo del
-   umbral de G##) más su fila en el índice `docs/worklog/README.md`. Un
+7. **Cierre — todo en el MISMO commit:** el código; el registro de la sesión
+   como fichero nuevo `docs/worklog/sNN-<slug>.md` (frontmatter `type: sesion`,
+   `id: SNN`, `phase`, `status: cerrada`; qué se entregó, decisiones y
+   desviaciones por debajo del umbral de G##, notas de `-race`, lo que debe
+   saber la siguiente) más su fila en el índice `docs/worklog/README.md`; y en
+   `docs/plan/estado.md` el puntero ▶ avanzado a la sesión siguiente (o `—`),
+   «Último cierre» actualizado y, si cerraste fase, el tablero marcado. **Ya no
+   se añade fila a una bitácora en `estado.md`: el registro por sesión ES el
+   fichero de `worklog/`.** Un
    commit que toca código sin mover el puntero es una sesión a medias. **Si la sesión cierra fase**: ejecuta
-   antes su checkpoint 🔎 CP-N; si falla, el puntero no se mueve y la bitácora
+   antes su checkpoint 🔎 CP-N; si falla, el puntero no se mueve y el worklog
    anota qué falló. Mensaje en español: `S##: <qué entrega>`, citando el G##
    si lo hubo. No abras PR salvo petición explícita. Si hay PR y se
    aprueba (merge a `develop`), elimina el worktree y la rama de trabajo —

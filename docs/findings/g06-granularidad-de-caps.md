@@ -16,7 +16,7 @@ granularidades: `"fs"` módulo, `"fs.read"` función; deny-by-default para
 funciones futuras), vocabulario como tablas inspeccionables de la
 extensión del agente (`agent.caps.FS_RO`). Los paquetes curados en el core
 se descartaron (esconden juicios y redistribuyen poder retroactivamente al
-crecer la API); el scoping por rutas va a [P17](../postponed/pospuesto.md). Derivada:
+crecer la API); el scoping por rutas va a [P17](../postponed/p17-scoping-de-caps-por-rutas.md). Derivada:
 ADR-010 — las extensiones oficiales se distribuyen embebidas pero
 **inactivas por defecto**, activación explícita de una tecla.
 

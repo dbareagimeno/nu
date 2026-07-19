@@ -4,7 +4,7 @@
 // «in spanish for now»: el picker de idioma navega a la página homóloga.
 //
 // Copiado fielmente de la clase Component del prototipo (strings es/en y el
-// objeto W del chrome interno) y del copy del README del handoff. No inventar
+// objeto W del chrome interno) y del copy de DISENO.md §«Copy de la portada». No inventar
 // copy: cualquier texto visible sale de aquí.
 
 export type Lang = 'es' | 'en';

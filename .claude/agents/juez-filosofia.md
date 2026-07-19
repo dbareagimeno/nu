@@ -39,7 +39,7 @@ es implementar mal la espec: es que la API crezca mal. Respondes en español.
 
 Además: ¿la propuesta respeta los formatos del flujo (G## en problemas.md,
 ADR con supersede y nunca reescritura, P## con disparador)? ¿Reabre un P## de
-`docs/postponed/pospuesto.md` sin que su disparador haya sonado?
+`docs/postponed/` sin que su disparador haya sonado?
 
 ## Formato de salida
 

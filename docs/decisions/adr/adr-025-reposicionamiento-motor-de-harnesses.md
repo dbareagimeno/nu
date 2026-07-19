@@ -99,7 +99,7 @@ el nicho de plataforma es donde la arquitectura es ventaja y no sobreingeniería
   pieza 5. `filosofia.md` y la tabla comparativa del README se actualizan a la
   tesis de la pieza 1 cuando se ejecute la Fase 1 (trabajo de sesiones, no de
   este ADR).
-- [P4](../../postponed/pospuesto.md) (package manager) queda **decidida** por
+- [P4](../../postponed/p04-package-manager-de-plugins.md) (package manager) queda **decidida** por
   la pieza 3 (gestor sobre git en Fase 2); en pospuestos entran P40 (registry
   central), P41 (cola durable de tasks) y P42 (port automático Pi→Lua vía
   forge), cada una con su disparador.

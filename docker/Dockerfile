@@ -56,7 +56,7 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -trimpath -ldflags "-s -w" -o /out/enu .
+    go build -trimpath -ldflags "-s -w" -o /out/enu ./cmd/enu
 
 # ---------------------------------------------------------------------------
 # test: go test -race sobre el árbol, excluyendo internal/vmwasm — igual que

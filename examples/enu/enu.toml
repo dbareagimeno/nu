@@ -4,7 +4,7 @@
 # `config.dir()` resuelve a `examples/enu`, donde vive este fichero). Desde la raíz del
 # repo:
 #
-#     XDG_CONFIG_HOME=examples go run .
+#     XDG_CONFIG_HOME=examples go run ./cmd/enu
 #   o, con el binario instalado:
 #     XDG_CONFIG_HOME=examples enu
 #

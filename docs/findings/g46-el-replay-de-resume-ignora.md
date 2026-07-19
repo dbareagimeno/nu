@@ -12,7 +12,7 @@ affected: ["sesiones.md §3", "agente.md §2 (tensión G18", "G19)"]
 
 **Resolución** (2026-07-13; opción (a) **más la (c)** — la recomendación
 completa del registro—, construida el mismo día en la extensión `agent`,
-fila `G46 (extensión)` de la bitácora de [implementacion.md](../plan/implementacion.md)).
+fila `G46 (extensión)` de la [bitácora histórica del plan](../archive/bitacora-plan.md)).
 La tensión G18/G19 se cierra declarando la **precedencia explícita** en
 [agente.md](../contracts/agente.md) §2: **opts del resume > `event` del transcript >
 `agent.toml`** — los `opts` siguen siendo efímeros (G18) pero solo pisan al

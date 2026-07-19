@@ -1,8 +1,8 @@
 // Constantes globales del sitio. Centralizadas aquí para que la web tenga una
 // única fuente de verdad de dominio, versión y URLs.
 
-// Dominio placeholder: el dominio real está pendiente de decisión (ver el
-// handoff, "Decisiones abiertas"). Al fijarlo, solo se cambia aquí.
+// Dominio placeholder: el dominio real está pendiente de decisión (ver
+// DISENO.md, "Decisiones abiertas"). Al fijarlo, solo se cambia aquí.
 export const DOMAIN = 'enu.sh';
 
 // La línea de instalación de una sola línea. La usan la portada ([i]) y el
