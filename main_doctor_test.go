@@ -178,8 +178,15 @@ func TestDoctorSessionsPerms(t *testing.T) {
 		}
 		rt := mkDoctorRuntime(t, cfg, data)
 		rep, _ := runDoctorJSON(t, rt, doctorOpts{})
-		if c := findCheck(t, rep, "sessions.perms"); c.Status != statusOKd {
+		c := findCheck(t, rep, "sessions.perms")
+		if c.Status != statusOKd {
 			t.Fatalf("sessions.perms debe ser ok; got %q (%v)", c.Status, c.Detail)
+		}
+		// El detalle reporta el CONTEO de transcripts muestreados (positivo): un
+		// transcript 0600 → "1 transcript(s)…". Ancla el número para que un `seen--`
+		// (que rendiría "-1 transcript(s)…") no pase inadvertido.
+		if c.Detail == nil || !strings.HasPrefix(*c.Detail, "1 ") {
+			t.Fatalf("el detalle ok debe empezar por el conteo positivo '1 '; got %v", c.Detail)
 		}
 	})
 	t.Run("sin_sesiones_skip", func(t *testing.T) {
@@ -189,6 +196,35 @@ func TestDoctorSessionsPerms(t *testing.T) {
 			t.Fatalf("sin sesiones, sessions.perms debe ser skip; got %q", c.Status)
 		}
 	})
+}
+
+// TestDoctorHumanDetailGating blinda la regla de `doctor.md` que `writeDoctorHuman`
+// implementa: el detalle se imprime SOLO en checks `fail`/`skip`, nunca en `ok` (un `ok`
+// solo muestra su línea de resumen). Es una garantía de contrato, no cosmética: un `ok`
+// que filtrara su `detail` podría volcar información (rutas, versiones) que el modo humano
+// resume a propósito. Construye un informe sintético con un check de cada estado, todos
+// con detalle, y verifica el gating.
+func TestDoctorHumanDetailGating(t *testing.T) {
+	report := doctorReport{
+		Version: "0.0.0", OS: "x", Arch: "y",
+		Checks: []doctorCheck{
+			{ID: "ok.uno", Status: statusOKd, Summary: "resumen ok", Detail: strptr("DETALLE_OK_NO_DEBE_APARECER")},
+			{ID: "skip.uno", Status: statusSkipd, Summary: "resumen skip", Detail: strptr("DETALLE_SKIP_SI")},
+			{ID: "fail.uno", Status: statusFaild, Summary: "resumen fail", Detail: strptr("DETALLE_FAIL_SI"), Remedy: strptr("arregla")},
+		},
+	}
+	var buf bytes.Buffer
+	writeDoctorHuman(&buf, report)
+	out := buf.String()
+	if strings.Contains(out, "DETALLE_OK_NO_DEBE_APARECER") {
+		t.Fatalf("el detalle de un check OK NO debe imprimirse (gating fail/skip); salida:\n%s", out)
+	}
+	if !strings.Contains(out, "DETALLE_SKIP_SI") {
+		t.Fatalf("el detalle de un check SKIP debe imprimirse; salida:\n%s", out)
+	}
+	if !strings.Contains(out, "DETALLE_FAIL_SI") {
+		t.Fatalf("el detalle de un check FAIL debe imprimirse; salida:\n%s", out)
+	}
 }
 
 // tty.caps: skip en headless, ok con TTY.

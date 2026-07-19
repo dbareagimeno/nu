@@ -390,6 +390,30 @@ func assertNoSidecar(t *testing.T, dir string) {
 	}
 }
 
+// TestJsonStringValue blinda el extractor de valores del parseo mínimo de la API de
+// releases (feed de `LatestStable`). Los casos con el marcador en el ÍNDICE 0 y con la
+// comilla del valor en el índice 0 (sin espacio tras `:`) anclan los límites `< 0` del
+// helper: un `<= 0` los rompería (devolvería "" donde hay valor), y la mutación lo caza.
+func TestJsonStringValue(t *testing.T) {
+	cases := []struct {
+		nombre, line, key, want string
+	}{
+		{"marcador_al_inicio_de_linea", `"tag_name": "v1.0.0",`, "tag_name", "v1.0.0"},
+		{"valor_sin_espacio_tras_los_dos_puntos", `{"key":"val"}`, "key", "val"},
+		{"caso_normal_con_espacio", `  { "tag_name": "v0.9.0" }`, "tag_name", "v0.9.0"},
+		{"clave_ausente", `{"otra": "x"}`, "tag_name", ""},
+		{"sin_dos_puntos", `"tag_name" "v1"`, "tag_name", ""},
+		{"valor_vacio", `"k":""`, "k", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.nombre, func(t *testing.T) {
+			if got := jsonStringValue(c.line, c.key); got != c.want {
+				t.Fatalf("jsonStringValue(%q,%q) = %q, want %q", c.line, c.key, got, c.want)
+			}
+		})
+	}
+}
+
 func TestSameVersion(t *testing.T) {
 	if !sameVersion("v0.2.0", "0.2.0") {
 		t.Fatalf("v0.2.0 debe igualar 0.2.0")
