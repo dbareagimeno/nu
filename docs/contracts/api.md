@@ -418,15 +418,24 @@ core — la activación de plugins (las extensiones oficiales embebidas están
 **Pantalla de runtime desnudo (G21)**: con TTY interactivo y ningún plugin
 activo, el kernel pinta una pantalla fija hecha solo de sus capacidades —
 versión y nivel de API, rutas de config y plugins, extensiones embebidas
-disponibles — y sus acciones: activar el conjunto oficial (escribe
-`plugins.enabled` y continúa el arranque canónico, sin red), activar
-extensiones sueltas (p. ej. solo `repl`), o salir. No es la UI de un
-producto sino la del runtime: las extensiones embebidas y su activación
-son capacidad del loader, así que el kernel habla de lo suyo
-([filosofia.md](../core/filosofia.md) §2) — render fijo, pre-Lua, sin widgets ni
-lógica. Es lo que se ve siempre que enu arranca sin nada activo, no un
-diálogo de primera vez. Sin TTY no hay pantalla: arranca desnudo, y los
-errores por extensión inactiva son accionables (nombran la línea de
+disponibles — y sus **tres acciones**, que dispara desde el teclado: activar
+el conjunto oficial (escribe `plugins.enabled` y continúa el arranque
+canónico, sin red), activar extensiones sueltas —navegando con el cursor el
+catálogo de embebidas que ya lista y eligiendo una (p. ej. solo `repl`)— o
+salir. No es la UI de un producto sino la del runtime: las extensiones
+embebidas y su activación son capacidad del loader, así que el kernel habla
+de lo suyo ([filosofia.md](../core/filosofia.md) §2) — render **pre-Lua**, sin
+widgets de `enu.ui` ni lógica de producto. La respuesta al teclado —incluida
+la máquina de estados de esa selección acotada (menú ↔ catálogo, cursor,
+guarda de re-entrada contra doble activación)— es lógica de *input del
+driver*: vive en el binario, con el mismo estatus que el cierre de CP-7 (una
+tecla → `core:shutdown`), y **no añade nada a `enu.*` ni mueve
+`enu.version.api`**. El selector no crece por la vía de hecho: cualquier
+enriquecimiento más allá de navegar y elegir del catálogo (filtro, búsqueda,
+descripciones, paneles) es hallazgo/ADR, no código — la pantalla desnuda no
+es una TUI del kernel. Es lo que se ve siempre que enu arranca sin nada
+activo, no un diálogo de primera vez. Sin TTY no hay pantalla: arranca
+desnudo, y los errores por extensión inactiva son accionables (nombran la línea de
 `enu.toml` que lo arregla, como los de permisos en
 [agente.md](agente.md) §5). El onramp sin TTY (CI, Docker, scripts) es el
 flag de CLI `enu --default-config` (ADR-015, G33): escribe ese mismo conjunto
