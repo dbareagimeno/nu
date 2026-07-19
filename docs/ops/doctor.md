@@ -73,19 +73,30 @@ Semántica de los campos:
 Los `id` congelados al alta (S50 los implementa; añadir checks después es
 adición legítima):
 
-| id | Comprueba | Sin red |
-|---|---|---|
-| `binary.version` | versión/arquitectura del binario y que `--version` responde | sí |
-| `config.dir` | `config.dir()` existe y es legible | sí |
-| `config.parse` | los TOML presentes (`enu.toml`, `agent.toml`, `providers.toml`) parsean | sí |
-| `plugins.enabled` | los plugins activados existen en el catálogo (embebido o instalado) | sí |
-| `plugins.requires` | las dependencias (`requires`) de los activados resuelven | sí |
-| `provider.model` | el modelo por defecto resuelve contra `providers.toml` | sí |
-| `provider.key` | la variable de `api_key_env` está presente o ausente (por nombre; el valor jamás se lee más allá de la presencia) | sí |
-| `sessions.perms` | `data_dir()/sessions/` respeta el `0600` de G57 (muestreo) | sí |
-| `tty.caps` | TTY presente y capacidades del terminal (`skip` en headless) | sí |
-| `tools.external` | herramientas externas declaradas por las extensiones activas están en `PATH` | sí |
-| `provider.reach` | alcanzabilidad del endpoint del provider — **solo con `--net`**; sin el flag, `skip` | no |
+Los checks se dividen en **kernel** (implementados en v1, S50) y **producto**
+(en el catálogo con `id` reservado, pero `skip` en v1 por
+[G62](../findings/g62-los-checks-de-producto-de-doctor-presuponen-introspeccion-inexistente.md):
+necesitan introspección de extensiones que aún no existe, diferida como P45).
+Activar un check de producto cuando P45 se resuelva es adición legítima (pasar
+de `skip` a `ok`/`fail`), no un cambio de esquema.
+
+| id | Comprueba | Sin red | v1 |
+|---|---|---|---|
+| `binary.version` | versión y arquitectura del binario (desde los símbolos `VersionMajor/Minor/Patch`/`APILevel`; **no** hay flag `--version`) | sí | kernel |
+| `config.dir` | `config.dir()` existe y es legible (su ausencia no es error: runtime desnudo, ADR-010) | sí | kernel |
+| `config.parse` | los TOML presentes (`enu.toml`, `agent.toml`, `providers.toml`) parsean. Un solo `id`: `detail` lista el estado de los tres, `remedy` nombra el/los roto(s) con su fichero (y línea, que da el parser) | sí | kernel |
+| `plugins.enabled` | los plugins activados existen en el catálogo (embebido o instalado) | sí | kernel |
+| `plugins.requires` | las dependencias (`requires`) de los activados resuelven (sin ciclos) | sí | kernel |
+| `sessions.perms` | `data_dir()/sessions/` respeta el `0600` de G57 (muestreo; `skip` si no hay sesiones) | sí | kernel |
+| `tty.caps` | TTY presente y capacidades del terminal (`skip` en headless) | sí | kernel |
+| `provider.model` | el modelo por defecto resuelve contra `providers.toml` | sí | **skip (G62)** |
+| `provider.key` | la variable de `api_key_env` está presente o ausente (por nombre; el valor jamás se lee más allá de la presencia) | sí | **skip (G62)** |
+| `tools.external` | herramientas externas declaradas por las extensiones activas están en `PATH` | sí | **skip (G62)** |
+| `provider.reach` | alcanzabilidad del endpoint del provider — **solo con `--net`**; sin el flag, `skip` | no | **skip (G62)** |
+
+Un check `skip` por G62 lleva su pista en `detail` («check de producto no
+implementado en v1; ver G62/P45») y `remedy: null` (la regla del esquema:
+`remedy` solo en `fail`): `doctor.v1` nunca finge un `ok`.
 
 Regla de implementación (ADR-026, pieza 3): los checks de producto consultan a
 las extensiones o a su fuente única por la API pública; el binario no

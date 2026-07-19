@@ -14,7 +14,14 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 59 registradas, 57 resueltas, 2 abiertas** (G61 añadida y **resuelta**
+**Estado: 60 registradas, 58 resueltas, 2 abiertas** (G62 añadida y **resuelta**
+2026-07-18 desde el escenarista BDD de S50: los 4 checks de producto de `enu
+doctor` (`provider.model`/`provider.key`/`tools.external`/`provider.reach`)
+presuponen consultar la semántica de una extensión sin efectos —hoy solo
+`Boot()` invoca Lua, y arranca todos los `init.lua`— y, `tools.external`, una API
+de declaración de herramientas externas que no existe; resuelta estrechando
+`enu doctor` v1 a los 7 checks kernel (los 4 de producto = `skip` honesto, diseño
+diferido como P45). G61 añadida y **resuelta**
 2026-07-18 desde el escenarista BDD de S49: el wizard de `enu init` (ADR-026
 pieza 2) ofrece cuatro providers pero solo `anthropic` tiene plantilla —la
 espec presupone plantillas que no existen para openai-compat/gemini/ollama, y
@@ -138,7 +145,7 @@ añaden aquí con el mismo método.
 ## Índice
 
 > Los números G24–G25 no existen como fichero: son un hueco histórico que
-> nunca se asignó. La numeración es append-only: el próximo hallazgo es G62,
+> nunca se asignó. La numeración es append-only: el próximo hallazgo es G63,
 > los huecos no se reutilizan.
 
 | # | Título | Docs afectados | Estado | Fichero |
@@ -202,3 +209,4 @@ añaden aquí con el mismo método.
 | G59 | El auto-connect de `mcp.toml` es inservible en headless `-p`: la task efímera desconecta las tools antes del turno, y `env` (array) no llega al subproceso | extensión `mcp` / `enu.proc` | ABIERTO | [g59-el-auto-connect-de-mcp-toml.md](g59-el-auto-connect-de-mcp-toml.md) |
 | G60 | El `.jsonl.lock` nace huérfano en el arranque del chat: `enu.task.cleanup` no puede ⏸ y la promesa de liberación de `sesiones.md` §6 es inimplementable tal como está | `api.md` §3 / `sesiones.md` §6 / `guia-plugins.md` / sessions / chat | ABIERTO | [g60-el-lock-de-sesion-nace-huerfano.md](g60-el-lock-de-sesion-nace-huerfano.md) |
 | G61 | El wizard de `enu init` ofrece 4 providers pero solo `anthropic` tiene plantilla (espec presupone plantillas inexistentes) | ADR-026 pieza 2 / providers.md / S49 | RESUELTO | [g61-el-wizard-de-init-ofrece-providers-sin-plantilla.md](g61-el-wizard-de-init-ofrece-providers-sin-plantilla.md) |
+| G62 | Los 4 checks de producto de `enu doctor` presuponen introspección de extensiones (consulta sin efectos + API de herramientas externas) que no existe | ADR-026 pieza 3 / doctor.md / S50 | RESUELTO | [g62-los-checks-de-producto-de-doctor-presuponen-introspeccion-inexistente.md](g62-los-checks-de-producto-de-doctor-presuponen-introspeccion-inexistente.md) |

@@ -65,9 +65,15 @@ superficie CLI vive en `main.go`, orquesta extensiones por la API pública y
    falta) y lo dice. `init` no usa red (ADR-010: activar sale del binario
    embebido).
 
-3. **`enu doctor` — diagnóstico de solo lectura.** Ejecuta una batería de
-   comprobaciones **sin efectos y sin red por defecto**: versión/arquitectura
-   del binario; existencia y parseo de `config.dir()` y sus TOML; plugins
+3. **`enu doctor` — diagnóstico de solo lectura.** *Estrechado en v1 por
+   [G62](../../findings/g62-los-checks-de-producto-de-doctor-presuponen-introspeccion-inexistente.md):
+   implementa los 7 checks **kernel**; los 4 de **producto** (`provider.model`,
+   `provider.key`, `tools.external`, `provider.reach`) salen como `skip` —
+   necesitan un mecanismo de consulta a extensiones sin efectos y una API de
+   herramientas externas que no existen, diferidos como P45.* Ejecuta una
+   batería de comprobaciones **sin efectos y sin red por defecto**:
+   versión/arquitectura del binario; existencia y parseo de `config.dir()` y
+   sus TOML; plugins
    activados y resolución de sus dependencias (`requires`); modelo por defecto
    resoluble contra `providers.toml`; variable de la clave **presente o
    ausente, sin imprimir jamás su valor** (ni en `--json`); permisos de
