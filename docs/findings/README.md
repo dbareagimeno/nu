@@ -14,7 +14,13 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 60 registradas, 59 resueltas, 1 abierta** (G62 añadida y **resuelta**
+**Estado: 61 registradas, 59 resueltas, 2 abiertas** (G63 añadida 2026-07-19
+desde la [auditoría del feedback «10/10»](../audits/auditoria-feedback-10-de-10-2026-07-19.md):
+las releases se publican sin firma ni atestación de procedencia —el checksum
+viaja por el mismo canal que el binario—; eleva a grieta el SEC-06 de la
+auditoría de seguridad por decisión del operador (tensión T5), invirtiendo su
+triaje original de «bug de infra»; **queda ABIERTA**, opciones (atestación
+nativa de GitHub / cosign keyless / GPG + SBOM) en discusión. G62 añadida y **resuelta**
 2026-07-18 desde el escenarista BDD de S50: los 4 checks de producto de `enu
 doctor` (`provider.model`/`provider.key`/`tools.external`/`provider.reach`)
 presuponen consultar la semántica de una extensión sin efectos —hoy solo
@@ -149,7 +155,7 @@ añaden aquí con el mismo método.
 ## Índice
 
 > Los números G24–G25 no existen como fichero: son un hueco histórico que
-> nunca se asignó. La numeración es append-only: el próximo hallazgo es G63,
+> nunca se asignó. La numeración es append-only: el próximo hallazgo es G64,
 > los huecos no se reutilizan.
 
 | # | Título | Docs afectados | Estado | Fichero |
@@ -214,3 +220,4 @@ añaden aquí con el mismo método.
 | G60 | El `.jsonl.lock` nace huérfano en el arranque del chat: `enu.task.cleanup` no puede ⏸ y la promesa de liberación de `sesiones.md` §6 es inimplementable tal como está | `api.md` §3 / `sesiones.md` §6 / `guia-plugins.md` / `modelo-ejecucion.md` / `malla.md` / ADR-029 / sessions / chat | RESUELTO (ADR-029) | [g60-el-lock-de-sesion-nace-huerfano.md](g60-el-lock-de-sesion-nace-huerfano.md) |
 | G61 | El wizard de `enu init` ofrece 4 providers pero solo `anthropic` tiene plantilla (espec presupone plantillas inexistentes) | ADR-026 pieza 2 / providers.md / S49 | RESUELTO | [g61-el-wizard-de-init-ofrece-providers-sin-plantilla.md](g61-el-wizard-de-init-ofrece-providers-sin-plantilla.md) |
 | G62 | Los 4 checks de producto de `enu doctor` presuponen introspección de extensiones (consulta sin efectos + API de herramientas externas) que no existe | ADR-026 pieza 3 / doctor.md / S50 | RESUELTO | [g62-los-checks-de-producto-de-doctor-presuponen-introspeccion-inexistente.md](g62-los-checks-de-producto-de-doctor-presuponen-introspeccion-inexistente.md) |
+| G63 | Las releases se publican sin firma ni atestación de procedencia: el checksum viaja por el mismo canal que el binario (eleva SEC-06 a grieta) | release.yml / install.sh / `docs/ops/release.md` / ADR-013 | ABIERTO | [g63-las-releases-se-publican-sin-firma-ni-atestacion.md](g63-las-releases-se-publican-sin-firma-ni-atestacion.md) |

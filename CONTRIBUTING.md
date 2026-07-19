@@ -71,22 +71,23 @@ falta algo, ábrelo como discusión antes de implementarlo.
 
 ## Titularidad y licencia de las contribuciones
 
-`enu` lo mantiene su autor original, que conserva la titularidad del proyecto
-para poder, llegado el caso, ofrecer versiones comerciales o relicenciarlo. Para
-que eso siga siendo posible, las aportaciones externas se gestionan **caso por
-caso**:
+La política de contribuciones es el **DCO** (Developer Certificate of Origin,
+v1.1), decidida en
+[ADR-030](docs/decisions/adr/adr-030-politica-de-contribuciones-dco.md):
 
-- Por defecto, **abrir un issue para discutir** un cambio antes de enviar un
-  Pull Request grande. Los parches pequeños y las correcciones evidentes pueden
-  ir directos.
-- Al fusionar código de terceros, el mantenedor **puede pedir una cesión de
-  derechos o la firma de un acuerdo de contribución (CLA)** antes de
-  incorporarlo. Esto mantiene la titularidad unificada del proyecto.
-- Mientras no exista un CLA formal, no des por hecho que un Pull Request se
-  fusionará tal cual: puede requerir ese paso. Si prefieres conservar el
-  copyright de tu aportación sin cederlo, dilo en el Pull Request y se valorará
-  (puede que se rechace, se reimplemente, o se acepte como excepción anotada).
+- **Conservas el copyright de tu aportación.** No se pide cesión de derechos
+  ni la firma de un CLA — ni caso por caso ni en general. Tu código entra en
+  el proyecto bajo la misma [Apache 2.0](LICENSE) que el resto.
+- A cambio, **cada commit lleva `Signed-off-by:`** (`git commit -s`), que
+  certifica que tienes derecho a aportar ese código bajo la licencia del
+  proyecto (el texto del certificado: <https://developercertificate.org>).
+  Si un commit llega sin sign-off, se te pedirá corregirlo, no se rechazará
+  el cambio.
+- Por defecto, **abre un issue para discutir** un cambio antes de enviar un
+  Pull Request grande. Los parches pequeños y las correcciones evidentes
+  pueden ir directos.
 
-Esto no busca poner barreras a la comunidad, sino dejar el marco claro desde el
-principio: `enu` es libre para usar, estudiar, modificar y distribuir bajo Apache
-2.0, y a la vez su autor preserva la opción de comercializarlo en el futuro.
+La titularidad del *proyecto* (nombre, dirección, releases) sigue siendo de su
+autor original; `enu` es libre para usar, estudiar, modificar y distribuir
+bajo Apache 2.0, y las aportaciones externas entran como Apache 2.0 puro, sin
+acuerdos adicionales.

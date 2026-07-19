@@ -205,8 +205,10 @@ Because the project is design-led, the best first step is
 [ADR index](docs/decisions/adr/README.md): understand the *why* before proposing
 the *what*.
 
-The author retains ownership of the project, so incorporating third-party code
-may require a contribution agreement (CLA).
+Contributions follow the **DCO** (Developer Certificate of Origin): you keep
+the copyright of your work and certify its origin by signing off your commits
+(`git commit -s`). No CLA, no copyright assignment — see
+[CONTRIBUTING.md](CONTRIBUTING.md) and ADR-030.
 
 ## License
 
