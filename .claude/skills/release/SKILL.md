@@ -74,7 +74,8 @@ Cada bloque sigue su §N de docs/ops/release.md; aquí se marcan las **⛔ puert
 
 7. **Verifica** (§Verificación). Vigila los runs `Release` y `Docs` hasta verde
    (`gh run watch <id> --exit-status`). Confirma: `gh release view vX.Y.Z` sin
-   draft, sin prerelease (salvo sufijo), **5 assets** y `Latest`; la web responde
+   draft, sin prerelease (salvo sufijo), **4 assets** (`checksums.txt` + 3
+   tarballs; sin Mac Intel `darwin-amd64`, ADR-027) y `Latest`; la web responde
    `200` con badge `vX.Y.Z`; `install.sh` coherente con el nombre del artefacto.
 
 8. **Reposo.** Checkout principal en `develop` actualizado; worktrees de tareas
