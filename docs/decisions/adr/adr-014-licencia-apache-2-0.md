@@ -7,7 +7,13 @@ date: "2026-06"
 ---
 # ADR-014 · Licencia: Apache 2.0
 
-**Estado:** Aceptada · 2026-06
+**Estado:** Aceptada · 2026-06 · **Parcialmente reemplazada por
+[ADR-030](adr-030-politica-de-contribuciones-dco.md)** (2026-07-19): la
+elección de licencia (Apache 2.0) sigue íntegra y vigente, pero la política de
+contribuciones «caso por caso, con reserva de pedir cesión o CLA» que este ADR
+describía queda retirada — la política estable es DCO y el contribuidor
+conserva su copyright. Las menciones al CLA de más abajo se leen como
+histórico.
 
 **Contexto.** El kernel ya es código real y se va a distribuir (ADR-013), pero el
 repo no tenía licencia: sin ella, legalmente nadie puede usar ni redistribuir

@@ -208,8 +208,10 @@ Como el proyecto es dirigido por el diseño, el mejor primer paso es
 [índice de ADR](docs/decisions/adr/README.md): entiende el *porqué* antes de
 proponer el *qué*.
 
-El autor conserva la titularidad del proyecto, por lo que al incorporar código
-de terceros puede pedir un acuerdo de contribución (CLA).
+Las contribuciones siguen el **DCO** (Developer Certificate of Origin):
+conservas el copyright de tu aportación y certificas su origen firmando tus
+commits (`git commit -s`). Sin CLA ni cesión de derechos — ver
+[CONTRIBUTING.md](CONTRIBUTING.md) y el ADR-030.
 
 ## Licencia
 
