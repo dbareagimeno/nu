@@ -386,6 +386,13 @@ func boolFlag(b bool) string {
 // `sessions.list(cwd)` ordenando los ids descendente (ordenan lexicográfico =
 // temporal, sesiones.md §2/§7) y se pasa como `resume`.
 //
+// MCP headless (G59): si la extensión `mcp` está activa y hay `mcp.toml`, el driver
+// conecta sus servidores EN ESTA task, ANTES de `agent.session` —para que sus tools
+// entren en el snapshot que la sesión congela al crearse (agente.md §3)— y las cierra
+// tras el turno. Es producto (ADR-003/ADR-010), no kernel: `pcall(require, "mcp")`
+// respeta que la extensión sea opt-in. El auto-connect vivía antes en el `init.lua`
+// de `mcp`, pero se autolimpiaba durante `Boot` (antes del turno): inservible en `-p`.
+//
 // Detección de deny headless: se suscribe al evento ESTRUCTURADO
 // `agent:permission.denied` (agente.md §5, G40) y marca el estado solo cuando
 // `ev.source == "headless"` —el enum cerrado de la extensión distingue el deny por
@@ -453,9 +460,46 @@ local sub = enu.events.on("agent:permission.denied", function(ev)
   end
 end)
 
+-- MCP (opt-in, ADR-010): si la extensión está activa y hay mcp.toml, conecta sus
+-- servidores en ESTA task del turno y ANTES de agent.session, para que sus tools
+-- entren en el snapshot que la sesión congela al crearse (G59). El cleanup de cada
+-- conexión (registrado en M.connect, scoped a esta task del driver) NO dispara hasta
+-- que la task termine, ya con el turno hecho; tras el turno las cerramos explícito.
+-- El subproceso muere al cerrar la conexión (o, red final, en stopAllProcs de
+-- rt.Close: headless no emite core:shutdown). TODO paso opcional degrada con log
+-- —incluida la DETECCIÓN de config: enu.fs.stat lanza en errores ≠ ENOENT (EACCES/
+-- ENOTDIR sobre la ruta), y MCP es opcional—, nunca aborta el turno.
+local mcp_conns = nil
+do
+  local ok_mcp, mcp = pcall(require, "mcp")
+  local ok_cfg, has_cfg = false, false
+  if ok_mcp and mcp._has_config then
+    ok_cfg, has_cfg = pcall(mcp._has_config)
+  end
+  if ok_cfg and has_cfg then
+    local okc, conns = pcall(mcp.connect_configured)
+    if okc then
+      mcp_conns = conns
+    else
+      enu.log.warn("mcp: fallo conectando servidores de mcp.toml: %s",
+        (type(conns) == "table" and conns.message) or tostring(conns))
+    end
+  elseif ok_mcp and not ok_cfg then
+    enu.log.warn("mcp: no se pudo comprobar mcp.toml, se omite: %s",
+      (type(has_cfg) == "table" and has_cfg.message) or tostring(has_cfg))
+  end
+end
+
 local s = agent.session(opts)
 local final = s:send(NU_CLI_PROMPT)
 s:close()
+-- Cierre determinista de las conexiones MCP tras el turno (idempotente: el cleanup
+-- task-scoped de M.connect queda como red). Un fallo de cierre no tumba el driver.
+if mcp_conns then
+  for _, c in ipairs(mcp_conns) do
+    pcall(function() c:close() end)
+  end
+end
 sub:cancel()
 
 -- Texto final del asistente: concatena los bloques de texto del Message (§2).

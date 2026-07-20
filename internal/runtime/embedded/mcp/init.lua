@@ -22,23 +22,18 @@
 --
 -- NO se conecta a ningún servidor al cargar: un servidor MCP es un proceso externo
 -- y lanzarlo es un acto del usuario/host (vía `mcp.toml` o `mcp.connect`
--- explícito). Cargar la extensión solo expone la maquinaria.
-
-local mcp = require("mcp")
-
--- Auto-conexión por configuración (`mcp.toml`, ver módulo). Es perezosa y tolera
--- la ausencia del fichero (lo normal): sin `mcp.toml` no se lanza nada. Se hace en
--- una task porque leer el fichero y conectar SUSPENDEN (`enu.fs`, `enu.proc`,
--- handshake JSON-RPC) y el `init.lua` corre en el estado principal sin token de
--- task. `connect_configured` tolera la ausencia de `mcp.toml` (devuelve sin hacer
--- nada), así que la task vive lo justo si no hay servidores que lanzar.
-enu.task.spawn(function()
-  if not mcp._has_config() then
-    return
-  end
-  local ok, err = pcall(mcp.connect_configured)
-  if not ok then
-    enu.log.warn("mcp: fallo conectando servidores de mcp.toml: %s",
-      (type(err) == "table" and err.message) or tostring(err))
-  end
-end)
+-- explícito). Cargar la extensión solo expone la maquinaria (el módulo `mcp` lo
+-- registra el loader antes de correr ningún init, §14; este `init.lua` no necesita
+-- requerirlo).
+--
+-- NO HAY AUTO-CONNECT AL CARGAR (G59). Antes, este `init.lua` spawneaba una task que
+-- llamaba a `mcp.connect_configured`; pero esa task es EFÍMERA y corre DENTRO del
+-- drenaje de `Boot` (RunTasks a quiescencia de primer plano), así que su
+-- `enu.task.cleanup` cerraba las conexiones y stubbeaba las tools ANTES de que
+-- arrancara el turno de `enu -p` —dejándolas inservibles en headless— y también antes
+-- del pump interactivo. Una task que sobreviviera a `Boot` lo bloquearía (RunTasks la
+-- espera), y no hay superficie pública para una task de FONDO. Por eso el auto-connect
+-- headless lo orquesta ahora el PRODUCTO (el driver del CLI, `cmd/enu/main.go`) en la
+-- MISMA task del turno, ANTES de `agent.session`: la conexión vive lo que el turno y
+-- se cierra al terminarlo. El auto-connect INTERACTIVO queda pendiente (G64). Ver el
+-- hallazgo [G59](../../../../../docs/findings/g59-el-auto-connect-de-mcp-toml.md).

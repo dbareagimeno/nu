@@ -25,24 +25,26 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Fixture: un servidor MCP de prueba propio, AMPLIADO con dos efectos de disco
+// Fixture: un servidor MCP de prueba propio, AMPLIADO con tres efectos de disco
 // observables desde fuera del proceso `enu`. Es una copia del `mcpServerSource`
 // del test in-process (no importable: vive en un `_test.go` de otro paquete)
-// con dos añadidos controlados por ARGUMENTOS DE LÍNEA DE COMANDOS:
+// con tres añadidos controlados por ARGUMENTOS DE LÍNEA DE COMANDOS (y, el tercero,
+// por una variable de entorno):
 //
 //   - -pidfile <ruta>: al arrancar, escribe su propio PID a ese fichero. Deja
-//     ver desde el SO que el auto-connect lanzó el proceso y, tras terminar
-//     `enu`, comprobar que murió (scenario 3).
+//     ver desde el SO que el turno lanzó el proceso y, tras terminar `enu`,
+//     comprobar que murió (escenario 2).
 //   - -invocations <ruta>: en cada `tools/call` a `echo`, añade una línea con
 //     el texto recibido. Prueba que el servidor REAL, por stdio, ejecutó la
-//     tool (no un stub): el efecto es un fichero, no el historial Lua (1/2).
+//     tool (no un stub): el efecto es un fichero, no el historial Lua.
+//   - -envfile <ruta>: al arrancar, escribe el valor de $MCP_TEST_ENV a ese
+//     fichero. Prueba que el `env` declarado en `mcp.toml` LLEGA al subproceso.
 //
-// Se pasan por argv (no por env): el `env` de `mcp.toml` es un array de "K=V",
-// pero `enu.proc.spawn` sólo interpreta `env` como tabla { K = V } (map, no
-// array; ver internal/runtime/vmwasm_proc.go:250), así que un `env` declarado
-// en `mcp.toml` no llega al hijo. argv, en cambio, es un array de strings que
-// tanto `mcp.toml` como la primitiva tratan igual: es el canal que SÍ funciona
-// de extremo a extremo desde el fichero. (Ver la nota de carencias al final.)
+// pidfile e invocations viajan por ARGV (siempre funcionó y es lo más simple). El
+// tercer efecto se alimenta por `env` de `mcp.toml`, que ANTES no llegaba al hijo
+// (G59: la primitiva `enu.proc.spawn` solo entendía la tabla { K = V } y el array
+// "K=V" de `mcp.toml` se ignoraba en silencio) y AHORA sí, porque `normalize_env`
+// lo traduce en el borde TOML→spawn. Lo ejerce TestMcpE2EConfiguredEnvReachesServer.
 // ---------------------------------------------------------------------------
 
 const mcpTestServerSource = `package main
@@ -86,11 +88,20 @@ func appendLine(path, line string) {
 func main() {
 	pidfile := flag.String("pidfile", "", "fichero donde escribir el PID al arrancar")
 	invocations := flag.String("invocations", "", "fichero al que añadir cada tools/call de echo")
+	envfile := flag.String("envfile", "", "fichero donde escribir el valor de $MCP_TEST_ENV al arrancar")
 	flag.Parse()
 
 	// Efecto de disco 1: al arrancar, dejamos el PID en el pidfile (si se pidió).
 	if *pidfile != "" {
 		os.WriteFile(*pidfile, []byte(strconv.Itoa(os.Getpid())), 0o644)
+	}
+
+	// Efecto de disco 3 (G59, parte 2): el valor de una env var declarada en mcp.toml.
+	// Si el env array NO llega al hijo (la grieta), $MCP_TEST_ENV está vacío y el
+	// fichero queda vacío; si llega (el arreglo por normalize_env), trae su valor. Es
+	// el discriminador del fix frente a la regresión.
+	if *envfile != "" {
+		os.WriteFile(*envfile, []byte(os.Getenv("MCP_TEST_ENV")), 0o644)
 	}
 
 	r := bufio.NewReader(os.Stdin)
@@ -232,6 +243,33 @@ func tomlString(s string) string {
 	return `"` + s + `"`
 }
 
+// tomlArray serializa un []string como array TOML de cadenas básicas (`["a", "b"]`).
+func tomlArray(items []string) string {
+	var b strings.Builder
+	b.WriteString("[")
+	for i, it := range items {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(tomlString(it))
+	}
+	b.WriteString("]")
+	return b.String()
+}
+
+// writeMcpTomlWithEnv es como writeMcpToml pero añade la línea `env = [...]` al
+// servidor `srv` (array "K=V", el formato documentado de mcp.toml). Ejercita que el
+// env declarado LLEGA al subproceso (G59, parte 2): `enu.proc.spawn` solo entendía la
+// tabla { K = V }, y `normalize_env` traduce el array antes del spawn.
+func writeMcpTomlWithEnv(t *testing.T, ws *Workspace, command []string, env []string) {
+	t.Helper()
+	var b strings.Builder
+	b.WriteString("[servers.srv]\n")
+	b.WriteString("command = " + tomlArray(command) + "\n")
+	b.WriteString("env = " + tomlArray(env) + "\n")
+	ws.WriteConfig(t, "mcp.toml", b.String())
+}
+
 // ---------------------------------------------------------------------------
 // Escenario 1 (MÍNIMO IMPRESCINDIBLE): ciclo completo con un servidor MCP real
 // DECLARADO EN `mcp.toml` e invocado por un turno de agente. Servidor real por
@@ -239,18 +277,15 @@ func tomlString(s string) string {
 // el agente, y el resultado en el texto final —todo observado desde fuera del
 // proceso (dos ficheros de disco) a través del binario compilado—.
 //
-// ADAPTACIÓN respecto al enunciado original (que pedía `enu -p` + auto-connect):
-// el auto-connect headless de `mcp.toml` NO deja el servidor disponible para el
-// turno —la task del auto-connect (embedded/mcp/init.lua:35) no sobrevive a
-// `connect_configured`, así que su `enu.task.cleanup` cierra la conexión y sus
-// tools quedan como stubs de "servidor desconectado" antes de que arranque el
-// turno de `-p` (ver la nota de hallazgo al final del fichero)—. Por eso aquí el
-// turno se conduce con `enu -e` en UNA task que llama a `mcp.connect_configured`
-// (que SÍ lee `mcp.toml`, el criterio "declarado en disco") y, con la conexión
-// aún viva en esa misma task, corre un `agent.session` contra el adaptador
-// anthropic real (sobre el FakeProvider). Sigue siendo e2e del binario: mcp.toml
-// real, subproceso real, JSON-RPC/stdio real, HTTP/SSE real; solo cambia el
-// disparador del turno, porque el `-p` + auto-connect está roto de fábrica.
+// Este test conduce el turno con `enu -e` en UNA task que llama a
+// `mcp.connect_configured` (que lee `mcp.toml`, el criterio "declarado en disco") y,
+// con la conexión aún viva en esa misma task, corre un `agent.session` contra el
+// adaptador anthropic real (sobre el FakeProvider). Ejerce el camino PROGRAMÁTICO
+// (`require("mcp")` + `connect_configured` + `agent.session` en una task del autor).
+// El camino HEADLESS `-p` —que el enunciado original pedía y que antes estaba roto de
+// fábrica (G59)— lo cubre ahora TestMcpE2EAgentInvokesConfiguredToolHeadless, desde
+// que el driver del CLI conecta MCP en la task del turno. Ambos son e2e del binario:
+// mcp.toml real, subproceso real, JSON-RPC/stdio real, HTTP/SSE real.
 // ---------------------------------------------------------------------------
 
 func TestMcpE2EAgentInvokesConfiguredTool(t *testing.T) {
@@ -342,11 +377,129 @@ func driveConfiguredToolLua(allow bool, replyFile string) string {
 }
 
 // ---------------------------------------------------------------------------
+// G59 — el auto-connect de `mcp.toml` en headless `-p`, ahora SERVIBLE. Antes la
+// task efímera del auto-connect (en el `init.lua` de mcp) se autolimpiaba durante
+// `Boot`, así que las tools llegaban muertas (stubs "desconectado") al turno; ahora
+// el driver del CLI (`cmd/enu/main.go`) conecta los servidores EN la task del turno,
+// ANTES de `agent.session`, y sus tools entran VIVAS en el snapshot de la sesión.
+// Estos tres tests ejercen el `-p` REAL (no el rodeo `-e` del escenario 1): invocación
+// concedida, denegación (exit 3, antes inalcanzable) y el `env` de `mcp.toml`.
+// ---------------------------------------------------------------------------
+
+// TestMcpE2EAgentInvokesConfiguredToolHeadless (G59, parte 1): con `--auto-permissions`,
+// un turno de `enu -p` invoca la tool de un servidor MCP declarado en `mcp.toml`. El
+// servidor REAL ejecuta `tools/call` (rastro en invocations.log) y el turno sale 0. Es
+// el escenario 1 conducido por el `-p` real, ya no por el rodeo `-e`.
+func TestMcpE2EAgentInvokesConfiguredToolHeadless(t *testing.T) {
+	ws := NewWorkspace(t)
+	bin := buildMcpTestServer(t)
+	invLog := filepath.Join(t.TempDir(), "invocations.log")
+
+	ws.WriteEnuToml(t, "providers", "sessions", "agent", "mcp")
+	fp := NewFakeProvider(t)
+	ws.UseFakeProvider(t, fp)
+	writeMcpToml(t, ws, []string{bin, "-invocations", invLog})
+
+	fp.PushToolUse("call-1", "mcp__srv__echo", map[string]any{"text": "hola MCP"})
+	fp.PushText("la tool dijo: eco: hola MCP")
+
+	res := ws.Run(t, RunOpts{Args: []string{"-p", "usa echo", "--auto-permissions"}})
+	if res.ExitCode != 0 {
+		t.Fatalf("exit: got %d, want 0 (stdout=%q, stderr=%q)", res.ExitCode, res.Stdout, res.Stderr)
+	}
+	if !strings.Contains(res.Stdout, "la tool dijo: eco: hola MCP") {
+		t.Fatalf("stdout debía traer el texto del 2º turno; got %q (stderr=%q)", res.Stdout, res.Stderr)
+	}
+	if fp.RequestCount() < 2 {
+		t.Fatalf("el loop de tools debía disparar >=2 requests; got %d", fp.RequestCount())
+	}
+	// La tool MCP llegó VIVA al turno: el servidor real ejecutó tools/call.
+	data, err := os.ReadFile(invLog)
+	if err != nil {
+		t.Fatalf("el servidor MCP debía haber escrito %s (¿la tool llegó viva al turno?): %v", invLog, err)
+	}
+	lines := nonEmptyLines(string(data))
+	if len(lines) != 1 || !strings.Contains(lines[0], "hola MCP") {
+		t.Fatalf("invocations.log debía tener 1 línea con \"hola MCP\"; got %q", string(data))
+	}
+}
+
+// TestMcpE2EAgentDeniesConfiguredToolHeadless (G59): RECUPERA el escenario antes
+// "inalcanzable" (la tool MCP nunca llegaba viva a un `-p`). SIN `--auto-permissions`,
+// la tool MCP (default "ask", tercero) se deniega en headless por AUSENCIA de UI (G20)
+// → exit 3. El deny es de PERMISO —el que `--auto-permissions` concedería—, no un stub
+// silencioso: el servidor real NUNCA se invoca (el pipeline de §5 deniega antes del
+// handler), y el turno sobrevive (el modelo recibe el tool_result denegado y responde).
+func TestMcpE2EAgentDeniesConfiguredToolHeadless(t *testing.T) {
+	ws := NewWorkspace(t)
+	bin := buildMcpTestServer(t)
+	invLog := filepath.Join(t.TempDir(), "invocations.log")
+
+	ws.WriteEnuToml(t, "providers", "sessions", "agent", "mcp")
+	fp := NewFakeProvider(t)
+	ws.UseFakeProvider(t, fp)
+	writeMcpToml(t, ws, []string{bin, "-invocations", invLog})
+
+	fp.PushToolUse("call-1", "mcp__srv__echo", map[string]any{"text": "hola MCP"})
+	fp.PushText("no pude, sin permiso")
+
+	res := ws.Run(t, RunOpts{Args: []string{"-p", "usa echo"}}) // sin --auto-permissions
+	if res.ExitCode != 3 {
+		t.Fatalf("exit: got %d, want 3 (stdout=%q, stderr=%q)", res.ExitCode, res.Stdout, res.Stderr)
+	}
+	if !strings.Contains(res.Stderr, "--auto-permissions") && !strings.Contains(res.Stderr, "allow") {
+		t.Fatalf("stderr debía nombrar --auto-permissions o allow; got %q", res.Stderr)
+	}
+	// El turno sobrevive al deny: 2 requests (tool_use denegado → respuesta).
+	if fp.RequestCount() != 2 {
+		t.Fatalf("el turno debía sobrevivir al deny (2 requests); got %d", fp.RequestCount())
+	}
+	// El servidor real NO se invocó: el pipeline denegó ANTES del handler.
+	if _, err := os.Stat(invLog); err == nil {
+		data, _ := os.ReadFile(invLog)
+		t.Fatalf("el deny debía impedir el tools/call; invocations.log no debía existir, got %q", string(data))
+	}
+}
+
+// TestMcpE2EConfiguredEnvReachesServer (G59, parte 2): un `env` declarado en `mcp.toml`
+// (array "K=V") LLEGA al subproceso del servidor. El servidor escribe $MCP_TEST_ENV a
+// un fichero al arrancar; conectar el servidor durante el turno basta para lanzarlo.
+// Antes el array se ignoraba en silencio (`enu.proc.spawn` solo entendía la tabla);
+// ahora `normalize_env` lo traduce en el borde TOML→spawn.
+func TestMcpE2EConfiguredEnvReachesServer(t *testing.T) {
+	ws := NewWorkspace(t)
+	bin := buildMcpTestServer(t)
+	envFile := filepath.Join(t.TempDir(), "env.txt")
+
+	ws.WriteEnuToml(t, "providers", "sessions", "agent", "mcp")
+	fp := NewFakeProvider(t)
+	ws.UseFakeProvider(t, fp)
+	writeMcpTomlWithEnv(t, ws, []string{bin, "-envfile", envFile}, []string{"MCP_TEST_ENV=hola-env"})
+
+	fp.PushText("listo") // un turno mínimo: conectar el servidor ya lo arranca.
+
+	res := ws.Run(t, RunOpts{Args: []string{"-p", "saluda"}})
+	if res.ExitCode != 0 {
+		t.Fatalf("exit: got %d, want 0 (stderr=%q)", res.ExitCode, res.Stderr)
+	}
+	if !waitFile(envFile, 2*time.Second) {
+		t.Fatalf("el servidor MCP debía haber escrito %s al arrancar (¿el env llegó?)", envFile)
+	}
+	data, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatalf("no se pudo leer %s: %v", envFile, err)
+	}
+	if strings.TrimSpace(string(data)) != "hola-env" {
+		t.Fatalf("el env de mcp.toml debía llegar al subproceso: envfile=%q, want \"hola-env\"", string(data))
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Escenario 2: cleanup del subproceso al terminar el binario. El servidor deja
 // su PID en un fichero; tras `enu` retornar, ese PID debe estar MUERTO. La
 // garantía externa es "un `enu -p ...` que termina no deja ningún subproceso MCP
-// huérfano" —lo cumplen tanto el cleanup del auto-connect (que cierra la conexión
-// al terminar su task) como, red final, el `defer rt.Close()` → stopAllProcs()
+// huérfano" —lo cumplen tanto el cierre de las conexiones que hace el driver al
+// terminar el turno (G59) como, red final, el `defer rt.Close()` → stopAllProcs()
 // de main.go—. Sin instrumentar el runtime Go: solo señales del SO.
 // ---------------------------------------------------------------------------
 
@@ -540,44 +693,24 @@ func readLog(t *testing.T, ws *Workspace) string {
 }
 
 // ---------------------------------------------------------------------------
-// HALLAZGOS que esta suite destapó (candidatos a G##; NO es tarea de este
-// fichero resolverlos, solo dejarlos registrados donde el siguiente los vea).
+// HALLAZGOS que esta suite destapó.
 //
-//   1. AUTO-CONNECT DE `mcp.toml` INUTILIZABLE EN HEADLESS `-p`. La task del
-//      auto-connect (internal/runtime/embedded/mcp/init.lua:35) hace
-//      `pcall(mcp.connect_configured)` y RETORNA: al terminar esa task, su
-//      `enu.task.cleanup` (registrado en M.connect) cierra cada conexión, mata
-//      el subproceso y re-registra las tools como stubs de "servidor
-//      desconectado" (permissions.default="deny", handler que lanza EMCP). Todo
-//      esto ocurre DURANTE `Boot` (RunTasks drena la task a quiescencia), así que
-//      cuando arranca el turno de `-p` los servidores de `mcp.toml` ya están
-//      caídos y sus tools son stubs. Comprobado desde fuera: tras el boot,
-//      `mcp.servers()` está vacío pero `mcp__srv__echo` sigue en `agent.tools()`
-//      (el stub). Un `-p` que pide esa tool NO invoca el servidor real y NO da
-//      exit 3 (el stub de deny devuelve tool_result is_error → exit 0). El propio
-//      módulo se contradice: connect_configured se documenta como "corre en una
-//      task de LARGA VIDA" (mcp/lua/mcp/init.lua:463) pero la task que la llama es
-//      efímera. Mantener un servidor vivo entre boot y turno tampoco es posible
-//      desde config: cualquier task viva al cerrar el boot (p. ej. un
-//      `enu.task.sleep` largo en el init.lua del usuario) BLOQUEA el boot (lo
-//      espera RunTasks) hasta el timeout. CONSECUENCIA para esta suite: el
-//      escenario 1 (mínimo imprescindible) se conduce con `enu -e` +
-//      `connect_configured` + `agent.session` en UNA task —sigue leyendo mcp.toml
-//      y ejerciendo servidor/stdio/HTTP reales—, y el escenario 2 original
-//      (deny → exit 3 vía tool MCP en `-p`) se RECORTÓ por inalcanzable: la tool
-//      MCP nunca llega viva a un turno de `-p`.
-//
-//   2. `env` DE `mcp.toml` (ARRAY) NO LLEGA AL SUBPROCESO. `mcp.toml` documenta
-//      `env = ["K=V", ...]` (array; embedded/mcp/lua/mcp/init.lua:428), y ese
-//      array se pasa tal cual a `enu.proc.spawn`. Pero la primitiva SOLO
-//      interpreta `env` como tabla { K = V } (map string→string;
-//      internal/runtime/vmwasm_proc.go:250): un array es `[]any`, no
-//      `map[string]any`, así que se IGNORA en silencio y el hijo hereda el
-//      entorno sin las claves declaradas. Verificado e2e: un servidor MCP
-//      declarado con `env` no recibe la variable. Por eso esta suite pasa los
-//      ajustes del servidor de prueba por ARGV (que sí viaja íntegro), no por
-//      `env`. O el doc de mcp.toml debe pasar a `env = { K = "V" }` (map), o
-//      `connect_configured` debe traducir el array a map antes del spawn.
+//   1 y 2. RESUELTOS (G59; ver docs/findings/g59-el-auto-connect-de-mcp-toml.md).
+//      (1) El auto-connect de `mcp.toml` era inservible en headless `-p`: la task
+//      efímera del auto-connect (antes en embedded/mcp/init.lua:35) se autolimpiaba
+//      DURANTE `Boot`, así que sus tools llegaban muertas (stubs de "desconectado") al
+//      turno. (2) El `env` array de `mcp.toml` no llegaba al subproceso porque
+//      `enu.proc.spawn` solo interpreta `env` como tabla { K = V } y el array `[]any`
+//      se ignoraba en silencio. RESOLUCIÓN: el driver del CLI (cmd/enu/main.go) conecta
+//      MCP en la task del TURNO, ANTES de `agent.session` —así las tools entran vivas en
+//      el snapshot de la sesión— y las cierra al terminar el turno; y `normalize_env`
+//      (mcp/lua/mcp/init.lua) traduce el `env` array→tabla en el borde TOML→spawn. Los
+//      tres tests TestMcpE2EAgent{Invokes,Denies}ConfiguredToolHeadless y
+//      TestMcpE2EConfiguredEnvReachesServer ejercen ambas resoluciones en `-p` REAL
+//      (el escenario deny → exit 3, antes "inalcanzable", ya es alcanzable). PENDIENTE:
+//      el auto-connect INTERACTIVO sigue roto (necesita una task de fondo o rediseñar el
+//      snapshot del chat) → G64; el silent-ignore de un `env` no-tabla en la propia
+//      `enu.proc.spawn`, como grieta del primitivo → G65.
 //
 //   3. (Menor, ya anotado por el escenarista) El comentario de
 //      embedded/mcp/lua/mcp/init.lua:24 sugiere `allow = {"mcp__<srv>__*"}` (glob),

@@ -14,7 +14,18 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 61 registradas, 59 resueltas, 2 abiertas** (G63 añadida 2026-07-19
+**Estado: 63 registradas, 60 resueltas, 3 abiertas** (G64 y G65 añadidas 2026-07-20 al
+resolver G59, ambas **abiertas**: G64 — el auto-connect de `mcp.toml` sigue roto en modo
+INTERACTIVO por la misma raíz, y su arreglo limpio necesita una task de FONDO pública que
+hoy no existe (o rediseñar el snapshot de tools del chat); G65 — `enu.proc.spawn` ignora
+en SILENCIO un `env` que no sea tabla (p. ej. array `["K=V"]`), la raíz a nivel de
+primitivo que G59 rodeó normalizando en mcp. G59 **resuelta** 2026-07-20 (alcance headless
+`-p`): parte 1 → (a) el driver del CLI conecta `mcp.toml` en la task del TURNO, antes de
+`agent.session`, así las tools entran vivas en el snapshot, y las cierra tras el turno (se
+elimina el auto-connect efímero del `init.lua` de mcp, que se autolimpiaba en `Boot`);
+parte 2 → (c) `normalize_env` traduce el `env` array→tabla en el borde TOML→spawn. Sin
+tocar `api.md` ni `enu.version.api` (composición pura + normalización en la capa Lua);
+aplicación de ADR-003/ADR-010/ADR-029. G63 añadida 2026-07-19
 desde la [auditoría del feedback «10/10»](../audits/auditoria-feedback-10-de-10-2026-07-19.md):
 las releases se publican sin firma ni atestación de procedencia —el checksum
 viaja por el mismo canal que el binario—; eleva a grieta el SEC-06 de la
@@ -53,8 +64,8 @@ el runtime — **resuelta 2026-07-18** con la opción (a): la `Instance` expone 
 canal `quitSignal` (cerrado por la primitiva interna `__driver_notify_quit`
 desde el handler de `core:shutdown`) que el `select` de `drive()` escucha junto
 al input, sin API pública nueva ni polling (ADR-004); el `.jsonl.lock` resultó
-un bug DISTINTO que se orfana en el arranque (será G60, en discusión). Queda
-**ABIERTA** G59, el
+un bug DISTINTO que se orfana en el arranque (será G60, en discusión). Entonces quedó
+ABIERTA G59 (resuelta 2026-07-20 para headless, ver cabecera): el
 auto-connect de servidores de `mcp.toml` es una task efímera cuyo `cleanup`
 desconecta las tools ANTES de que corra el turno de `enu -p` (contradice el
 propio módulo, que documenta `connect_configured` para una task de larga
@@ -155,7 +166,7 @@ añaden aquí con el mismo método.
 ## Índice
 
 > Los números G24–G25 no existen como fichero: son un hueco histórico que
-> nunca se asignó. La numeración es append-only: el próximo hallazgo es G64,
+> nunca se asignó. La numeración es append-only: el próximo hallazgo es G66,
 > los huecos no se reutilizan.
 
 | # | Título | Docs afectados | Estado | Fichero |
@@ -216,8 +227,10 @@ añaden aquí con el mismo método.
 | G56 | El contrato [W] no define la identidad/dueño de un worker para las primitivas atribuidas por owner | `api.md` §13/§16 / `agente.md` | RESUELTO | [g56-el-contrato-w-no-define.md](g56-el-contrato-w-no-define.md) |
 | G57 | El transcript y el lock de sesiones no alcanzan el `0600` prometido: la API no dejaba fijar el modo de creación | `api.md` §5/§17 / `sesiones.md` §2/§6/§8 / `guia-plugins.md` §7 | RESUELTO | [g57-transcript-y-lock-de-sesiones-no-alcanzan-0600.md](g57-transcript-y-lock-de-sesiones-no-alcanzan-0600.md) |
 | G58 | El chat no se cierra hasta la siguiente tecla: `/quit` despacha `core:shutdown` desde una task, pero el driver solo lo sondea al llegar más input | `chat.md` §8 / driver | RESUELTO | [g58-el-chat-no-se-cierra-hasta.md](g58-el-chat-no-se-cierra-hasta.md) |
-| G59 | El auto-connect de `mcp.toml` es inservible en headless `-p`: la task efímera desconecta las tools antes del turno, y `env` (array) no llega al subproceso | extensión `mcp` / `enu.proc` | ABIERTO | [g59-el-auto-connect-de-mcp-toml.md](g59-el-auto-connect-de-mcp-toml.md) |
+| G59 | El auto-connect de `mcp.toml` es inservible en headless `-p`: la task efímera desconecta las tools antes del turno, y `env` (array) no llega al subproceso | extensión `mcp` / `enu.proc` / `cmd/enu` | RESUELTO (headless; interactivo→G64, primitivo→G65) | [g59-el-auto-connect-de-mcp-toml.md](g59-el-auto-connect-de-mcp-toml.md) |
 | G60 | El `.jsonl.lock` nace huérfano en el arranque del chat: `enu.task.cleanup` no puede ⏸ y la promesa de liberación de `sesiones.md` §6 es inimplementable tal como está | `api.md` §3 / `sesiones.md` §6 / `guia-plugins.md` / `modelo-ejecucion.md` / `malla.md` / ADR-029 / sessions / chat | RESUELTO (ADR-029) | [g60-el-lock-de-sesion-nace-huerfano.md](g60-el-lock-de-sesion-nace-huerfano.md) |
 | G61 | El wizard de `enu init` ofrece 4 providers pero solo `anthropic` tiene plantilla (espec presupone plantillas inexistentes) | ADR-026 pieza 2 / providers.md / S49 | RESUELTO | [g61-el-wizard-de-init-ofrece-providers-sin-plantilla.md](g61-el-wizard-de-init-ofrece-providers-sin-plantilla.md) |
 | G62 | Los 4 checks de producto de `enu doctor` presuponen introspección de extensiones (consulta sin efectos + API de herramientas externas) que no existe | ADR-026 pieza 3 / doctor.md / S50 | RESUELTO | [g62-los-checks-de-producto-de-doctor-presuponen-introspeccion-inexistente.md](g62-los-checks-de-producto-de-doctor-presuponen-introspeccion-inexistente.md) |
 | G63 | Las releases se publican sin firma ni atestación de procedencia: el checksum viaja por el mismo canal que el binario (eleva SEC-06 a grieta) | release.yml / install.sh / `docs/ops/release.md` / ADR-013 | ABIERTO | [g63-las-releases-se-publican-sin-firma-ni-atestacion.md](g63-las-releases-se-publican-sin-firma-ni-atestacion.md) |
+| G64 | El auto-connect de `mcp.toml` sigue roto en modo interactivo: sin task de fondo pública la conexión no sobrevive entre `Boot` y el pump, y el chat congela su snapshot de tools antes de que MCP viva | extensión `mcp` / `chat` / `enu.task` (§3) | ABIERTO | [g64-auto-connect-mcp-interactivo-sin-task-de-fondo.md](g64-auto-connect-mcp-interactivo-sin-task-de-fondo.md) |
+| G65 | `enu.proc.spawn`/`run` ignoran en silencio un `env` que no sea tabla (array `["K=V"]`), y `api.md` §6 no documenta la forma de `env` | `enu.proc` / `api.md` §6 / `vmwasm_proc.go` | ABIERTO | [g65-proc-spawn-ignora-env-array-en-silencio.md](g65-proc-spawn-ignora-env-array-en-silencio.md) |
