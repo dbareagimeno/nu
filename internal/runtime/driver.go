@@ -79,6 +79,46 @@ type ttyDriver struct {
 
 	quit     chan struct{}
 	quitOnce sync.Once
+
+	// pumpCancel/pumpDone controlan el bombeo continuo del scheduler (G44): el driver
+	// lo arranca al empezar `drive` y lo puede PARAR y REARRANCAR alrededor de una
+	// activación por teclado (S54), porque `Boot`→`BootWasm`→`RunTasks` es reentrante
+	// con el pump vivo. Solo los toca la goroutine del driver (drive/feed): sin candado.
+	pumpCancel context.CancelFunc
+	pumpDone   chan struct{}
+}
+
+// startPump lanza el bombeo continuo del scheduler (G44) si no hay ya uno. Idempotente
+// (no arranca un segundo si `pumpCancel` está fijo). Sin backend wasm es no-op.
+func (d *ttyDriver) startPump() {
+	if d.rt.wasm == nil || d.pumpCancel != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	d.pumpCancel = cancel
+	d.pumpDone = done
+	go func() {
+		defer close(done)
+		// El error esperado al parar es el ctx cancelado; un error duro del motor
+		// también termina aquí (el driver sigue vivo para poder salir).
+		_ = d.rt.wasm.PumpTasks(ctx)
+	}()
+}
+
+// stopPump para el bombeo y ESPERA su retorno (para que `pumpActive` quede libre antes
+// de un `RunTasks` de arranque). Idempotente. NO barre el trabajo de fondo (eso es de
+// `Close`, G44): rearrancar con `startPump` reanuda los timers pausados. Presupone que
+// quien llama no bloquea al pump (el pump usa `inst.mu`, no el token del scheduler, así
+// que llamarla con el token tomado no deadlockea).
+func (d *ttyDriver) stopPump() {
+	if d.pumpCancel == nil {
+		return
+	}
+	d.pumpCancel()
+	<-d.pumpDone
+	d.pumpCancel = nil
+	d.pumpDone = nil
 }
 
 // newDriver construye un driver sobre un reader/writer dados. No toca el terminal (eso
@@ -162,19 +202,25 @@ func (d *ttyDriver) attachOutput() {
 // exactamente lo que vive drive(): al salir se corta su ctx y se espera su
 // retorno — sin barrer el trabajo de fondo, que reclama `Runtime.Close`.
 func (d *ttyDriver) drive() {
-	if d.rt.wasm != nil {
-		pumpCtx, pumpCancel := context.WithCancel(context.Background())
-		pumpDone := make(chan struct{})
-		go func() {
-			defer close(pumpDone)
-			// El error esperado al apagar es el ctx cancelado; un error duro del
-			// motor también termina aquí (el driver sigue vivo para poder salir).
-			_ = d.rt.wasm.PumpTasks(pumpCtx)
-		}()
-		defer func() {
-			pumpCancel()
-			<-pumpDone
-		}()
+	// Bombeo continuo del scheduler (G44), ahora arrancable/parable (S54): sin él una
+	// task spawneada desde un keymap o un handler jamás se reanudaría.
+	d.startPump()
+	defer d.stopPump()
+
+	// La activación por teclado de la pantalla desnuda (bs.activate = activateAndBoot)
+	// debe PARAR el pump antes de rebootear y REARRANCARLO después: `BootWasm` llama a
+	// `RunTasks`, reentrante con el pump vivo (fallaría siempre), y parar el pump deja
+	// además el reboot single-thread (sin carrera sobre `rt.ldr`/`rt.ownerStack` que el
+	// arranque muta). Se envuelve aquí, donde el driver controla el pump; sin pantalla
+	// desnuda no hay nada que envolver.
+	if bs := d.rt.bare; bs != nil {
+		core := bs.activate
+		bs.activate = func(names []string) error {
+			d.stopPump()
+			err := core(names)
+			d.startPump()
+			return err
+		}
 	}
 
 	chunks := make(chan []byte, 8)
@@ -270,6 +316,13 @@ func (d *ttyDriver) feed(pending *[]byte, flush bool) {
 		// despacha por `__ui_dispatch_input` (la misma vía que el TTY real usa).
 		if d.rt.wasm != nil {
 			_, _ = d.rt.wasm.FeedInput(inputEventToWasm(ev))
+		}
+		// Pantalla de runtime desnudo (S54): la máquina de estados de la elección vive
+		// en Go y el reenviador `on_input` acaba de anotar la tecla; se despacha AQUÍ,
+		// por evento (con `inst.mu` libre tras `FeedInput`), para no perder teclas
+		// batcheadas ni deadlockear en la activación. Nil en el camino de producto.
+		if d.rt.bare != nil {
+			d.pollBareAction()
 		}
 	}
 	// Sobre wasm, un handler Lua pudo pedir el apagado (`core:shutdown`) al despachar
@@ -405,14 +458,17 @@ func (rt *Runtime) RunInteractive() (err error) {
 func (rt *Runtime) UIActive() bool { return rt.uiActive }
 
 // PrepareBareScreen monta la PANTALLA DE RUNTIME DESNUDO (G21, §14) para el modo
-// interactivo: la compone en el compositor (`renderBareScreen`), arma el painter (que en
-// el camino sin plugins no lo armó `Boot`, porque no se llama) e instala un handler de
-// teclado MÍNIMO del kernel para poder salir —`q`, `esc` o `ctrl+c` emiten
-// `core:shutdown`, que el driver convierte en apagado—. La activación por teclado del
-// conjunto de extensiones (acciones 1/2/3) sigue siendo el CP-7 ampliable; el onramp sin
-// teclado es `enu --default-config` (G33). Bajo el token (toca compositor e input).
+// interactivo: crea su estado (`bareScreen`, S54), la compone en el compositor
+// (render inicial del menú), arma el painter (que en el camino sin plugins no lo
+// armó `Boot`, porque no se llama) e instala el REENVIADOR de teclado sobre la pila
+// pública `on_input`. Las tres acciones responden al teclado (S54): `1` activa el
+// conjunto oficial, `2` navega y activa una suelta, `3`/`q`/`esc`/`ctrl+c` salen —la
+// máquina de estados vive en Go (`bareScreen`), el driver la conduce desde `feed`
+// (`pollBareAction`)—. El onramp SIN teclado es `enu --default-config` (G33). Bajo
+// el token (toca compositor e input).
 func (rt *Runtime) PrepareBareScreen() {
-	rt.renderBareScreen()
+	rt.bare = newBareScreen(rt)
+	rt.bare.render(rt) // paint inicial del menú (crea la región; usa withUILock)
 	rt.armPainter()
 
 	s := rt.sched
@@ -421,10 +477,71 @@ func (rt *Runtime) PrepareBareScreen() {
 	if rt.ui == nil {
 		return
 	}
-	// La pila de input vive en el preludio de la Instance: el handler de salida se
-	// instala como un `on_input` Lua. Sobre la pila vacía de la pantalla desnuda queda
-	// arriba (nada de producto que le gane).
+	// Dos handlers sobre la pila de input, de abajo arriba:
+	//   1. La RED DE SALIDA DE EMERGENCIA del kernel (ADR-017), como en el camino
+	//      normal: garantiza que, tras activar una embebida SIN salida propia (p. ej.
+	//      `example`/`mesh`, o un plugin cuyo init falla sin montar UI), `q`/`esc`/
+	//      `ctrl+c` sigan apagando —la terminal jamás queda atrapada—.
+	//   2. El REENVIADOR de la elección, ENCIMA: conduce la máquina Go mientras dura la
+	//      pantalla desnuda; tras activar con éxito se vuelve transparente
+	//      (`_G.__bare_done`) y deja pasar las teclas a la red de emergencia del fondo
+	//      (el producto activado apila sus handlers por encima de ambos).
 	rt.installKernelExitWasm()
+	rt.installBareInput()
+}
+
+// installBareInput instala el REENVIADOR de teclado de la pantalla desnuda (S54,
+// §14) sobre la pila pública `on_input`, en el sitio donde antes iba el handler de
+// salida —la máquina de estados (menú/selección/activar/salir) vive en Go
+// (`bareScreen`), no en Lua—. El reenviador es TONTO: anota la tecla (con prefijo
+// "ctrl+" para combos) en un flag global y la consume; el driver la lee desde `feed`
+// (`pollBareAction`) y conduce la máquina Go. Es el gemelo del flag+poll del quit
+// (installShutdownHandler/pollWasmQuit): así la activación (`activateAndBoot`→`Boot`,
+// que re-entra la VM vía `Eval`) corre fuera de `inst.mu`, no bajo un HostFn síncrono
+// (que deadlockearía). No añade nada a `enu.*` (`_G.__bare_key` es un global de
+// andamiaje, doble guion bajo). Presupone el token tomado.
+func (rt *Runtime) installBareInput() {
+	if rt.wasm == nil {
+		return
+	}
+	_, _, _ = rt.wasm.Eval(`enu.ui.on_input(function(ev)
+  if ev == nil or ev.type ~= "key" then return false end
+  if _G.__bare_done then return false end
+  local ctrl = ev.mods and ev.mods.ctrl
+  _G.__bare_key = (ctrl and "ctrl+" or "") .. ev.key
+  return true
+end)`)
+}
+
+// pollBareAction conduce la máquina de estados de la pantalla desnuda (S54) desde el
+// bucle de input: lee la tecla que el reenviador `on_input` anotó (installBareInput),
+// la despacha a la máquina Go (`bareScreen.handleKey`) y, si pidió salir, apaga el
+// bucle (reusando `requestQuit`). Gemelo de `pollWasmQuit`: corre desde `feed` con
+// `inst.mu` LIBRE (entre `FeedInput`s), así la activación —`activateAndBoot`→`Boot`,
+// que re-entra la VM— no deadlockea. No-op si no hay pantalla desnuda o ya se activó
+// con éxito (`done`). Presupone el token tomado (lo llama `feed`).
+func (d *ttyDriver) pollBareAction() {
+	bs := d.rt.bare
+	if bs == nil || bs.done || d.rt.wasm == nil {
+		return
+	}
+	// Lee+limpia el flag en un solo Eval (un slot; `feed` sondea por evento, así que
+	// nunca se pierde una tecla batcheada ni se despacha dos veces la misma).
+	out, _, err := d.rt.wasm.Eval("local k = _G.__bare_key; _G.__bare_key = nil; return k or ''")
+	if err != nil || out == "" {
+		return
+	}
+	if bs.handleKey(out, d.rt) == bareQuit {
+		d.requestQuit()
+	}
+	if bs.done {
+		// Activación con éxito: suelta la región del menú desnudo (el producto gobierna
+		// la pantalla; el menú no debe quedar debajo) y el reenviador pasa a
+		// transparente, así las teclas caen a la red de salida de emergencia del fondo
+		// (ADR-017) —o a los handlers del producto recién montado, que quedan encima—.
+		bs.teardown(d.rt)
+		_, _, _ = d.rt.wasm.Eval("_G.__bare_done = true")
+	}
 }
 
 // InstallEmergencyExit instala la RED DE SALIDA DE EMERGENCIA del kernel (ADR-017, G35)

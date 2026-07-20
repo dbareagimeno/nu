@@ -315,6 +315,265 @@ func (rt *Runtime) renderBareScreen() bareScreenModel {
 	return m
 }
 
+// --- S54: elección por teclado en la pantalla de runtime desnudo (§14, G21) ---
+//
+// La máquina de estados de la elección vive en Go (§14: "es lógica de input del
+// driver: vive en el binario"; "el estado del cursor vive en bare_screen.go/driver,
+// jamás como widget de enu.ui"). El driver de TTY la conduce desde `feed`
+// (pollBareAction) con el patrón flag+poll del quit: el `on_input` Lua es un
+// reenviador tonto que anota la tecla; la lógica —incluida la activación, que
+// re-entra la VM (activateAndBoot→Boot→Eval) y deadlockearía bajo `inst.mu` si
+// corriera dentro de un HostFn síncrono— corre aquí, en Go, con `inst.mu` libre.
+
+// bareAction es el resultado de handleKey: qué debe hacer el driver tras procesar
+// una tecla. bareNone = nada (ya se re-renderizó o la tecla se ignoró); bareQuit =
+// el usuario pidió salir (el driver apaga el bucle, reusando `requestQuit`).
+type bareAction int
+
+const (
+	bareNone bareAction = iota
+	bareQuit
+)
+
+// bareMode distingue las dos pantallas de la máquina (§14): el MENÚ raíz (las tres
+// acciones) y el modo SELECCIÓN (navegar el catálogo de embebidas para activar una
+// suelta). El menú↔selección es toda la máquina: cualquier enriquecimiento (filtro,
+// búsqueda, descripciones, paneles) es hallazgo/ADR, no código (§14, cláusula sagrada).
+type bareMode int
+
+const (
+	bareMenu bareMode = iota
+	bareSelect
+)
+
+// bareScreen es el ESTADO de la elección por teclado en la pantalla de runtime
+// desnudo (S54). Dos modos (MENÚ ↔ SELECCIÓN), un cursor ACOTADO al catálogo, un
+// latch de RE-ENTRADA (una sola activación por vida de la pantalla: doble
+// `enu.toml`/doble `Boot` es el fallo silencioso, 🔒) y el error de una activación
+// fallida pintado en pantalla (ADR-017: la salida por teclado sigue viva tras el
+// fallo). El render reusa UNA región (no acumula), coherente con "render pre-Lua,
+// sin widgets" de §14.
+type bareScreen struct {
+	model     bareScreenModel // el contenido fijo (versión, rutas, catálogo, acciones)
+	mode      bareMode
+	cursor    int       // índice en `catalog`, acotado a [0, len(catalog)-1]
+	catalog   []string  // el catálogo de embebidas navegable (activar suelta)
+	activated bool      // latch: una sola activación por vida de la pantalla (re-entrada)
+	done      bool      // activación con éxito: el producto se montó; deja de sondearse
+	errMsg    string    // error accionable de la última activación fallida (en pantalla)
+	region    *uiRegion // la ÚNICA región de la pantalla (se reusa en cada render)
+
+	// activate es la costura de test de la activación: en producción
+	// `rt.activateAndBoot` (escribe `enu.toml` y continúa el `Boot`); un test la
+	// sustituye por un spy contador para blindar la re-entrada y "activa exactamente
+	// X" sin montar el `Boot` real.
+	activate func(names []string) error
+}
+
+// newBareScreen construye el estado de la pantalla desnuda: el modelo fijo, el
+// catálogo navegable (todas las embebidas disponibles; ADR-015 deja `example`/`mesh`
+// activables SUELTOS) y la activación real (`rt.activateAndBoot`). El render inicial
+// y el reenviador de teclado los cablea `PrepareBareScreen` (driver.go).
+func newBareScreen(rt *Runtime) *bareScreen {
+	m := rt.buildBareScreenModel()
+	return &bareScreen{
+		model:    m,
+		mode:     bareMenu,
+		catalog:  m.embedded,
+		activate: rt.activateAndBoot,
+	}
+}
+
+// handleKey conduce la máquina con una tecla YA NORMALIZADA (con prefijo "ctrl+"
+// para combos; el reenviador `on_input` la anota). Devuelve `bareQuit` si el usuario
+// pidió salir. Re-renderiza cuando el estado cambia (cursor, modo, error). Presupone
+// el token del scheduler tomado (lo llama `pollBareAction` desde `feed`): la
+// activación corre aquí, con `inst.mu` libre, no bajo un HostFn (evita el deadlock).
+func (bs *bareScreen) handleKey(key string, rt *Runtime) bareAction {
+	if bs.done {
+		return bareNone // ya se activó con éxito: el producto gobierna la pantalla
+	}
+	switch bs.mode {
+	case bareMenu:
+		switch key {
+		case "1": // activar el conjunto oficial de producto
+			bs.activateOfficial(rt)
+		case "2": // entrar en modo selección del catálogo
+			bs.mode = bareSelect
+			bs.cursor = 0
+			bs.render(rt)
+		case "3", "q", "ctrl+c", "esc": // salir (la acción 3 y los atajos de salida)
+			return bareQuit
+		}
+	case bareSelect:
+		switch key {
+		case "up", "k":
+			bs.moveCursor(-1, rt)
+		case "down", "j":
+			bs.moveCursor(1, rt)
+		case "enter": // activar SOLO la embebida bajo el cursor
+			bs.activateSelected(rt)
+		case "esc": // volver al menú (esc es contextual: aquí NO sale)
+			bs.mode = bareMenu
+			bs.render(rt)
+		case "q", "ctrl+c": // los atajos de salida duros salen desde cualquier modo
+			return bareQuit
+		}
+	}
+	return bareNone // tecla no mapeada: se ignora
+}
+
+// moveCursor mueve el cursor del catálogo por `delta`, ACOTÁNDOLO a
+// [0, len(catalog)-1]. Con catálogo VACÍO no hay dónde moverse (cursor queda en 0,
+// sin índice fuera de rango). Re-renderiza para reflejar el cursor.
+func (bs *bareScreen) moveCursor(delta int, rt *Runtime) {
+	if len(bs.catalog) == 0 {
+		return
+	}
+	bs.cursor += delta
+	if bs.cursor < 0 {
+		bs.cursor = 0
+	} else if bs.cursor >= len(bs.catalog) {
+		bs.cursor = len(bs.catalog) - 1
+	}
+	bs.render(rt)
+}
+
+// activateOfficial activa el CONJUNTO OFICIAL de producto (acción 1, ADR-015):
+// exactamente `officialProductSet` (`example`/`mesh` fuera). Pasa por `tryActivate`
+// (guarda de re-entrada + error en pantalla).
+func (bs *bareScreen) activateOfficial(rt *Runtime) {
+	names, err := officialProductSet()
+	if err != nil {
+		bs.fail(err, rt)
+		return
+	}
+	bs.tryActivate(names, rt)
+}
+
+// activateSelected activa SOLO la embebida bajo el cursor (acción 2 → enter). Con
+// catálogo VACÍO no hay nada que activar (no-op: no escribe `enu.toml` ni indexa
+// fuera de rango).
+func (bs *bareScreen) activateSelected(rt *Runtime) {
+	if len(bs.catalog) == 0 {
+		return
+	}
+	bs.tryActivate([]string{bs.catalog[bs.cursor]}, rt)
+}
+
+// tryActivate ejecuta la activación con la GUARDA DE RE-ENTRADA (🔒): una vez
+// iniciada, una segunda pulsación no dispara otra (doble `enu.toml`/doble `Boot`).
+// Éxito → el producto se montó (`done`, deja de sondearse). Error → se pinta
+// accionable y la pantalla sigue viva (la salida por teclado no se pierde, ADR-017).
+func (bs *bareScreen) tryActivate(names []string, rt *Runtime) {
+	if bs.activated {
+		return // re-entrada: ya hay una activación en curso/hecha
+	}
+	bs.activated = true
+	if err := bs.activate(names); err != nil {
+		bs.fail(err, rt)
+		return
+	}
+	bs.done = true
+}
+
+// fail registra el error accionable de una activación fallida y lo pinta en la
+// pantalla (§14: los errores van a la pantalla, no al vacío). No apaga nada: la
+// salida por teclado sigue operativa (ADR-017).
+func (bs *bareScreen) fail(err error, rt *Runtime) {
+	bs.errMsg = "no se pudo activar: " + err.Error()
+	bs.render(rt)
+}
+
+// render (re)pinta la pantalla desnuda en su ÚNICA región, según el estado actual
+// (menú o selección, con el cursor y un eventual error). RECREA la región en cada
+// render soltando la anterior: así no acumula regiones (el bug de llamar `addRegion`
+// sin `removeRegion`) y adapta al tamaño actual de la pantalla sin lógica de resize;
+// el coste —una rejilla nueva por pulsación, a velocidad humana— es despreciable.
+// Bajo el candado de la UI (§9.1, G44): el compositor se comparte con la VM.
+// Token-agnóstico (solo usa `withUILock`): lo llaman `PrepareBareScreen` (sin token)
+// y `pollBareAction` (con token).
+func (bs *bareScreen) render(rt *Runtime) {
+	if rt.ui == nil {
+		return // defensivo: el gate bareScreenActive ya exige uiActive
+	}
+	lines := bs.lines()
+	spanLines := make([][]span, len(lines))
+	for i, ln := range lines {
+		spanLines[i] = []span{{text: ln}}
+	}
+	b := newBlock(spanLines)
+	rt.withUILock(func() {
+		comp := rt.ui.comp
+		if bs.region != nil {
+			comp.removeRegion(bs.region)
+		}
+		bs.region = comp.addRegion(0, 0, comp.w, comp.h, 0, ownerUser)
+		bs.region.content.blitBlock(0, 0, b)
+		comp.markDirty()
+		comp.paint()
+	})
+}
+
+// teardown suelta la ÚNICA región de la pantalla desnuda del compositor: tras activar
+// con éxito, el producto gobierna la pantalla y el menú desnudo (z=0, al fondo) no debe
+// quedar debajo —sería una fuga de región y un bleed-through del menú bajo una UI de
+// producto que no cubra toda la pantalla—. Bajo el candado de la UI (§9.1, G44). Lo
+// llama el driver (`pollBareAction`) cuando la activación marcó `done`.
+func (bs *bareScreen) teardown(rt *Runtime) {
+	if rt.ui == nil || bs.region == nil {
+		return
+	}
+	rt.withUILock(func() {
+		rt.ui.comp.removeRegion(bs.region)
+		rt.ui.comp.markDirty()
+	})
+	bs.region = nil
+}
+
+// lines produce las líneas de texto de la pantalla desnuda SEGÚN EL ESTADO: el menú
+// raíz (idéntico al de S33, `model.lines`) o el modo selección (el catálogo con el
+// cursor). Un error de activación se añade al final, accionable (§14). Texto plano
+// pre-Lua, sin widgets.
+func (bs *bareScreen) lines() []string {
+	var ls []string
+	if bs.mode == bareSelect {
+		ls = bs.selectLines()
+	} else {
+		ls = bs.model.lines()
+	}
+	if bs.errMsg != "" {
+		ls = append(ls, "", bs.errMsg)
+	}
+	return ls
+}
+
+// selectLines pinta el modo SELECCIÓN: cabecera fija (versión) y el catálogo de
+// embebidas navegable, marcando con "> " la que el cursor señala. El cursor es
+// estado del DRIVER (Go), no un widget: aquí solo se traduce a un marcador de texto.
+func (bs *bareScreen) selectLines() []string {
+	var ls []string
+	ls = append(ls, "enu — runtime desnudo · activar extensión suelta")
+	ls = append(ls, "")
+	ls = append(ls, bs.model.versionLine)
+	ls = append(ls, "")
+	if len(bs.catalog) == 0 {
+		ls = append(ls, "(no hay extensiones embebidas que activar)")
+		ls = append(ls, "")
+		ls = append(ls, "esc vuelve al menú · q sale")
+		return ls
+	}
+	ls = append(ls, "elige una extensión (↑/↓ o j/k · enter activa · esc vuelve):")
+	for i, name := range bs.catalog {
+		marker := "  "
+		if i == bs.cursor {
+			marker = "> "
+		}
+		ls = append(ls, marker+name)
+	}
+	return ls
+}
+
 // activateAndBoot es la lógica de la ACCIÓN de la pantalla desnuda (§14): escribe
 // `names` en `plugins.enabled` de `config.dir()/enu.toml` (preservando el resto del
 // fichero si existía) y CONTINÚA el arranque canónico (`Boot`), SIN red. Es la vía

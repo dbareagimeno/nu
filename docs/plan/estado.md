@@ -19,14 +19,11 @@ mantiene pequeño: solo dónde estamos, no la historia de cómo llegamos.
 
 ## El puntero
 
-> **▶ Próxima sesión: S54 — elección por teclado en la pantalla de runtime
-> desnudo** (Fase 10; alta 2026-07-19 por `/planificar-sesion`, juez de filosofía
-> VÍA LIBRE). Completa la activación «de una tecla» de G21/ADR-010 que S33 dejó
-> pendiente: las tres acciones de api.md §14 responden al teclado (`1` conjunto
-> oficial, `2` selección de sueltas, `3`/`q` salir), sin ampliar `api.md`
-> (interfaz del binario/driver de TTY). Con fila 🔒 (re-entrada, cursor acotado,
-> errores de activación en pantalla). Al cerrarla, CP-7 manual queda ejecutable
-> completo.
+> **▶ Próxima sesión: —** (no hay ninguna planificada). La **Fase 10**
+> (Convenciones CLI) queda como pista viva: futuras convenciones de CLI que el uso
+> real revele entran por `/planificar-sesion`. Con **S54** cerrada, la activación
+> «de una tecla» de G21/ADR-010 queda completa y **CP-7 manual es ejecutable
+> completo** (solo pendiente el paso irreductiblemente manual: mirar el TTY real).
 
 ## El tablero por fases
 
@@ -45,9 +42,9 @@ mantiene pequeño: solo dónde estamos, no la historia de cómo llegamos.
 - [x] **Fase 9** — Producto (ADR-025, Fase 1: S46–S52) · CP-12 verde (funnel
   smoke ejecutable + mutación 🔒 batcheada de S49/S50/S51)
 - [ ] **Fase 10** — Convenciones CLI (post-adquisición): lo que el uso real
-  espera de cualquier binario. **S53** cerrada (`--version`/`-V`). **S54**
-  planificada (elección por teclado en la pantalla desnuda, G21/ADR-010). Pista
-  viva: futuras convenciones CLI entran por `/planificar-sesion`.
+  espera de cualquier binario. **S53** cerrada (`--version`/`-V`). **S54** cerrada
+  (elección por teclado en la pantalla desnuda, G21/ADR-010; CP-7 manual completo).
+  Pista viva: futuras convenciones CLI entran por `/planificar-sesion`.
 
 > **✅ Plan completo:** 9 fases marcadas (kernel S01–S45 + Producto S46–S52,
 > CP-12 verde; APILevel en 2 tras la única adición `enu.sys.pid` de G32). La
@@ -64,8 +61,8 @@ sostenible: cada cierre es su propio fichero, no una fila gigante en un
 superdocumento. El índice de `worklog/README.md` es la fuente de «dónde
 retomar».
 
-**Último cierre:** S53 — flag `--version`/`-V` (2026-07-19). Ver
-[s53-flag-version.md](../worklog/s53-flag-version.md).
+**Último cierre:** S54 — elección por teclado en la pantalla de runtime desnudo
+(2026-07-20). Ver [s54-teclado-pantalla-desnuda.md](../worklog/s54-teclado-pantalla-desnuda.md).
 
 **Al cerrar una sesión** (skill `sesion`): se crea su `worklog/sNN-<slug>.md`
 (con su fila en `worklog/README.md`), se avanza el puntero ▶, se actualiza

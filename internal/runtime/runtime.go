@@ -105,6 +105,13 @@ type Runtime struct {
 	// (el arranque corre en el estado principal con el token tomado), y solo se lee
 	// desde código Lua —que también exige el token—: sin candado ni carrera.
 	ownerStack []*pluginInfo
+
+	// bare es el ESTADO de la elección por teclado en la pantalla de runtime desnudo
+	// (S54, §14, G21), o nil si no hay pantalla desnuda. Lo crea `PrepareBareScreen`
+	// (driver.go) antes de arrancar el bucle del driver; el driver lo conduce desde
+	// `feed` (`pollBareAction`). Se accede SOLO desde la goroutine del driver una vez
+	// arrancado (escrito antes de `drive`, leído durante): sin candado ni carrera.
+	bare *bareScreen
 }
 
 // config recoge los parámetros de construcción de un Runtime. Es interno: se
