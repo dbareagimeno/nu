@@ -71,3 +71,4 @@ debe poder reconstruir.
 | G53–G56 | Construcción del lote de seguridad G53+G54+G55+G56 (auditoría 2026-07-16) | [g53-g56-seguridad.md](g53-g56-seguridad.md) |
 | E2E | Suite e2e de los plugins oficiales contra el binario real (paquete e2e/) | [e2e-plugins.md](e2e-plugins.md) |
 | REORG | Reorganización del repo: binario a `cmd/enu/` (ADR-031), archivo del spike, destilado del handoff, `plan`·`postponed` a un-fichero-por-entrada | [reorganizacion-repo.md](reorganizacion-repo.md) |
+| G59 | MCP servible en headless `-p` (el driver del CLI conecta `mcp.toml` en la task del turno, antes de `agent.session`) + `env` array normalizado en mcp; abre G64 (interactivo) y G65 (primitivo `env`). Juicio: fix C1 (`_has_config` sin pcall) + C2 (límite del reader) | [g59-mcp-headless.md](g59-mcp-headless.md) |

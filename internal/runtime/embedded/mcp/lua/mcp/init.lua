@@ -343,9 +343,10 @@ end
 -- Idempotencia: conectar un `name` ya conectado cierra la conexión anterior.
 --
 -- VIDA DEL PROCESO (api.md §6): el proceso lo posee la task que llama a `connect`
--- (o su task ancestra); el `cleanup` lo mata al terminar esa task. Para un
--- servidor de larga vida (el caso del harness), `connect` se llama desde una task
--- que vive lo que la sesión; al cerrarla (o al `Conn:close()`) el servidor muere.
+-- (o su task ancestra); el `cleanup` lo mata al terminar esa task. En el auto-connect
+-- headless (G59) esa task es la del TURNO del driver del CLI (`cmd/enu/main.go`): el
+-- servidor vive lo que el turno y muere al cerrarlo. En uso programático, `connect` se
+-- llama desde la task del llamante; al terminarla (o al `Conn:close()`) el servidor muere.
 function M.connect(opts)
   if type(opts) ~= "table" then
     einval("mcp.connect espera una tabla { name, command, cwd?, env? }")
@@ -385,6 +386,13 @@ function M.connect(opts)
   -- requests; cada uno espera su future que el lector resuelve). El lector hereda
   -- la vida de esta task vía la jerarquía de tasks (cuando la task dueña termina,
   -- el cleanup mata el proceso → el lector ve EOF y sale).
+  --
+  -- LÍMITE (preexistente, de `enu.proc.kill`): si un NIETO del servidor hereda stdout
+  -- y SOBREVIVE al kill del proceso directo, el pipe no da EOF y el lector —una task
+  -- foreground bloqueada en `read_line`— seguiría vivo, lo que en headless podría
+  -- colgar el drenaje del turno. `enu.proc.kill` mata el proceso directo, no el árbol;
+  -- el caso sano (servidor de un solo proceso, o que cierra stdout al morir) termina
+  -- limpio. Endurecerlo (kill de grupo de procesos) es del subsistema `proc`, no de mcp.
   self.reader = enu.task.spawn(function()
     dispatch_loop(self)
   end)
@@ -425,10 +433,15 @@ end
 --   [servers.github]
 --   command = ["mcp-server-github"]
 --   cwd = "/opt/proyecto"          # opcional
---   env = ["GITHUB_TOKEN=..."]     # opcional
+--   env = ["GITHUB_TOKEN=..."]     # opcional (array "K=V"; también { K = "V" })
 --
 -- Ausente → no se conecta nada (lo normal). Cada servidor declarado se lanza con
--- `mcp.connect` desde una task de larga vida.
+-- `mcp.connect` desde la task que llama a `connect_configured` (G59: en headless, la
+-- del turno del driver del CLI). El `env` array se normaliza a la tabla { K = V } que
+-- `enu.proc.spawn` espera (ver `normalize_env`). OJO: un `env` presente **REEMPLAZA** el
+-- entorno heredado (api.md §6: no es aditivo), así que un servidor que necesite `PATH`,
+-- `HOME`, etc. debe incluirlos en su `env` —o no declarar `env` y heredar el entorno—.
+-- La ergonomía aditiva (fusionar lo declarado sobre lo heredado) queda pendiente (G65).
 
 local function config_path()
   return enu.config.dir() .. "/mcp.toml"
@@ -459,21 +472,70 @@ local function read_config()
   return decoded or {}
 end
 
+-- normalize_env(env, server) -> tabla { K = V } | nil. El `env` de `mcp.toml` se
+-- documenta como array `["K=V", ...]` (la convención POSIX/exec/docker), pero
+-- `enu.proc.spawn` interpreta `env` como TABLA `{ K = V }` (api.md §6): un array cruza
+-- la frontera como `[]any` y la primitiva lo IGNORA en silencio (G59). Traducimos aquí,
+-- en el borde TOML→spawn, para que el formato ergonómico de `mcp.toml` funcione sin
+-- tocar la API sagrada. Idempotente: una tabla `{ K = V }` (claves string) se copia tal
+-- cual. Una entrada mal formada (no string, o sin `=`, o clave vacía) degrada ACCIONABLE
+-- por servidor (`emcp`), no en el silencio que ocultó la grieta. `nil` -> `nil` (el hijo
+-- hereda el entorno). Distingue array de mapa por el tipo de clave (numérica vs string).
+local function normalize_env(env, server)
+  if env == nil then
+    return nil
+  end
+  if type(env) ~= "table" then
+    emcp(string.format("mcp.toml[%s]: `env` debe ser un array de \"K=V\" (o una tabla { K = V })", server),
+      { server = server })
+  end
+  local out = {}
+  for k, v in pairs(env) do
+    if type(k) == "string" then
+      -- Ya es un mapa { K = V }: cópialo validando que el valor sea string.
+      if type(v) ~= "string" then
+        emcp(string.format("mcp.toml[%s]: el valor de env %q debe ser un string", server, k),
+          { server = server })
+      end
+      out[k] = v
+    else
+      -- Entrada de array: "K=V" (partido por el PRIMER `=`; el valor puede llevar `=`).
+      if type(v) ~= "string" then
+        emcp(string.format("mcp.toml[%s]: cada entrada de `env` debe ser \"K=V\" (string)", server),
+          { server = server })
+      end
+      local eq = v:find("=", 1, true)
+      if not eq or eq == 1 then
+        emcp(string.format("mcp.toml[%s]: entrada de env sin \"=\" (o clave vacía): %q", server, v),
+          { server = server })
+      end
+      out[v:sub(1, eq - 1)] = v:sub(eq + 1)
+    end
+  end
+  return out
+end
+
 -- mcp.connect_configured() ⏸ -> Conn[]. Lanza todos los servidores de `mcp.toml`.
--- Corre en una task de larga vida (su `cleanup` mata los procesos al terminar).
--- Un servidor que falla al conectar se loguea y NO impide a los demás.
+-- Corre en la task que la llama y hereda su vida: en headless es la task del TURNO del
+-- driver del CLI (`cmd/enu/main.go`), cuyo `cleanup` cierra las conexiones al terminar
+-- el turno (G59); en uso programático, la task del llamante. Un servidor que falla al
+-- conectar se loguea y NO impide a los demás.
 function M.connect_configured()
   local cfg = read_config()
   local servers = cfg.servers or {}
   local out = {}
   for name, decl in pairs(servers) do
     if type(decl) == "table" and type(decl.command) == "table" then
-      local ok, conn = pcall(M.connect, {
-        name = name,
-        command = decl.command,
-        cwd = decl.cwd,
-        env = decl.env,
-      })
+      -- El closure mete `normalize_env` DENTRO del pcall por-servidor: un `env` mal
+      -- formado degrada solo ESE servidor (se loguea), no aborta a los demás.
+      local ok, conn = pcall(function()
+        return M.connect({
+          name = name,
+          command = decl.command,
+          cwd = decl.cwd,
+          env = normalize_env(decl.env, name),
+        })
+      end)
       if ok then
         out[#out + 1] = conn
       else

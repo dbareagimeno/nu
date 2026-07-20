@@ -47,6 +47,12 @@ arreglo directo):
    re-registra las tools como stubs "desconectado" antes del turno. Además,
    `env = [...]` (array) de `mcp.toml` no llega al subproceso
    (`enu.proc.spawn` solo interpreta `env` como tabla `{K=V}`).
+   → Cristalizó en [G59](../findings/g59-el-auto-connect-de-mcp-toml.md)
+   (**RESUELTO** 2026-07-20 para headless: el driver del CLI conecta en la task
+   del turno + `normalize_env`), y se escindió en
+   [G64](../findings/g64-auto-connect-mcp-interactivo-sin-task-de-fondo.md)
+   (interactivo) y [G65](../findings/g65-proc-spawn-ignora-env-array-en-silencio.md)
+   (la grieta del primitivo `env`).
 
 **Otras notas para el que venga detrás**: los errores no capturados dentro de
 una task NO abortan el proceso ni tocan stderr/exit code (ADR-008 — se

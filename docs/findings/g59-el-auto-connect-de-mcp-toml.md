@@ -2,12 +2,55 @@
 title: "El auto-connect de `mcp.toml` es inservible en headless `-p`: la task efímera desconecta las tools antes del turno, y `env` (array) no llega al subproceso"
 type: "hallazgo"
 id: "G59"
-status: "abierto"
+status: "resuelto"
 date: "2026-07-18"
 origin: "suite e2e de plugins oficiales (e2e/mcp_test.go, cabecera de hallazgos)"
-affected: ["extensión mcp (embedded/mcp/lua/mcp/init.lua)", "enu.proc.spawn"]
+resolution: "Headless: parte 1 → (a) el driver del CLI conecta mcp.toml en la task del turno, antes de agent.session (las tools entran vivas en el snapshot), y las cierra tras el turno; se elimina el auto-connect efímero del init.lua de mcp. Parte 2 → (c) normalize_env traduce el env array→tabla en el borde TOML→spawn (error accionable por servidor). Sin tocar api.md ni enu.version.api. El modo interactivo (roto por la misma raíz) queda en G64; la grieta del primitivo (env array ignorado por enu.proc.spawn) en G65."
+affected: ["cmd/enu/main.go (agentDriver)", "internal/runtime/embedded/mcp/init.lua", "internal/runtime/embedded/mcp/lua/mcp/init.lua (normalize_env)", "e2e/mcp_test.go"]
 ---
-# G59 · El auto-connect de `mcp.toml` es inservible en headless `-p`: la task efímera desconecta las tools antes del turno, y `env` (array) no llega al subproceso — extensión `mcp` / `enu.proc`
+# G59 · El auto-connect de `mcp.toml` es inservible en headless `-p`: la task efímera desconecta las tools antes del turno, y `env` (array) no llega al subproceso — extensión `mcp` / `enu.proc` — **RESUELTO**
+
+> ✅ **RESUELTO (2026-07-20, alcance headless `-p`).** Decidido por el operador: parte 1
+> → opción **(a)**, parte 2 → opción **(c)** normalizando en mcp + registrando la grieta
+> del primitivo. La resolución es **composición pura** (reordenar llamadas en el driver
+> de producto) + normalización en la capa Lua: **no toca `api.md` ni `enu.version.api`**
+> (sin `juez-filosofia` ni `sync-web`), y es aplicación de ADR-003/ADR-010/ADR-029 (sin
+> ADR nuevo). El modo **interactivo** estaba roto por la misma raíz y su arreglo limpio
+> necesita una task de fondo pública → se abre como
+> [G64](g64-auto-connect-mcp-interactivo-sin-task-de-fondo.md) (no se cierra aquí). La
+> grieta del **primitivo** (`enu.proc.spawn` ignora `env` array en silencio) →
+> [G65](g65-proc-spawn-ignora-env-array-en-silencio.md).
+
+**Resolución** (2026-07-20).
+
+1. **Parte 1 (task efímera) → opción (a): conexión en la task del turno.** El
+   auto-connect efímero del `init.lua` de mcp —que se autolimpiaba durante `Boot`, antes
+   del turno— se **elimina**. El driver headless del CLI (`cmd/enu/main.go`,
+   `agentDriver`) detecta la extensión con `pcall(require, "mcp")` (respeta el opt-in de
+   ADR-010) y, si hay `mcp.toml`, conecta los servidores con `connect_configured()` **en
+   la task del turno y ANTES de `agent.session`** —así sus tools entran VIVAS en el
+   snapshot que la sesión congela al crearse (agente.md §3)—, y las cierra tras
+   `s:close()`. El cleanup task-scoped de `M.connect` queda como red idempotente; el
+   subproceso muere, red final, en `stopAllProcs` (`rt.Close()`), porque headless no
+   emite `core:shutdown`. Es producto (ADR-003/ADR-010), no kernel: es el patrón que el
+   rodeo `-e` del e2e ya ejercía, promovido a camino oficial.
+2. **Parte 2 (`env` array) → opción (c): normalizar en mcp.** `normalize_env`
+   (`mcp/lua/mcp/init.lua`) traduce el `env` array `["K=V"]`→tabla `{K=V}` en el borde
+   TOML→spawn, **dentro** del `pcall` por-servidor, con error accionable por servidor si
+   viene mal formado (no el silent-ignore que ocultó la grieta). `mcp.toml` conserva su
+   formato array (ergonómico); la superficie sagrada no se toca. La grieta del primitivo
+   —que `enu.proc.spawn` siga ignorando un `env` array en silencio— queda registrada en
+   [G65](g65-proc-spawn-ignora-env-array-en-silencio.md).
+
+**Aplicada en:** `cmd/enu/main.go` (agentDriver: conexión + cierre MCP en la task del
+turno), `internal/runtime/embedded/mcp/init.lua` (elimina el auto-connect efímero),
+`internal/runtime/embedded/mcp/lua/mcp/init.lua` (`normalize_env` + docstrings de
+`M.connect`/`connect_configured` + formato de `mcp.toml`), y `e2e/mcp_test.go` (tres
+tests nuevos contra `-p` REAL: invocación concedida, deny→**exit 3** —antes
+"inalcanzable"—, y `env` que llega al subproceso; toda la suite MCP verde). El texto de
+abajo queda como registro histórico del problema y las opciones.
+
+---
 
 **Problema.** Dos grietas contiguas, ambas caracterizadas desde fuera del
 binario en `e2e/mcp_test.go`:
