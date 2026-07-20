@@ -14,7 +14,18 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 63 registradas, 60 resueltas, 3 abiertas** (G64 y G65 añadidas 2026-07-20 al
+**Estado: 64 registradas, 60 resueltas, 4 abiertas** (G66 añadida 2026-07-20 y
+**reencuadrada** el mismo día tras el `verificador` clean-room: la auditoría de UX
+del onramp la registró primero como «la activación interactiva no siembra config
+(bug/paridad rota)», pero el verificador demostró que esa asimetría es diseño
+**deliberado** (`api.md` §14 + ADR-017 acotan la siembra al flag; la degradación con
+gracia del chat es la red interactiva, y es salible). El problema real: el
+onboarding interactivo —esa degradación (ADR-017 pieza 2)— es **pasivo** (manda a
+editar los TOML a mano y salir); dirección acordada: convertirlo en un **setup
+navegable en Lua** tras activar (elegir provider/modelo, guía de la clave), que
+**refina ADR-017 pieza 2** y **depende de los presets provider-neutral (P44
+reabierto)**; **abierta**, implementación pendiente de priorización. G64 y G65
+añadidas 2026-07-20 al
 resolver G59, ambas **abiertas**: G64 — el auto-connect de `mcp.toml` sigue roto en modo
 INTERACTIVO por la misma raíz, y su arreglo limpio necesita una task de FONDO pública que
 hoy no existe (o rediseñar el snapshot de tools del chat); G65 — `enu.proc.spawn` ignora
@@ -166,7 +177,7 @@ añaden aquí con el mismo método.
 ## Índice
 
 > Los números G24–G25 no existen como fichero: son un hueco histórico que
-> nunca se asignó. La numeración es append-only: el próximo hallazgo es G66,
+> nunca se asignó. La numeración es append-only: el próximo hallazgo es G67,
 > los huecos no se reutilizan.
 
 | # | Título | Docs afectados | Estado | Fichero |
@@ -234,3 +245,4 @@ añaden aquí con el mismo método.
 | G63 | Las releases se publican sin firma ni atestación de procedencia: el checksum viaja por el mismo canal que el binario (eleva SEC-06 a grieta) | release.yml / install.sh / `docs/ops/release.md` / ADR-013 | ABIERTO | [g63-las-releases-se-publican-sin-firma-ni-atestacion.md](g63-las-releases-se-publican-sin-firma-ni-atestacion.md) |
 | G64 | El auto-connect de `mcp.toml` sigue roto en modo interactivo: sin task de fondo pública la conexión no sobrevive entre `Boot` y el pump, y el chat congela su snapshot de tools antes de que MCP viva | extensión `mcp` / `chat` / `enu.task` (§3) | ABIERTO | [g64-auto-connect-mcp-interactivo-sin-task-de-fondo.md](g64-auto-connect-mcp-interactivo-sin-task-de-fondo.md) |
 | G65 | `enu.proc.spawn`/`run` ignoran en silencio un `env` que no sea tabla (array `["K=V"]`), y `api.md` §6 no documenta la forma de `env` | `enu.proc` / `api.md` §6 / `vmwasm_proc.go` | ABIERTO | [g65-proc-spawn-ignora-env-array-en-silencio.md](g65-proc-spawn-ignora-env-array-en-silencio.md) |
+| G66 | El onboarding interactivo de primer arranque es pasivo: la degradación del chat manda a editar los TOML a mano en vez de configurar; hacerlo un setup navegable (Lua) tras activar | `chat.md` §8 / `agente.md` §10 / ADR-017 p.2 / P44 | ABIERTO | [g66-la-activacion-interactiva-no-siembra-config.md](g66-la-activacion-interactiva-no-siembra-config.md) |
