@@ -25,6 +25,6 @@ package runtime
 const (
 	VersionMajor = 0
 	VersionMinor = 3
-	VersionPatch = 0
+	VersionPatch = 1
 	APILevel     = 5
 )
