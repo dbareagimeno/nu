@@ -14,7 +14,7 @@ resolución se aplica a los documentos afectados y la entrada pasa a
 aquello es lo que decidimos no decidir; esto son agujeros que la v1 sí
 necesita cerrados.
 
-**Estado: 64 registradas, 60 resueltas, 4 abiertas** (G66 añadida 2026-07-20 y
+**Estado: 64 registradas, 61 resueltas, 3 abiertas** (G66 añadida 2026-07-20 y
 **reencuadrada** el mismo día tras el `verificador` clean-room: la auditoría de UX
 del onramp la registró primero como «la activación interactiva no siembra config
 (bug/paridad rota)», pero el verificador demostró que esa asimetría es diseño
@@ -26,11 +26,14 @@ navegable en Lua** tras activar (elegir provider/modelo, guía de la clave), que
 **refina ADR-017 pieza 2** y **depende de los presets provider-neutral (P44
 reabierto)**; **abierta**, implementación pendiente de priorización. G64 y G65
 añadidas 2026-07-20 al
-resolver G59, ambas **abiertas**: G64 — el auto-connect de `mcp.toml` sigue roto en modo
+resolver G59: G64 — el auto-connect de `mcp.toml` sigue roto en modo
 INTERACTIVO por la misma raíz, y su arreglo limpio necesita una task de FONDO pública que
-hoy no existe (o rediseñar el snapshot de tools del chat); G65 — `enu.proc.spawn` ignora
-en SILENCIO un `env` que no sea tabla (p. ej. array `["K=V"]`), la raíz a nivel de
-primitivo que G59 rodeó normalizando en mcp. G59 **resuelta** 2026-07-20 (alcance headless
+hoy no existe (o rediseñar el snapshot de tools del chat); **abierta**. G65 — `enu.proc.spawn`
+ignoraba en SILENCIO un `env` que no fuera tabla (p. ej. array `["K=V"]`), la raíz a nivel
+de primitivo que G59 rodeó normalizando en mcp; **resuelta** 2026-07-21 con (d)+(e): forma
+dual de `opts.env` (tabla o array POSIX `"K=V"`) documentada por fin en `api.md` §6, y el
+env malformado lanza `EINVAL` en vez de ignorarse (`enu.version.api` → 6); la dimensión
+reemplazo-vs-fusión se escinde a [P55](../postponed/p55-fusion-de-entorno-en-proc.md). G59 **resuelta** 2026-07-20 (alcance headless
 `-p`): parte 1 → (a) el driver del CLI conecta `mcp.toml` en la task del TURNO, antes de
 `agent.session`, así las tools entran vivas en el snapshot, y las cierra tras el turno (se
 elimina el auto-connect efímero del `init.lua` de mcp, que se autolimpiaba en `Boot`);
@@ -244,5 +247,5 @@ añaden aquí con el mismo método.
 | G62 | Los 4 checks de producto de `enu doctor` presuponen introspección de extensiones (consulta sin efectos + API de herramientas externas) que no existe | ADR-026 pieza 3 / doctor.md / S50 | RESUELTO | [g62-los-checks-de-producto-de-doctor-presuponen-introspeccion-inexistente.md](g62-los-checks-de-producto-de-doctor-presuponen-introspeccion-inexistente.md) |
 | G63 | Las releases se publican sin firma ni atestación de procedencia: el checksum viaja por el mismo canal que el binario (eleva SEC-06 a grieta) | release.yml / install.sh / `docs/ops/release.md` / ADR-013 | ABIERTO | [g63-las-releases-se-publican-sin-firma-ni-atestacion.md](g63-las-releases-se-publican-sin-firma-ni-atestacion.md) |
 | G64 | El auto-connect de `mcp.toml` sigue roto en modo interactivo: sin task de fondo pública la conexión no sobrevive entre `Boot` y el pump, y el chat congela su snapshot de tools antes de que MCP viva | extensión `mcp` / `chat` / `enu.task` (§3) | ABIERTO | [g64-auto-connect-mcp-interactivo-sin-task-de-fondo.md](g64-auto-connect-mcp-interactivo-sin-task-de-fondo.md) |
-| G65 | `enu.proc.spawn`/`run` ignoran en silencio un `env` que no sea tabla (array `["K=V"]`), y `api.md` §6 no documenta la forma de `env` | `enu.proc` / `api.md` §6 / `vmwasm_proc.go` | ABIERTO | [g65-proc-spawn-ignora-env-array-en-silencio.md](g65-proc-spawn-ignora-env-array-en-silencio.md) |
+| G65 | `enu.proc.spawn`/`run` ignoran en silencio un `env` que no sea tabla (array `["K=V"]`), y `api.md` §6 no documenta la forma de `env` | `enu.proc` / `api.md` §6 / `vmwasm_proc.go` | RESUELTO ((d)+(e): forma dual + EINVAL, api=6; fusión→P55) | [g65-proc-spawn-ignora-env-array-en-silencio.md](g65-proc-spawn-ignora-env-array-en-silencio.md) |
 | G66 | El onboarding interactivo de primer arranque es pasivo: la degradación del chat manda a editar los TOML a mano en vez de configurar; hacerlo un setup navegable (Lua) tras activar | `chat.md` §8 / `agente.md` §10 / ADR-017 p.2 / P44 | ABIERTO | [g66-la-activacion-interactiva-no-siembra-config.md](g66-la-activacion-interactiva-no-siembra-config.md) |

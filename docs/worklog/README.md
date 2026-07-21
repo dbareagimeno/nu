@@ -72,3 +72,4 @@ debe poder reconstruir.
 | E2E | Suite e2e de los plugins oficiales contra el binario real (paquete e2e/) | [e2e-plugins.md](e2e-plugins.md) |
 | REORG | Reorganización del repo: binario a `cmd/enu/` (ADR-031), archivo del spike, destilado del handoff, `plan`·`postponed` a un-fichero-por-entrada | [reorganizacion-repo.md](reorganizacion-repo.md) |
 | G59 | MCP servible en headless `-p` (el driver del CLI conecta `mcp.toml` en la task del turno, antes de `agent.session`) + `env` array normalizado en mcp; abre G64 (interactivo) y G65 (primitivo `env`). Juicio: fix C1 (`_has_config` sin pcall) + C2 (límite del reader) | [g59-mcp-headless.md](g59-mcp-headless.md) |
+| G65 | `opts.env` dual (tabla o array POSIX `"K=V"`) + `EINVAL` para lo malformado en `enu.proc` (api = 6); fila 🔒 G65 en el inventario; la fusión de entorno se escinde a P55. Panel: espec/concurrencia conformes; 3 huecos de tests cerrados en rama | [g65-proc-env.md](g65-proc-env.md) |

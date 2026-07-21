@@ -36,6 +36,8 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -227,9 +229,22 @@ end`, "proc._spawn")
 // parseProcArgsWasm valida y extrae (argv, opts) del wire de enu.proc.run/spawn (§6).
 // Gemelo VM-agnóstico de parseProcArgs (el backend gopher): argv obligatorio (array
 // no vacío de strings; sin ejecutable no hay proceso → EINVAL), y opts? con cwd/env/
-// stdin/timeout_ms. Reproduce la MISMA permisividad que gopher: un opts no-tabla, un
-// env no-tabla, una entrada de env no-string o un timeout_ms no-numérico se ignoran
-// en silencio (no lanzan); sólo un argv malo o un timeout_ms negativo → EINVAL.
+// stdin/timeout_ms.
+//
+// `env` (G65, §6): DEJA de ser permisivo. Acepta dos formas puras —una tabla
+// { K = V } (map[string]any) o un array ["K=V", ...] ([]any; ojo: la tabla Lua
+// vacía `{}` cruza la frontera como []any vacío)— y ambas, presentes, REEMPLAZAN
+// el entorno heredado; ausente (nil) lo hereda. Cualquier otra forma, o una
+// entrada malformada (valor no-string, clave vacía o con `=`), lanza EINVAL: ya
+// no se ignora en silencio. Entre claves repetidas del array gana la ÚLTIMA
+// —semántica de exec.Cmd.Env—, y no hace falta dedupe manual aquí porque
+// mergedEnv (proc.go) ya colapsa claves repetidas last-wins al construir el
+// entorno del hijo; el array pasa TAL CUAL a opts.env (el valor puede contener
+// `=`: mergedEnv/exec lo parten por el primero).
+//
+// El resto de la permisividad SE CONSERVA (no ampliar el blast radius): un opts
+// no-tabla o un timeout_ms no-numérico se ignoran en silencio (no lanzan); sólo
+// un argv malo, un env malformado o un timeout_ms negativo → EINVAL.
 func parseProcArgsWasm(argvArg, optsArg any) ([]string, procOpts, error) {
 	arr, ok := argvArg.([]any)
 	if !ok || len(arr) == 0 {
@@ -249,15 +264,43 @@ func parseProcArgsWasm(argvArg, optsArg any) ([]string, procOpts, error) {
 		if v, ok := o["cwd"].(string); ok {
 			opts.cwd = v
 		}
-		// `env`: una tabla { K = V } se traduce a ["K=V", ...]. Presente (aunque vacía)
-		// REEMPLAZA el entorno heredado (§6); ausente lo hereda (con el overlay de
-		// setenv por encima, ver mergedEnv). Sólo se toman las entradas string→string.
-		if envm, ok := o["env"].(map[string]any); ok {
-			opts.env = []string{}
-			for k, val := range envm {
-				if s, ok := val.(string); ok {
+		// `env` (G65, §6): dos formas puras, ambas REEMPLAZAN el entorno heredado si
+		// están presentes (ausente/nil → hereda, con el overlay de setenv por encima,
+		// ver mergedEnv). Un env malformado lanza EINVAL accionable: nunca se ignora.
+		if envRaw, present := o["env"]; present && envRaw != nil {
+			switch env := envRaw.(type) {
+			case map[string]any:
+				// Tabla { K = V } → ["K=V", ...]. Cada valor debe ser string; cada clave, no
+				// vacía y sin `=` (o el split posterior la partiría mal).
+				opts.env = make([]string, 0, len(env))
+				for k, val := range env {
+					s, ok := val.(string)
+					if !ok {
+						return nil, procOpts{}, einvalProc("env como tabla { K = V }: el valor de la clave " + strconv.Quote(k) + " debe ser un string")
+					}
+					if k == "" || strings.Contains(k, "=") {
+						return nil, procOpts{}, einvalProc("env como tabla { K = V }: la clave " + strconv.Quote(k) + " no puede estar vacía ni contener '='")
+					}
 					opts.env = append(opts.env, k+"="+s)
 				}
+			case []any:
+				// Array ["K=V", ...] (forma POSIX/exec). Cada entrada debe ser un string con
+				// un `=` cuyo índice no sea 0 (clave no vacía); el valor puede llevar `=`.
+				// Un array vacío deja opts.env = []string{} (no-nil): REEMPLAZA con entorno
+				// vacío. Las entradas pasan TAL CUAL.
+				opts.env = make([]string, 0, len(env))
+				for i, val := range env {
+					s, ok := val.(string)
+					if !ok {
+						return nil, procOpts{}, einvalProc("env como array debe contener solo strings \"K=V\"; la entrada " + strconv.Itoa(i+1) + " no lo es")
+					}
+					if eq := strings.IndexByte(s, '='); eq <= 0 {
+						return nil, procOpts{}, einvalProc("env como array: la entrada " + strconv.Quote(s) + " debe ser \"K=V\" con un '=' y clave no vacía")
+					}
+					opts.env = append(opts.env, s)
+				}
+			default:
+				return nil, procOpts{}, einvalProc(`env debe ser una tabla { K = V } o un array de "K=V"`)
 			}
 		}
 		if v, ok := o["stdin"].(string); ok {

@@ -494,6 +494,50 @@ func TestMcpE2EConfiguredEnvReachesServer(t *testing.T) {
 	}
 }
 
+// TestMcpE2EConfiguredEnvEmptyInheritsG65 (G65): un `env = []` (array VACÍO) en
+// `mcp.toml` NO reemplaza con entorno vacío — se trata como «nada que añadir» y el
+// servidor HEREDA el entorno del proceso `enu` padre. `normalize_env` colapsa el env
+// vacío a `nil` (no `{}`) para que el primitivo (post-G65: un array/tabla vacíos
+// REEMPLAZAN-con-vacío) reciba herencia y el servidor no pierda PATH/HOME y muera.
+//
+// Discriminador del fix: exportamos MCP_TEST_ENV en el entorno del `enu` lanzado
+// (RunOpts.Env) y el servidor escribe su $MCP_TEST_ENV a disco. Con herencia (env nil)
+// el fichero trae el valor del padre; si `normalize_env` devolviera `{}` en vez de
+// `nil`, el spawn recibiría `[]string{}` (reemplazo-con-vacío) y el fichero quedaría
+// vacío. Espeja TestMcpE2EConfiguredEnvReachesServer con la mecánica de eco invertida:
+// aquí el valor NO viene de mcp.toml sino del padre, y llega solo por herencia.
+func TestMcpE2EConfiguredEnvEmptyInheritsG65(t *testing.T) {
+	ws := NewWorkspace(t)
+	bin := buildMcpTestServer(t)
+	envFile := filepath.Join(t.TempDir(), "env.txt")
+
+	ws.WriteEnuToml(t, "providers", "sessions", "agent", "mcp")
+	fp := NewFakeProvider(t)
+	ws.UseFakeProvider(t, fp)
+	// env = [] (array vacío): «heredar», no «reemplazar con vacío».
+	writeMcpTomlWithEnv(t, ws, []string{bin, "-envfile", envFile}, []string{})
+
+	fp.PushText("listo") // un turno mínimo: conectar el servidor ya lo arranca.
+
+	// MCP_TEST_ENV vive en el entorno del PADRE (enu), no en mcp.toml: solo llega al
+	// servidor si el spawn heredó el entorno (env nil), no si lo reemplazó con vacío.
+	res := ws.Run(t, RunOpts{Args: []string{"-p", "saluda"}, Env: []string{"MCP_TEST_ENV=heredado-del-padre"}})
+	if res.ExitCode != 0 {
+		t.Fatalf("exit: got %d, want 0 (stderr=%q)", res.ExitCode, res.Stderr)
+	}
+	if !waitFile(envFile, 2*time.Second) {
+		t.Fatalf("el servidor MCP debía haber escrito %s al arrancar (¿arrancó?)", envFile)
+	}
+	data, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatalf("no se pudo leer %s: %v", envFile, err)
+	}
+	if strings.TrimSpace(string(data)) != "heredado-del-padre" {
+		t.Fatalf("con env=[] el servidor debía HEREDAR el entorno del padre "+
+			"(normalize_env colapsa vacío→nil, no {}): envfile=%q, want \"heredado-del-padre\"", string(data))
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Escenario 2: cleanup del subproceso al terminar el binario. El servidor deja
 // su PID en un fichero; tras `enu` retornar, ese PID debe estar MUERTO. La

@@ -12,7 +12,7 @@ reabrirla. Nada de esta lista está rechazado; está esperando su momento. Cuand
 una entrada se reabra y se decida, sale de aquí (su fichero se marca
 `decidida`) y la decisión entra en el ADR.
 
-> **Estado: 54 registradas — 42 vigentes, 2 decididas ([P4](p04-package-manager-de-plugins.md)→ADR-025, [P21](p21-modelo-de-thinking-adaptativo.md)→ADR-016) y 10 implementadas (P22–P31).**
+> **Estado: 55 registradas — 43 vigentes, 2 decididas ([P4](p04-package-manager-de-plugins.md)→ADR-025, [P21](p21-modelo-de-thinking-adaptativo.md)→ADR-016) y 10 implementadas (P22–P31).**
 
 **Implementación diferida (P22–P31).** Un grupo de entradas no esperaba una
 *decisión* sino una *construcción*: su diseño ya vivía en el contrato de su
@@ -83,3 +83,4 @@ propio fichero.
 | P52 | Suite de evaluación del comportamiento del harness: tareas deterministas (edición multiarchivo, bug fixing, navegación de repos grandes, recuperación tras errores, respeto de permisos, eficiencia de contexto) para comparar versiones de enu con el mismo modelo y detectar regresiones del loop del agente | [Auditoría del feedback 2026-07-19](../audits/auditoria-feedback-10-de-10-2026-07-19.md) (lote L2) | vigente | [p52-suite-evaluacion-comportamiento-harness.md](p52-suite-evaluacion-comportamiento-harness.md) |
 | P53 | Arnés de fault injection: I/O adversa contra el binario completo — HTTP 429/500, streams truncados, respuestas inválidas, disco lleno, fs read-only, permisos que cambian, procesos que no terminan, plugins que bloquean o panican, workers que mueren sin responder | [Auditoría del feedback 2026-07-19](../audits/auditoria-feedback-10-de-10-2026-07-19.md) (lote L4) | vigente | [p53-arnes-fault-injection.md](p53-arnes-fault-injection.md) |
 | P54 | Soak tests de sesiones largas: horas de uso con miles de eventos, cientos de tool calls, compactaciones múltiples, reload de plugins, procesos concurrentes y repos grandes | [Auditoría del feedback 2026-07-19](../audits/auditoria-feedback-10-de-10-2026-07-19.md) (lote L4) | vigente | [p54-soak-tests-sesiones-largas.md](p54-soak-tests-sesiones-largas.md) |
+| P55 | Fusión de entorno en `enu.proc`: `opts.env` presente reemplaza el heredado y no hay `enu.sys.environ()` para fusionar en Lua; un servidor de `mcp.toml` que declara un solo secreto pierde PATH/HOME | Resolución de [G65](../findings/g65-proc-spawn-ignora-env-array-en-silencio.md) (2026-07-21) | vigente | [p55-fusion-de-entorno-en-proc.md](p55-fusion-de-entorno-en-proc.md) |

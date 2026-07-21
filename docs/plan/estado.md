@@ -47,7 +47,8 @@ mantiene pequeño: solo dónde estamos, no la historia de cómo llegamos.
   Pista viva: futuras convenciones CLI entran por `/planificar-sesion`.
 
 > **✅ Plan completo:** 9 fases marcadas (kernel S01–S45 + Producto S46–S52,
-> CP-12 verde; APILevel en 2 tras la única adición `enu.sys.pid` de G32). La
+> CP-12 verde; el nivel de API vivo lo lleva `api.md` §17 — en 6 tras las
+> adiciones G32/G52/G54/G57/G65). La
 > Fase 10 (Convenciones CLI) queda como pista viva para lo que el uso real
 > revele. Pendiente solo lo irreductiblemente **manual**: mirar la TUI en un
 > terminal real (lo visual de CP-7) y CP-11 contra un provider real
@@ -62,8 +63,11 @@ maduro, con la importancia que merece; su camino crítico (forge+plugin como
 criterios de corte, RPC/ACP de la Fase 3) **no dirige** el orden inmediato. Orden
 establecido:
 
-1. **G64 + G65** — bugs pequeños de correctitud (MCP interactivo; `enu.proc`
-   ignora `env` array en silencio). Ya caracterizados. Rápidos.
+1. **G64** — bug pequeño de correctitud (auto-connect MCP interactivo sin task
+   de fondo pública). Ya caracterizado. Rápido. **G65 resuelto** (2026-07-21:
+   `enu.proc` acepta `env` como tabla o array POSIX y el malformado lanza
+   `EINVAL`, `api = 6`; la dimensión reemplazo-vs-fusión →
+   [P55](../postponed/p55-fusion-de-entorno-en-proc.md)).
 2. **Onramp de primer arranque** — la primera impresión interactiva. Tres piezas:
    *provider-neutral* ([P44](../postponed/p44-wizard-init-multi-provider.md)
    reabierto → ADR que superseda ADR-017 p.1), *setup navegable en Lua*
@@ -84,7 +88,7 @@ establecido:
 8. **ADR-025 Fase 3** — plataforma (RPC/JSONL, ACP, mesh); lejos (territorio 1.0).
 
 **Qué puede ir en paralelo** (superficies que no se pisan):
-- **G64/G65** y **G63** son fixes pequeños e independientes: caben en cualquier
+- **G64** y **G63** son fixes pequeños e independientes: caben en cualquier
   hueco o en paralelo a lo demás.
 - El **onramp** (superficie: degradación del chat en Lua + plantillas de providers
   + CLI) y **Fase 2** (superficie: plugin manager + forge) son **independientes**:

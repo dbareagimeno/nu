@@ -122,8 +122,8 @@ error({ code = "EINVAL", message = "filtro vacío", detail = { arg = "filter" } 
   subprocesos que ejecutan código que no controlas (comandos propuestos por
   el modelo, builds con `postinstall`), recuerda que sin `opts.env` el hijo
   hereda el entorno completo — API keys incluidas. Dos vías: componer el
-  entorno **desde cero** con `opts.env` (presente, reemplaza el heredado —
-  [api.md](api.md) §6, semántica fijada en S16 de la bitácora), o el idioma
+  entorno **desde cero** con `opts.env` (presente —aunque vacío— reemplaza el
+  heredado; forma tabla o array `"K=V"` — [api.md](api.md) §6, G65), o el idioma
   `env -u VAR ...` del SO para "heredado menos estas". En ambas, recorta
   las variables secretas conocidas: `providers.secret_env_vars()`
   te da la lista ([providers.md](providers.md) §4). Las tools oficiales ya

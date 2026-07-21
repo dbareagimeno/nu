@@ -437,11 +437,13 @@ end
 --
 -- Ausente → no se conecta nada (lo normal). Cada servidor declarado se lanza con
 -- `mcp.connect` desde la task que llama a `connect_configured` (G59: en headless, la
--- del turno del driver del CLI). El `env` array se normaliza a la tabla { K = V } que
--- `enu.proc.spawn` espera (ver `normalize_env`). OJO: un `env` presente **REEMPLAZA** el
--- entorno heredado (api.md §6: no es aditivo), así que un servidor que necesite `PATH`,
--- `HOME`, etc. debe incluirlos en su `env` —o no declarar `env` y heredar el entorno—.
--- La ergonomía aditiva (fusionar lo declarado sobre lo heredado) queda pendiente (G65).
+-- del turno del driver del CLI). Desde G65 `enu.proc.spawn` acepta el `env` en ambas
+-- formas (array "K=V" o tabla { K = V }, api.md §6); `normalize_env` se conserva como
+-- validación temprana y accionable POR SERVIDOR (sus errores nombran el servidor).
+-- OJO: un `env` presente **REEMPLAZA** el entorno heredado (api.md §6: no es aditivo),
+-- así que un servidor que necesite `PATH`, `HOME`, etc. debe incluirlos en su `env` —o
+-- no declarar `env` y heredar el entorno—. La ergonomía aditiva (fusionar lo declarado
+-- sobre lo heredado) queda fuera de G65: sigue pendiente para el futuro.
 
 local function config_path()
   return enu.config.dir() .. "/mcp.toml"
@@ -473,14 +475,23 @@ local function read_config()
 end
 
 -- normalize_env(env, server) -> tabla { K = V } | nil. El `env` de `mcp.toml` se
--- documenta como array `["K=V", ...]` (la convención POSIX/exec/docker), pero
--- `enu.proc.spawn` interpreta `env` como TABLA `{ K = V }` (api.md §6): un array cruza
--- la frontera como `[]any` y la primitiva lo IGNORA en silencio (G59). Traducimos aquí,
--- en el borde TOML→spawn, para que el formato ergonómico de `mcp.toml` funcione sin
--- tocar la API sagrada. Idempotente: una tabla `{ K = V }` (claves string) se copia tal
--- cual. Una entrada mal formada (no string, o sin `=`, o clave vacía) degrada ACCIONABLE
--- por servidor (`emcp`), no en el silencio que ocultó la grieta. `nil` -> `nil` (el hijo
--- hereda el entorno). Distingue array de mapa por el tipo de clave (numérica vs string).
+-- documenta como array `["K=V", ...]` (la convención POSIX/exec/docker) y también se
+-- admite la tabla `{ K = V }`. Desde G65 `enu.proc.spawn` acepta AMBAS formas en el
+-- primitivo (api.md §6), así que ya no traducimos por necesidad; conservamos
+-- `normalize_env` como VALIDACIÓN TEMPRANA y accionable POR SERVIDOR: sus errores
+-- `emcp` nombran el servidor, el `pcall` por-servidor de `connect_configured` degrada
+-- solo ESE servidor, y resuelve la tabla mixta (claves string y numéricas) antes de
+-- que cruce la frontera como un footgun. Idempotente: una tabla `{ K = V }` (claves
+-- string) se copia tal cual. Una entrada mal formada (no string, o sin `=`, o clave
+-- vacía) degrada ACCIONABLE por servidor (`emcp`). `nil` -> `nil` (el hijo hereda el
+-- entorno). Distingue array de mapa por el tipo de clave (numérica vs string).
+--
+-- G65: si el resultado normalizado queda VACÍO (un `env = []` o `env = {}` en
+-- `mcp.toml`) devolvemos `nil`, no la tabla vacía. Vacío = «nada que añadir» =
+-- heredar. Motivo: con G65 un array/tabla vacíos pasan a REEMPLAZAR-con-vacío en el
+-- primitivo, y un `env` vacío en `mcp.toml` mataría el servidor al perder `PATH`/`HOME`;
+-- casi nadie escribe `env = []` queriendo un entorno vacío, así que lo tratamos como
+-- «no declarado» (hereda), no como reemplazo total.
 local function normalize_env(env, server)
   if env == nil then
     return nil
@@ -490,6 +501,7 @@ local function normalize_env(env, server)
       { server = server })
   end
   local out = {}
+  local n = 0
   for k, v in pairs(env) do
     if type(k) == "string" then
       -- Ya es un mapa { K = V }: cópialo validando que el valor sea string.
@@ -498,6 +510,7 @@ local function normalize_env(env, server)
           { server = server })
       end
       out[k] = v
+      n = n + 1
     else
       -- Entrada de array: "K=V" (partido por el PRIMER `=`; el valor puede llevar `=`).
       if type(v) ~= "string" then
@@ -510,7 +523,12 @@ local function normalize_env(env, server)
           { server = server })
       end
       out[v:sub(1, eq - 1)] = v:sub(eq + 1)
+      n = n + 1
     end
+  end
+  -- Vacío = heredar (no reemplazar con entorno vacío). Ver G65 arriba.
+  if n == 0 then
+    return nil
   end
   return out
 end

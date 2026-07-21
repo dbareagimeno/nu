@@ -14,7 +14,8 @@ enu.proc.run(argv: string[], opts?) -> { code, stdout, stderr }
 ```
 
 Conveniencia con buffers: ejecuta, espera y devuelve la salida completa. `opts`:
-`cwd`, `env`, `stdin`, `timeout_ms`.
+`cwd`, `env` (forma y semántica: [abajo](#el-entorno-optsenv)), `stdin`,
+`timeout_ms`.
 
 ```sh
 enu -e '
@@ -39,6 +40,30 @@ enu.task.spawn(function()
   return r.stdout
 end)
 ```
+
+### El entorno: `opts.env`
+
+`env` acepta **dos formas** (vale para `run` y `spawn`): una tabla `{ K = V }`
+o un array `["K=V", ...]` — la convención POSIX/`exec`/docker. Cada entrada del
+array se parte por el **primer** `=` (el valor puede contener `=`) y entre
+claves repetidas gana la **última**.
+
+```lua
+enu.task.spawn(function()
+  -- equivalentes:
+  enu.proc.run({ "sh", "-c", "echo $MODO" }, { env = { MODO = "test" } })
+  enu.proc.run({ "sh", "-c", "echo $MODO" }, { env = { "MODO=test" } })
+end)
+```
+
+La semántica es de **control total por llamada**: un `env` presente —aunque
+vacío— **reemplaza** el entorno heredado (un servidor que necesite `PATH` debe
+incluirlo); ausente (`nil`), el hijo hereda el del proceso, con el overlay de
+[`enu.sys.setenv`](/api/sys/) aplicado. Un `env` malformado —un no-tabla, una
+entrada de array que no sea `"K=V"` con clave no vacía, o una tabla con clave
+vacía o con `=` o con valor no-string— lanza `EINVAL`: nunca se ignora en
+silencio. Las dos formas deben ser puras (no mezcles claves string y numéricas
+en la misma tabla).
 
 ## `enu.proc.spawn` [W]
 

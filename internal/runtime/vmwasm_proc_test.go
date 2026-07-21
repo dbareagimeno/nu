@@ -313,3 +313,148 @@ func TestProcWasmReapTemprano(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// TestProcWasmEnvG65 blinda la matriz de `opts.env` por el puente wasm (G65, §6): las
+// dos formas puras (tabla { K = V } y array ["K=V"]), el valor con `=`, el last-wins de
+// claves repetidas, el reemplazo-con-vacío frente a la herencia, un smoke de array por
+// spawn (comparte parser con run), y las formas malformadas → EINVAL. Antes de G65 NO
+// existía NINGÚN test de env por este puente: la rama sólo aceptaba `map[string]any` y
+// descartaba en silencio arrays y entradas mal tipadas. Se usa `sh -c 'echo $VAR'`
+// (echo es builtin: no necesita PATH aunque el entorno se reemplace por vacío).
+func TestProcWasmEnvG65(t *testing.T) {
+	// 1) tabla { K = V } → el hijo ve FOO=bar (regresión de la forma histórica).
+	t.Run("tabla {K=V}", func(t *testing.T) {
+		inst := wasmProcRun(t, &Runtime{}, nil, `
+			enu.task.spawn(function()
+				out = enu.proc.run({"sh","-c","echo $FOO"}, { env = { FOO = "bar" } }).stdout
+			end)`)
+		if got := strings.TrimSpace(evalStr(t, inst, `return tostring(out)`)); got != "bar" {
+			t.Fatalf("tabla {FOO=bar}: got %q, want bar", got)
+		}
+	})
+
+	// 2) array ["K=V"] → el hijo ve FOO=bar (lo NUEVO de G65).
+	t.Run("array {K=V}", func(t *testing.T) {
+		inst := wasmProcRun(t, &Runtime{}, nil, `
+			enu.task.spawn(function()
+				out = enu.proc.run({"sh","-c","echo $FOO"}, { env = {"FOO=bar"} }).stdout
+			end)`)
+		if got := strings.TrimSpace(evalStr(t, inst, `return tostring(out)`)); got != "bar" {
+			t.Fatalf("array {FOO=bar}: got %q, want bar", got)
+		}
+	})
+
+	// 3) array con valor que contiene `=` → se parte por el PRIMER `=`: FOO=a=b.
+	t.Run("array valor con =", func(t *testing.T) {
+		inst := wasmProcRun(t, &Runtime{}, nil, `
+			enu.task.spawn(function()
+				out = enu.proc.run({"sh","-c","echo $FOO"}, { env = {"FOO=a=b"} }).stdout
+			end)`)
+		if got := strings.TrimSpace(evalStr(t, inst, `return tostring(out)`)); got != "a=b" {
+			t.Fatalf("array {FOO=a=b}: got %q, want a=b", got)
+		}
+	})
+
+	// 4) array con clave repetida → gana la ÚLTIMA (semántica exec.Cmd.Env; mergedEnv
+	// colapsa last-wins sin dedupe manual en el parser).
+	t.Run("array clave repetida last-wins", func(t *testing.T) {
+		inst := wasmProcRun(t, &Runtime{}, nil, `
+			enu.task.spawn(function()
+				out = enu.proc.run({"sh","-c","echo $FOO"}, { env = {"FOO=x","FOO=y"} }).stdout
+			end)`)
+		if got := strings.TrimSpace(evalStr(t, inst, `return tostring(out)`)); got != "y" {
+			t.Fatalf("array {FOO=x,FOO=y}: got %q, want y (última gana)", got)
+		}
+	})
+
+	// 5) env = {} (tabla vacía → array vacío en el wire) REEMPLAZA con entorno vacío: el
+	// hijo NO ve una var exportada por el padre. Sin env (nil) SÍ la ve (herencia intacta).
+	t.Run("env={} reemplaza; nil hereda", func(t *testing.T) {
+		t.Setenv("NU_G65_PARENT", "visible")
+		inst := wasmProcRun(t, &Runtime{}, nil, `
+			enu.task.spawn(function()
+				g_empty   = enu.proc.run({"sh","-c","echo [$NU_G65_PARENT]"}, { env = {} }).stdout
+				g_inherit = enu.proc.run({"sh","-c","echo [$NU_G65_PARENT]"}).stdout
+			end)`)
+		if got := strings.TrimSpace(evalStr(t, inst, `return tostring(g_empty)`)); got != "[]" {
+			t.Fatalf("env={} debe reemplazar con entorno vacío: got %q, want []", got)
+		}
+		if got := strings.TrimSpace(evalStr(t, inst, `return tostring(g_inherit)`)); got != "[visible]" {
+			t.Fatalf("sin env debe heredar el entorno del padre: got %q, want [visible]", got)
+		}
+	})
+
+	// Smoke: la forma de array también funciona por spawn (comparte parseProcArgsWasm).
+	t.Run("array por spawn (smoke, comparte parser)", func(t *testing.T) {
+		inst := wasmProcRun(t, &Runtime{}, nil, `
+			enu.task.spawn(function()
+				local p = enu.proc.spawn({"sh","-c","echo $FOO"}, { env = {"FOO=viaspawn"} })
+				out = p:read_line("stdout")
+				p:wait()
+			end)`)
+		if got := strings.TrimSpace(evalStr(t, inst, `return tostring(out)`)); got != "viaspawn" {
+			t.Fatalf("array por spawn: got %q, want viaspawn", got)
+		}
+	})
+
+	// 6) Formas malformadas → EINVAL (capturable con pcall; §1.4). Cubre no-tabla
+	// (número, string), array con entrada sin `=` (eq==-1), con `=` inicial / clave
+	// vacía (eq==0) o no-string, y tabla con valor no-string, clave vacía o clave con
+	// `=`. El caso "=x" muerde la guardia `eq <= 0` (no bastaría `eq < 0`).
+	t.Run("EINVAL", func(t *testing.T) {
+		inst := wasmProcRun(t, &Runtime{}, nil, `
+			enu.task.spawn(function()
+				local function code(env)
+					local ok, e = pcall(function() return enu.proc.run({"echo","x"}, { env = env }) end)
+					return tostring(ok) .. ":" .. ((type(e) == "table" and e.code) or tostring(e))
+				end
+				g_num       = code(42)
+				g_str       = code("PATH=x")
+				g_arr_noeq  = code({"SIN_IGUAL"})
+				g_arr_keyvac= code({"=x"})
+				g_arr_bool  = code({true})
+				g_map_valnum= code({ FOO = 1 })
+				g_map_keyvac= code({ [""] = "x" })
+				g_map_keyeq = code({ ["A=B"] = "x" })
+			end)`)
+		for _, g := range []string{
+			"g_num", "g_str", "g_arr_noeq", "g_arr_keyvac", "g_arr_bool",
+			"g_map_valnum", "g_map_keyvac", "g_map_keyeq",
+		} {
+			if got := evalStr(t, inst, `return tostring(`+g+`)`); got != "false:EINVAL" {
+				t.Fatalf("%s: got %q, want false:EINVAL", g, got)
+			}
+		}
+	})
+}
+
+// TestProcWasmEnvG65Precedence: un `opts.env` explícito EN ARRAY (la forma nueva de G65)
+// pisa el overlay de enu.sys.setenv — control total por llamada (§6/§7). Espeja el
+// patrón de TestMergedEnvPrecedence (sys_test.go) pero e2e por el puente wasm y con la
+// forma de array. (G65)
+func TestProcWasmEnvG65Precedence(t *testing.T) {
+	rt := &Runtime{sys: &sysState{}}
+	inst := wasmProcRun(t, rt, func(p *vmwasm.Pool) { registerSysWasm(p, rt) }, `
+		enu.task.spawn(function()
+			enu.sys.setenv("NU_G65_PREC", "from_overlay")
+			out = enu.proc.run({"sh","-c","echo $NU_G65_PREC"}, { env = {"NU_G65_PREC=from_env"} }).stdout
+		end)`)
+	if got := strings.TrimSpace(evalStr(t, inst, `return tostring(out)`)); got != "from_env" {
+		t.Fatalf("un env array explícito debe pisar el overlay de setenv: got %q, want from_env", got)
+	}
+}
+
+// TestProcWasmTimeoutMsCero: `timeout_ms = 0` es válido (0 = sin límite, no EINVAL) —
+// la guardia de §6 solo rechaza los negativos. Mata al mutante CONDITIONALS_BOUNDARY
+// `tm < 0` → `tm <= 0` que la pasada de mutación de G65 dejó vivo (hueco preexistente,
+// no de la rama de env).
+func TestProcWasmTimeoutMsCero(t *testing.T) {
+	inst := wasmProcRun(t, &Runtime{}, nil, `
+		enu.task.spawn(function()
+			local ok, e = pcall(function() return enu.proc.run({"echo","x"}, { timeout_ms = 0 }) end)
+			out = tostring(ok) .. ":" .. ((ok and "ok") or (type(e) == "table" and e.code) or "?")
+		end)`)
+	if got := evalStr(t, inst, `return tostring(out)`); got != "true:ok" {
+		t.Fatalf("timeout_ms=0 debe ser válido (sin límite): got %q, want true:ok", got)
+	}
+}

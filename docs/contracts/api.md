@@ -183,13 +183,24 @@ Eventos que emite el core: `core:ready`, `core:shutdown`,
 
 | Firma | Semántica |
 |---|---|
-| `enu.proc.run(argv: string[], opts?) -> {code, stdout, stderr}` ⏸ | Conveniencia con buffers. `opts`: `cwd`, `env`, `stdin`, `timeout_ms`. Sin shell implícita: `argv` es un array; quien quiera shell la invoca explícitamente. |
+| `enu.proc.run(argv: string[], opts?) -> {code, stdout, stderr}` ⏸ | Conveniencia con buffers. `opts`: `cwd`, `env` (forma y semántica: abajo), `stdin`, `timeout_ms`. Sin shell implícita: `argv` es un array; quien quiera shell la invoca explícitamente. |
 | `enu.proc.spawn(argv, opts?) -> Proc` | Control fino con streams. |
 | `Proc:write(data)` ⏸ / `Proc:close_stdin()` | stdin en streaming. |
 | `Proc:read_line(which: "stdout"\|"stderr") -> string?` ⏸ | `nil` en EOF. |
 | `Proc:read(which, n?) -> string?` ⏸ | Lectura cruda. |
 | `Proc:wait() -> {code}` ⏸ / `Proc:kill(signal?)` | `signal` por defecto TERM. |
 | `enu.proc.alive(pid: integer) -> boolean` | ¿Hay un proceso vivo con ese `pid` en esta máquina? (G17). Informa de **existencia, no de identidad** — un pid reciclado da `true`. Para detectar locks huérfanos ([sesiones.md](sesiones.md) §6). |
+
+Forma de `opts.env` (G65): una tabla `{ K = V }` **o** un array `["K=V", ...]`
+(la forma POSIX/`exec`). Cada entrada del array se parte por el **primer** `=`
+—el valor puede contener `=`— y entre claves repetidas gana la **última**.
+`env` presente —aunque vacío— **reemplaza** el entorno heredado (control total
+por llamada); ausente (`nil`), el hijo hereda el del proceso (con el overlay de
+`enu.sys.setenv` aplicado). Un `env` malformado —un no-tabla, una entrada de
+array que no sea un string `"K=V"` con clave no vacía, o una tabla con clave
+vacía o con `=` o con valor no-string— lanza `EINVAL` (§1.4): nunca se ignora
+en silencio. Las dos formas deben ser puras: una tabla mixta (claves string y
+numéricas) cruza la frontera como mapa y es un footgun del llamante.
 
 Vida del proceso: la regla es matarlo explícitamente vía `enu.task.cleanup`
 en quien lo crea; como red de seguridad, un `Proc` sin referencias acaba
@@ -485,14 +496,16 @@ de `proc`) usan dentro de un worker la **identidad capturada en el spawn**
 
 - Congelar v1 = congelar **este documento**: firmas y semánticas solo cambian
   por adición; `enu.version.api` se incrementa con cada adición. **Nivel actual:
-  `api = 5`** — el nivel 1 fue el congelado inicial; `enu.sys.pid()` (G32) lo
+  `api = 6`** — el nivel 1 fue el congelado inicial; `enu.sys.pid()` (G32) lo
   subió a 2; los frames binarios de `enu.ws` (G52: `opts.binary` en `Ws:send`,
   segundo retorno de `Ws:recv`) lo subieron a 3; el control de redirects de
   `enu.http` (G54: `opts.max_redirects` en `request`/`stream` y recorte de
   cabeceras en saltos cross-host) lo subió a 4; el modo de creación de
   `enu.fs.write` (G57: `opts.mode`, chmod explícito no recortado por el umask)
-  lo subió a 5. Una adición nunca rompe firmas existentes: el código escrito
-  contra el nivel 1 sigue siendo válido en los niveles siguientes.
+  lo subió a 5; la forma dual de `opts.env` en `enu.proc.run`/`spawn` (G65:
+  tabla o array `"K=V"`, y el env malformado lanza `EINVAL` en vez de ignorarse
+  en silencio) lo subió a 6. Una adición nunca rompe firmas existentes: el código
+  escrito contra el nivel 1 sigue siendo válido en los niveles siguientes.
 - Detección de capacidades con `enu.has()`, nunca sniffing de versión.
 - Namespaces de eventos `core:`/`ui:` y códigos de error de §1.4 reservados.
 - Fuera de esta especificación (deliberadamente): toolkit de widgets, hooks

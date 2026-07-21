@@ -19,6 +19,13 @@ package runtime
 // explícito no recortado por el umask) — adición estricta, no rompe ninguna firma del
 // nivel 4 (quien no pase `mode` conserva el default `fsFilePerm` recortado por umask).
 //
+// Subió a 6 con la forma dual de `opts.env` en `enu.proc.run`/`spawn` (G65): además de
+// la tabla `{ K = V }` se acepta el array POSIX `["K=V"]` (partido por el primer `=`;
+// entre claves repetidas gana la última), y un env malformado lanza EINVAL en vez de
+// ignorarse en silencio — adición estricta sobre las firmas (quien pasa tabla válida no
+// cambia); el endurecimiento no rompe contrato: la permisividad vieja vivía solo en un
+// comentario del parser, nunca en api.md §6.
+//
 // El catálogo `enu.*` lo monta el backend wasm (registerWasmCatalog en runtime.go
 // + los preludios de internal/vmwasm); estas constantes las inyecta el preludio
 // vía `Pool.SetAPIVersion`/`Pool.SetVersion` (buildWasmState).
@@ -26,5 +33,5 @@ const (
 	VersionMajor = 0
 	VersionMinor = 3
 	VersionPatch = 1
-	APILevel     = 5
+	APILevel     = 6
 )
